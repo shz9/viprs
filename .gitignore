@@ -1,0 +1,8 @@
+.ipynb_checkpoints
+data
+output
+*.DS_Store
+.idea
+__pycache__
+PRSice_mac
+ldpred_test
