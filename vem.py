@@ -2,25 +2,23 @@ from tqdm import tqdm
 import dask.array as da
 import numpy as np
 from scipy.sparse import triu
-from sklearn.model_selection import KFold
-from sklearn.metrics import r2_score
+from prs_models import PRSModel
 
 
-class vem_prs_ss(object):
+class vem_prs_ss(PRSModel):
 
     def __init__(self, gdl):
         """
         :param gdl: An instance of GWAS data loader
         """
 
-        self.gdl = gdl
+        super().__init__(gdl)
 
         self.N = gdl.N  # GWAS Sample size
         self.M = gdl.M  # Total number of SNPs
 
         self.R_triu = {c: triu(ld[0], 1) for c, ld in self.gdl.ld.items()}
         self.R_diag = {c: ld[0].diagonal() - self.gdl.lam for c, ld in self.gdl.ld.items()}
-        self.beta_hat = {c: b.compute() for c, b in self.gdl.beta_hats.items()}
 
         # Variational parameters:
         self.var_mu_beta = None
@@ -77,6 +75,8 @@ class vem_prs_ss(object):
         :return:
         """
 
+        beta_hat = self.gdl.beta_hats
+
         for c in self.var_mu_beta:
 
             # Updates for sigma_beta variational parameters:
@@ -88,7 +88,7 @@ class vem_prs_ss(object):
             # Updates for mu_beta variational parameters:
 
             self.var_mu_beta[c] = (
-                    self.beta_hat[c] -
+                    beta_hat[c] -
                     self.R_triu[c].dot(self.var_gamma[c]*self.var_mu_beta[c])
                 )/(1. + self.sigma_epsilon/(self.N*self.sigma_beta))
 
@@ -135,9 +135,11 @@ class vem_prs_ss(object):
 
         # Update sigma_epsilon
 
+        beta_hat = self.gdl.beta_hats
+
         self.sigma_epsilon = 1. + np.sum([
                     np.dot(self.var_gamma[c], self.var_mu_beta[c]**2 + self.var_sigma_beta[c]) -
-                    np.dot(self.var_gamma[c]*self.var_mu_beta[c], self.beta_hat[c]) +
+                    np.dot(self.var_gamma[c]*self.var_mu_beta[c], beta_hat[c]) +
                     2. * np.dot(self.var_gamma[c]*self.var_mu_beta[c],
                                 self.R_triu[c].dot(self.var_gamma[c]*self.var_mu_beta[c]))
                     for c in self.var_mu_beta
@@ -150,9 +152,11 @@ class vem_prs_ss(object):
 
         f = 0.
 
+        beta_hats = self.gdl.beta_hats
+
         for c in self.var_mu_beta:
 
-            beta_hat = self.beta_hat[c]
+            beta_hat = beta_hats[c]
             gamma_mu = self.var_gamma[c]*self.var_mu_beta[c]
             gamma_mu_sig = self.var_gamma[c]*(self.var_mu_beta[c]**2 + self.var_sigma_beta[c])
 
@@ -179,7 +183,7 @@ class vem_prs_ss(object):
 
         return f
 
-    def get_h2g(self):
+    def get_heritability(self):
 
         tot_sig_beta = np.sum([
             np.sum(self.var_gamma[chrom]*self.sigma_beta)
@@ -205,6 +209,7 @@ class vem_prs_ss(object):
             for c in self.var_gamma
         ])
 
+        """
         self.history['heritability'].append((tot_sig_beta / (tot_sig_beta + self.sigma_epsilon),
                 tot_sig_beta2 / (tot_sig_beta2 + self.sigma_epsilon),
                 tot_sig_beta3 / (tot_sig_beta3 + self.sigma_epsilon),
@@ -218,8 +223,13 @@ class vem_prs_ss(object):
                 tot_sig_beta4 / (tot_sig_beta4 + self.sigma_epsilon),
                 tot_sig_beta5 / (tot_sig_beta5 + self.sigma_epsilon),
                 tot_sig_beta6 / (tot_sig_beta6 + self.sigma_epsilon))
+        """
 
-    def iterate(self, max_iter=1000, continued=False, tol=1e-6):
+        self.history['heritability'].append(tot_sig_beta5 / (tot_sig_beta5 + self.sigma_epsilon))
+
+        return tot_sig_beta5 / (tot_sig_beta5 + self.sigma_epsilon)
+
+    def fit(self, max_iter=1000, continued=False, tol=1e-6):
 
         if not continued:
             self.initialize_theta()
@@ -234,7 +244,7 @@ class vem_prs_ss(object):
             self.e_step()
             self.m_step()
             self.objective()
-            self.get_h2g()
+            self.get_heritability()
 
             i += 1
 
@@ -243,51 +253,8 @@ class vem_prs_ss(object):
                     print(f"Converged at iteration {i} | ELBO: {self.history['ELBO'][-1]}")
                     converged = True
                 elif i > max_iter:
-                    print("Max iterations reached without convergence. You may need more itreations.")
+                    print("Max iterations reached without convergence. "
+                          "You may need to run the model for more iterations.")
                     converged = True
 
-    def predict_phenotype(self, beta, subset_idx=None):
-
-        if subset_idx is None:
-            g_comp = da.zeros(shape=self.N)
-        else:
-            g_comp = da.zeros(shape=len(subset_idx))
-
-        for c in self.gdl.genotypes:
-            if subset_idx is None:
-                g_comp += da.dot(self.gdl.genotypes[c]['G'], beta[c])
-            else:
-                g_comp += da.dot(self.gdl.genotypes[c]['G'][subset_idx, :], beta[c])
-
-        return g_comp
-
-    def k_fold_cross_validation(self, k=5):
-
-        ind_idx = np.arange(len(self.gdl.phenotypes))
-        np.random.shuffle(ind_idx)
-
-        kf = KFold(n_splits=k)
-
-        r2 = {
-            'Marginal Beta': [],
-            'Posterior Beta': []
-        }
-
-        for i, (train, test) in enumerate(kf.split(ind_idx)):
-            print(f"Cross validation iteration {i}")
-            self.N = len(train)
-            self.beta_hat = {c: (da.dot(gt['G'][train, :].T, self.gdl.phenotypes[train]) / self.N).compute()
-                             for c, gt in self.gdl.genotypes.items()}
-            self.iterate()
-
-            post_pred_phenotypes = self.predict_phenotype({c: self.var_gamma[c]*self.var_mu_beta[c]
-                                                           for c in self.var_gamma}, test)
-            pred_phenotypes = self.predict_phenotype(self.beta_hat, test)
-
-            r2['Marginal Beta'].append(r2_score(self.gdl.phenotypes[test], pred_phenotypes))
-            r2['Posterior Beta'].append(r2_score(self.gdl.phenotypes[test], post_pred_phenotypes))
-
-        self.N = self.gdl.N
-        self.beta_hat = {c: b.compute() for c, b in self.gdl.beta_hats.items()}
-
-        return r2
+        self.inf_beta = self.var_mu_beta
