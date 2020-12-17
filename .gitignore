@@ -1,8 +1,13 @@
 .ipynb_checkpoints
 data
+build
 output
 *.DS_Store
 .idea
 __pycache__
 PRSice_mac
 ldpred_test
+*.c
+*.so
+*.log
+*.html

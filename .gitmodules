@@ -1,3 +1,6 @@
 [submodule "gwasimulator"]
 	path = gwasimulator
 	url = https://github.com/shz9/gwasimulator.git
+[submodule "ldpred"]
+	path = ldpred
+	url = https://github.com/bvilhjal/ldpred.git
