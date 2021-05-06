@@ -9,6 +9,7 @@
 # cython: infer_types=True
 
 cimport cython
+import pandas as pd
 import numpy as np
 cimport numpy as np
 
@@ -48,8 +49,15 @@ cdef class PRSModel:
         return prs
 
     cpdef write_inferred_params(self, f_name):
-        """
-        TODO: Write a function to export the inferred parameters to file.
-        :return:
-        """
-        pass
+
+        dfs = []
+        for c, betas in self.inf_beta.items():
+            dfs.append(
+                pd.DataFrame({'CHR': c,
+                              'SNP': self.gdl.snps[c],
+                              'PIP': self.pip[c],
+                              'BETA': betas})
+            )
+
+        dfs = pd.concat(dfs)
+        dfs.to_csv(f_name, sep="\t")
