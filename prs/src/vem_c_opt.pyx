@@ -108,8 +108,7 @@ cdef class vem_prs_opt(PRSModel):
         cdef:
             unsigned int i, start, end
             double u_j
-            double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, q
-            const double[::1] Di
+            double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, q, Di
             long[:, ::1] ld_bound
 
         # The prior variance parameter (can be defined in two ways):

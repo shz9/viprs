@@ -112,8 +112,7 @@ cdef class vem_prs_sbayes(PRSModel):
         cdef:
             unsigned int i
             double u_j
-            double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, sig_e, prior_var
-            const double[::1] Di
+            double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, sig_e, prior_var, Di
             long[:, ::1] ld_bound
 
         # The log(pi) for the gamma updates
@@ -187,8 +186,7 @@ cdef class vem_prs_sbayes(PRSModel):
         cdef:
             double global_sig_e = 0., ld_prod = 0., snp_res, snp_ld
             unsigned int i, j, c_size
-            double[::1] var_prod, var_gamma, var_mu_beta, var_sigma_beta, beta_hat, sig_e, yy
-            const double[::1] Di
+            double[::1] var_prod, var_gamma, var_mu_beta, var_sigma_beta, beta_hat, sig_e, yy, Di
             long[:, ::1] ld_bound
             double scale_prior_adj = (1. + 1./(self.N*self.sigma_beta)) if self.scale_prior else 1.
 

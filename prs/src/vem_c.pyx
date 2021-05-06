@@ -105,8 +105,7 @@ cdef class vem_prs(PRSModel):
 
         cdef unsigned int i
         cdef double u_j
-        cdef double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat
-        cdef const double[::1] Di
+        cdef double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, Di
         cdef long[:, ::1] ld_bound
 
         # The prior variance parameter (can be defined in two ways):
@@ -186,8 +185,7 @@ cdef class vem_prs(PRSModel):
 
         cdef double sig_e = 0., ld_prod = 0.
         cdef unsigned int i, j, c_size
-        cdef double[::1] var_prod, var_gamma, var_mu_beta, var_sigma_beta, beta_hat
-        cdef const double[::1] Di
+        cdef double[::1] var_prod, var_gamma, var_mu_beta, var_sigma_beta, beta_hat, Di
         cdef long[:, ::1] ld_bound
         cdef double scale_prior_adj = (1. + 1./(self.N*self.sigma_beta)) if self.scale_prior else 1.
 

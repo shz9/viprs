@@ -105,8 +105,7 @@ cdef class prs_gibbs_sbayes(PRSModel):
 
         cdef unsigned int j
         cdef double u_j, mu_beta_j
-        cdef double[::1] prod, s_beta, s_gamma, beta_hat, s_unif, s_norm, sig_e_snp
-        cdef const double[::1] Dj
+        cdef double[::1] prod, s_beta, s_gamma, beta_hat, s_unif, s_norm, sig_e_snp, Dj
         cdef long[:, ::1] ld_bound
 
         # The prior variance parameter (can be defined in two ways):
@@ -181,8 +180,7 @@ cdef class prs_gibbs_sbayes(PRSModel):
 
         cdef double bxxb = 0., ssr = 0., snp_ssr, snp_xxb
         cdef unsigned int i, j, c_size
-        cdef double[::1] s_gamma, s_beta, beta_hat, yy, sig_e_snp
-        cdef const double[::1] Di
+        cdef double[::1] s_gamma, s_beta, beta_hat, yy, sig_e_snp, Di
         cdef long[:, ::1] ld_bound
 
         for c, c_size in self.shapes.items():

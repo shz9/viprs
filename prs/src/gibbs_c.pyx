@@ -179,8 +179,7 @@ cdef class prs_gibbs(PRSModel):
 
         cdef double bxxb = 0., ssr = 0.
         cdef unsigned int i, j, c_size
-        cdef double[::1] s_gamma, s_beta, beta_hat
-        cdef const double[::1] Di
+        cdef double[::1] s_gamma, s_beta, beta_hat, Di
         cdef long[:, ::1] ld_bound
 
         for c, c_size in self.shapes.items():

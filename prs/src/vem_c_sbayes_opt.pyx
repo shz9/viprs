@@ -112,8 +112,7 @@ cdef class vem_prs_sbayes_opt(PRSModel):
         cdef:
             unsigned int i, start, end
             double u_j
-            double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, q, sig_e, prior_var
-            const double[::1] Di
+            double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, q, sig_e, prior_var, Di
             long[:, ::1] ld_bound
 
         # The log(pi) for the gamma updates
