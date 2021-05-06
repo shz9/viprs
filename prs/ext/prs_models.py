@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 import os
 import glob
-from utils import delete_temp_files, run_shell_script
-from evaluation import evaluate_predictive_performance
-from PRSModel import PRSModel
+from prs.utils import delete_temp_files, run_shell_script
+from prs.eval.evaluation import evaluate_predictive_performance
+from prs.src.PRSModel import PRSModel
 
 
 class TrueBetaPRS(PRSModel):
@@ -193,7 +193,7 @@ class SBayesR(PRSModel):
         ss_tables.to_csv(f"temp/sbayesr/{self.gdl.phenotype_id}.ma", index=False, sep=" ")
 
         sbayesr_cmd = f"""
-            gctb_2.0/gctb --sbayes R \
+            ../external/gctb_2.0/gctb --sbayes R \
                  --ldm {self.ldm} \
                  --pi {','.join(map(str, self.pi))} \
                  --gamma {','.join(map(str, self.gamma))} \

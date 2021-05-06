@@ -1,11 +1,12 @@
-.ipynb_checkpoints
+*.ipynb_checkpoints
 data
+*temp*
 build
 output
 *.DS_Store
 .idea
 __pycache__
-PRSice_mac
+external/
 ldpred_test
 *.c
 *.so

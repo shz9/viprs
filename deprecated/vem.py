@@ -1,8 +1,7 @@
 
 import dask.array as da
 import numpy as np
-from scipy.sparse import triu, diags
-from prs_models import PRSModel
+from prs.ext.prs_models import PRSModel
 
 
 class vem_prs_ss(PRSModel):

@@ -1,8 +1,6 @@
-import os
 import pandas as pd
-import numpy as np
-from ldsc.ldscore.regressions import Hsq
-from utils import delete_temp_files, run_shell_script
+#from external.ldsc.ldscore.regressions import Hsq
+from ..utils import delete_temp_files, run_shell_script
 
 
 def read_ld_scores(ld_score_prefix, w_ld_score_prefix, chrom=None, count_file='M_5_50'):
@@ -138,7 +136,7 @@ class HERegression(object):
 
     def compute_grm(self):
         gcta_cmd = f"""
-            gcta/gcta64  --bfile {self.gdl.bed_files[0].replace('.bed', '')}  \
+            ../external/gcta/gcta64  --bfile {self.gdl.bed_files[22].replace('.bed', '')}  \
             --autosome  --make-grm  --out temp/HEReg/grm
         """
         run_shell_script(gcta_cmd)
@@ -150,7 +148,7 @@ class HERegression(object):
         phen_table.to_csv(f"temp/HEReg/{self.gdl.phenotype_id}.phen", index=False, sep=" ")
 
         gcta_cmd = f"""
-            gcta/gcta64 --HEreg \
+            ../external/gcta/gcta64 --HEreg \
             --grm temp/HEReg/grm \
             --pheno temp/HEReg/{self.gdl.phenotype_id}.phen \
             --out temp/HEReg/{self.gdl.phenotype_id}

@@ -1,7 +1,16 @@
-cimport cython
-cimport numpy as np
-import numpy as np
+# cython: linetrace=False
+# cython: profile=False
+# cython: binding=False
+# cython: boundscheck=False
+# cython: wraparound=False
+# cython: initializedcheck=False
+# cython: nonecheck=False
+# cython: language_level=3
+# cython: infer_types=True
 
+cimport cython
+import numpy as np
+cimport numpy as np
 
 cdef class PRSModel:
 
@@ -38,7 +47,7 @@ cdef class PRSModel:
 
         return prs
 
-    cpdef write_inferred_params(self):
+    cpdef write_inferred_params(self, f_name):
         """
         TODO: Write a function to export the inferred parameters to file.
         :return:

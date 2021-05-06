@@ -1,4 +1,3 @@
-from libcpp cimport bool
 
 cdef class PRSModel:
 
@@ -16,4 +15,4 @@ cdef class PRSModel:
 
     cpdef predict_phenotype(self)
 
-    cpdef write_inferred_params(self)
+    cpdef write_inferred_params(self, f_name)

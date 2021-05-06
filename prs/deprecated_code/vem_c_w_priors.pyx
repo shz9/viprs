@@ -1,41 +1,41 @@
-# cython: profile=True
-# cython: linetrace=True
+# cython: linetrace=False
+# cython: profile=False
+# cython: binding=False
+# cython: boundscheck=False
+# cython: wraparound=False
+# cython: initializedcheck=False
+# cython: nonecheck=False
+# cython: language_level=3
 # cython: infer_types=True
-# cython: binding=True
-cimport cython
-cimport numpy as np
 import numpy as np
-from libc.math cimport exp, log, pi as m_pi
-from PRSModel cimport PRSModel
-from gwasimulator.c_utils import zarr_islice
-import psutil
+from libc.math cimport exp, log
+from ..src.PRSModel cimport PRSModel
+from ..src.c_utils cimport dot
+from prs.gwasimulator.c_utils import zarr_islice
 
+cdef class vem_prs_wp(PRSModel):
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.nonecheck(False)
-cdef double dot_mv(const double[::1] v1, double[::1] v2):
+    """
+    This is an implementation of the EM algorithm with priors,
+    similar to Algorithm 1 in Huang et al. (2016)
+    """
 
-    cdef unsigned int i, end = v1.shape[0]
-    cdef double s = 0.
-
-    for i in range(end):
-        s += v1[i]*v2[i]
-
-    return s
-
-
-cdef class vem_prs(PRSModel):
-
-    cdef public double pi, sigma_beta, sigma_epsilon, ld_prod
+    cdef public double pi, sigma_beta, sigma_epsilon, ld_prod, b_a0, b_b0, ig_a0, ig_b0
     cdef public dict var_mu_beta, var_sigma_beta, var_gamma, beta_hat, ld, ld_bounds, history, shapes, fix_params
 
-    def __init__(self, gdl, fix_params=None):
+    def __init__(self, gdl, fix_params=None,
+                 b_a0=0.05, b_b0=0.5,
+                 ig_a0=.5, ig_b0=.5):
         """
         :param gdl: An instance of GWAS data loader
         """
 
         super().__init__(gdl)
+
+        self.b_a0 = b_a0
+        self.b_b0 = b_b0
+        self.ig_a0 = ig_a0
+        self.ig_b0 = ig_b0
 
         self.ld = self.gdl.get_ld_matrices()
         self.ld_bounds = self.gdl.get_ld_boundaries()
@@ -72,7 +72,7 @@ cdef class vem_prs(PRSModel):
             self.sigma_beta = 1./ self.M #np.random.uniform()
 
         if 'sigma_epsilon' in self.fix_params:
-            self.sigma_epsilon = self.fix_params['sigma_beta']
+            self.sigma_epsilon = self.fix_params['sigma_epsilon']
         else:
             self.sigma_epsilon = 0.8 #np.random.uniform()
 
@@ -102,8 +102,7 @@ cdef class vem_prs(PRSModel):
 
         cdef unsigned int i
         cdef double u_j
-        cdef double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat
-        cdef const double[::1] Di
+        cdef double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, Di
         cdef long[:, ::1] ld_bound
 
         cdef double denom = (1. + self.sigma_epsilon / (self.N * self.sigma_beta))
@@ -127,7 +126,7 @@ cdef class vem_prs(PRSModel):
 
             for i, Di in enumerate(zarr_islice(self.ld[c])):
 
-                var_mu_beta[i] = (beta_hat[i] - dot_mv(Di, var_prod[ld_bound[0, i]: ld_bound[1, i]]) +
+                var_mu_beta[i] = (beta_hat[i] - dot(Di, var_prod[ld_bound[0, i]: ld_bound[1, i]]) +
                                   Di[i - ld_bound[0, i]]*var_prod[i]) / denom
 
                 u_i = (log_pi + .5*log(var_sigma_beta[i] / self.sigma_beta) +
@@ -154,7 +153,9 @@ cdef class vem_prs(PRSModel):
         ])
 
         if 'pi' not in self.fix_params:
-            self.pi = var_gamma_sum / self.M
+            b_a = var_gamma_sum + self.b_a0
+            b_b = self.M - var_gamma_sum + self.b_b0
+            self.pi = b_a / (b_a + b_b)
             self.pi = np.clip(self.pi, 1./self.M, 1.)
 
         self.history['pi'].append(self.pi)
@@ -199,7 +200,9 @@ cdef class vem_prs(PRSModel):
         self.ld_prod = 2. * ld_prod
 
         if 'sigma_epsilon' not in self.fix_params:
-            self.sigma_epsilon = np.clip(1. + 2.*sig_e, 1e-12, np.inf)
+            sig_e_mle = 1. + 2.*sig_e
+            final_sig_e = (self.N*sig_e_mle + 2.*self.ig_b0) / (2.*self.ig_a0 + self.N + 2)
+            self.sigma_epsilon = np.clip(final_sig_e, 1e-12, np.inf)
 
         self.history['sigma_epsilon'].append(self.sigma_epsilon)
 
