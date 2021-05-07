@@ -130,7 +130,7 @@ cdef class vem_prs_sbayes(PRSModel):
 
             var_prod = np.multiply(var_gamma, var_mu_beta)
 
-            for i, Di in enumerate(self.ld[c].iterate()):
+            for i, Di in enumerate(self.ld[c]):
 
                 var_sigma_beta[i] = sig_e[i] / (self.N + sig_e[i] / prior_var[i])
 
@@ -201,7 +201,7 @@ cdef class vem_prs_sbayes(PRSModel):
             sig_e = self.sig_e_snp[c]
             yy = self.yy[c].values
 
-            for i, Di in enumerate(self.ld[c].iterate()):
+            for i, Di in enumerate(self.ld[c]):
                 snp_res = 0.
                 snp_ld = 0.
 

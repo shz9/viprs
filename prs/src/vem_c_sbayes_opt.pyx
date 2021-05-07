@@ -131,7 +131,7 @@ cdef class vem_prs_sbayes_opt(PRSModel):
 
             var_prod = np.multiply(var_gamma, var_mu_beta)
 
-            for i, Di in enumerate(self.ld[c].iterate()):
+            for i, Di in enumerate(self.ld[c]):
 
                 start, end = ld_bound[0, i], ld_bound[1, i]
                 i_idx = i - start

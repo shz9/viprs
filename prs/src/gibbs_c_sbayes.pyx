@@ -128,7 +128,7 @@ cdef class prs_gibbs_sbayes(PRSModel):
 
             prod = np.multiply(s_gamma, s_beta)
 
-            for j, Dj in enumerate(self.ld[c].iterate()):
+            for j, Dj in enumerate(self.ld[c]):
 
                 denom = (1. + sig_e_snp[j] / (self.N * prior_var))
                 s_var = sig_e_snp[j] / (self.N + sig_e_snp[j] / prior_var)
@@ -192,7 +192,7 @@ cdef class prs_gibbs_sbayes(PRSModel):
             yy = self.yy[c]
             sig_e_snp = self.sig_e_snp[c]
 
-            for i, Di in enumerate(self.ld[c].iterate()):
+            for i, Di in enumerate(self.ld[c]):
 
                 snp_ssr = 0.
                 snp_xxb = 0.

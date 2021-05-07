@@ -133,7 +133,7 @@ cdef class vem_prs(PRSModel):
 
             var_prod = np.multiply(var_gamma, var_mu_beta)
 
-            for i, Di in enumerate(self.ld[c].iterate()):
+            for i, Di in enumerate(self.ld[c]):
 
                 var_mu_beta[i] = (beta_hat[i] - dot(Di, var_prod[ld_bound[0, i]: ld_bound[1, i]]) +
                                   Di[i - ld_bound[0, i]]*var_prod[i]) / denom
@@ -198,7 +198,7 @@ cdef class vem_prs(PRSModel):
             var_prod = np.multiply(var_gamma, var_mu_beta)
             ld_bound = self.ld_bounds[c]
 
-            for i, Di in enumerate(self.ld[c].iterate()):
+            for i, Di in enumerate(self.ld[c]):
 
                 sig_e += .5 * scale_prior_adj * var_gamma[i] * (var_mu_beta[i]*var_mu_beta[i] + var_sigma_beta[i])
                 sig_e -= var_prod[i] * beta_hat[i]
