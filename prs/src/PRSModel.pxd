@@ -6,6 +6,7 @@ cdef class PRSModel:
     cdef public gdl
     cdef public pip
     cdef public inf_beta
+    cdef public shapes
 
     cpdef fit(self)
 
