@@ -8,9 +8,9 @@
 # cython: language_level=3
 # cython: infer_types=True
 import numpy as np
-from libc.math cimport exp, log
+from libc.math cimport log
 from .PRSModel cimport PRSModel
-from .c_utils cimport dot
+from .c_utils cimport dot, sigmoid, clip
 
 
 cdef class vem_prs_sbayes(PRSModel):
@@ -110,9 +110,9 @@ cdef class vem_prs_sbayes(PRSModel):
         """
 
         cdef:
-            unsigned int i
+            unsigned int j
             double u_j
-            double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, sig_e, prior_var, Di
+            double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, sig_e, prior_var, Dj
             long[:, ::1] ld_bound
 
         # The log(pi) for the gamma updates
@@ -130,20 +130,20 @@ cdef class vem_prs_sbayes(PRSModel):
 
             var_prod = np.multiply(var_gamma, var_mu_beta)
 
-            for i, Di in enumerate(self.ld[c]):
+            for j, Dj in enumerate(self.ld[c]):
 
-                var_sigma_beta[i] = sig_e[i] / (self.N + sig_e[i] / prior_var[i])
+                var_sigma_beta[j] = sig_e[j] / (self.N + sig_e[j] / prior_var[j])
 
-                var_mu_beta[i] = (beta_hat[i] - dot(Di, var_prod[ld_bound[0, i]: ld_bound[1, i]]) +
-                                  Di[i - ld_bound[0, i]]*var_prod[i]) / (1. + sig_e[i] / (self.N * prior_var[i]))
+                var_mu_beta[j] = (beta_hat[j] - dot(Dj, var_prod[ld_bound[0, j]: ld_bound[1, j]]) +
+                                  Dj[j - ld_bound[0, j]]*var_prod[j]) / (1. + sig_e[j] / (self.N * prior_var[j]))
 
-                u_i = (log_pi + .5*log(var_sigma_beta[i] / prior_var[i]) +
-                       (.5/var_sigma_beta[i])*var_mu_beta[i]*var_mu_beta[i])
-                var_gamma[i] = 1./(1. + exp(-u_i))
+                u_j = (log_pi + .5*log(var_sigma_beta[j] / prior_var[j]) +
+                       (.5/var_sigma_beta[j])*var_mu_beta[j]*var_mu_beta[j])
+                var_gamma[j] = clip(sigmoid(u_j), 1e-6, 1. - 1e-6)
 
-                var_prod[i] = var_gamma[i]*var_mu_beta[i]
+                var_prod[j] = var_gamma[j]*var_mu_beta[j]
 
-            self.var_gamma[c] = np.clip(var_gamma, 1e-6, 1. - 1e-6)
+            self.var_gamma[c] = np.array(var_gamma)
             self.var_sigma_beta[c] = np.array(var_sigma_beta)
             self.var_mu_beta[c] = np.array(var_mu_beta)
 
@@ -215,7 +215,7 @@ cdef class vem_prs_sbayes(PRSModel):
                 global_sig_e += snp_res
                 ld_prod += snp_ld
 
-            self.sig_e_snp[c] = np.array(sig_e)
+            self.sig_e_snp[c] = np.clip(sig_e, 1e-12, 1e12)
 
         global_sig_e += ld_prod
         self.ld_prod = 2. * ld_prod
@@ -226,7 +226,7 @@ cdef class vem_prs_sbayes(PRSModel):
             if self.scale_prior:
                 final_sig_e *= (self.N / (self.N + var_gamma_sum))
 
-            self.sigma_epsilon = np.clip(final_sig_e, 1e-12, np.inf)
+            self.sigma_epsilon = np.clip(final_sig_e, 1e-12, 1e12)
 
         self.history['sigma_epsilon'].append(self.sigma_epsilon)
 

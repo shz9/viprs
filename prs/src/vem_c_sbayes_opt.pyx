@@ -217,7 +217,7 @@ cdef class vem_prs_sbayes_opt(PRSModel):
                 sig_e = yy + sse_per_snp
                 global_sig_e += sse_per_snp.sum()
 
-                self.sig_e_snp[c] = np.array(yy + sse_per_snp)
+                self.sig_e_snp[c] = np.clip(yy + sse_per_snp, 1e-12, 1e12)
 
             final_sig_e = 1. + global_sig_e
             if self.scale_prior:
