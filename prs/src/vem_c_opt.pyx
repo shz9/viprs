@@ -8,9 +8,9 @@
 # cython: language_level=3
 # cython: infer_types=True
 import numpy as np
-from libc.math cimport exp, log
+from libc.math cimport log
 from .PRSModel cimport PRSModel
-from .c_utils cimport dot, elementwise_add_mult, clip
+from .c_utils cimport dot, sigmoid, elementwise_add_mult, clip
 
 
 cdef class vem_prs_opt(PRSModel):
@@ -71,17 +71,17 @@ cdef class vem_prs_opt(PRSModel):
     def initialize_theta(self):
 
         if 'sigma_beta' not in self.fix_params:
-            self.sigma_beta = 1./ self.M #np.random.uniform()
+            self.sigma_beta = np.random.uniform()
         else:
             self.sigma_beta = self.fix_params['sigma_beta'][0]
 
         if 'sigma_epsilon' not in self.fix_params:
-            self.sigma_epsilon = 0.8 #np.random.uniform()
+            self.sigma_epsilon = np.random.uniform()
         else:
             self.sigma_epsilon = self.fix_params['sigma_epsilon'][0]
 
         if 'pi' not in self.fix_params:
-            self.pi = 0.1 #np.random.uniform()
+            self.pi = np.random.uniform()
         else:
             self.pi = self.fix_params['pi'][0]
 
@@ -94,8 +94,8 @@ cdef class vem_prs_opt(PRSModel):
         for c, c_size in self.shapes.items():
 
             self.q[c] = np.zeros(shape=c_size)
-            self.var_gamma[c] = np.repeat(0.5, c_size) #np.random.uniform(size=c_size)
-            self.var_mu_beta[c] = np.zeros(shape=c_size) #np.random.normal(scale=1./np.sqrt(self.M), size=c_size)
+            self.var_gamma[c] = np.random.uniform(size=c_size)
+            self.var_mu_beta[c] = np.random.normal(scale=1./np.sqrt(self.M), size=c_size)
             self.var_sigma_beta[c] = np.repeat(1./self.M, c_size)
 
     def e_step(self):
@@ -150,7 +150,7 @@ cdef class vem_prs_opt(PRSModel):
                 # Compute the variational estimate of gamma
                 u_i = (log_pi + .5*log(var_sigma_beta[i] / prior_var) +
                        (.5/var_sigma_beta[i])*var_mu_beta[i]*var_mu_beta[i])
-                var_gamma[i] = clip(1./(1. + exp(-u_i)), 1e-6, 1. - 1e-6)
+                var_gamma[i] = clip(sigmoid(u_i), 1e-6, 1. - 1e-6)
 
                 # Update the expectation of beta:
                 var_prod[i] = var_gamma[i]*var_mu_beta[i]
@@ -306,13 +306,13 @@ cdef class vem_prs_opt(PRSModel):
 
             if i > 1:
 
-                if self.history['ELBO'][-1] < self.history['ELBO'][-2]:
+                if self.history['ELBO'][i-1] < self.history['ELBO'][i-2]:
                     elbo_dropped_count += 1
-                    print(f"Warning (Iteration {i}): ELBO dropped from {self.history['ELBO'][-2]:.6f} "
-                          f"to {self.history['ELBO'][-1]:.6f}!")
+                    print(f"Warning (Iteration {i}): ELBO dropped from {self.history['ELBO'][i-2]:.6f} "
+                          f"to {self.history['ELBO'][i-1]:.6f}.")
 
-                if np.abs(self.history['ELBO'][-1] - self.history['ELBO'][-2]) <= tol:
-                    print(f"Converged at iteration {i} | ELBO: {self.history['ELBO'][-1]:.6f}")
+                if np.abs(self.history['ELBO'][i-1] - self.history['ELBO'][i-2]) <= tol:
+                    print(f"Converged at iteration {i} | ELBO: {self.history['ELBO'][i-1]:.6f}")
                     break
                 elif elbo_dropped_count > max_elbo_drops:
                     print("The optimization is halted due to numerical instabilities!")

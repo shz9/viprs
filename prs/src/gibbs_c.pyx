@@ -70,17 +70,17 @@ cdef class prs_gibbs(PRSModel):
     def initialize_theta(self):
 
         if 'sigma_beta' not in self.fix_params:
-            self.sigma_beta = 1./ self.M #np.random.uniform()
+            self.sigma_beta = np.random.uniform()
         else:
             self.sigma_beta = self.fix_params['sigma_beta'][0]
 
         if 'sigma_epsilon' not in self.fix_params:
-            self.sigma_epsilon = 0.8 #np.random.uniform()
+            self.sigma_epsilon = np.random.uniform()
         else:
             self.sigma_epsilon = self.fix_params['sigma_epsilon'][0]
 
         if 'pi' not in self.fix_params:
-            self.pi = 0.1 #np.random.uniform()
+            self.pi = np.random.uniform()
         else:
             self.pi = self.fix_params['pi'][0]
 

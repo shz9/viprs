@@ -15,4 +15,5 @@ cdef class PRSModel:
 
     cpdef predict_phenotype(self)
 
+    cpdef read_inferred_params(self, f_name)
     cpdef write_inferred_params(self, f_name)

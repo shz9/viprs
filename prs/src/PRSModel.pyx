@@ -19,9 +19,12 @@ cdef class PRSModel:
 
         self.N = gdl.sample_size
         self.M = gdl.M
-        self.gdl = gdl  # Gwas Data Loader
-        self.pip = None
-        self.inf_beta = None
+        self.gdl = gdl  # An instance of GWASDataLoader
+        self.shapes = self.gdl.shapes
+
+        # Inferred model parameters:
+        self.pip = None  # Posterior inclusion probability
+        self.inf_beta = None  # Inferred beta
 
     cpdef fit(self):
         raise NotImplementedError
@@ -48,6 +51,18 @@ cdef class PRSModel:
 
         return prs
 
+    cpdef read_inferred_params(self, f_name):
+
+        df = pd.read_csv(f_name, sep="\t")
+        self.pip = {}
+        self.inf_beta = {}
+
+        # TODO: make sure that the SNP order in the
+        # read file is the same as in the genotype matrix...
+        for c, c_size in self.shapes.items():
+            self.pip[c] = df.loc[df['CHR'] == c, 'PIP']
+            self.inf_beta[c] = df.loc[df['CHR'] == c, 'BETA']
+
     cpdef write_inferred_params(self, f_name):
 
         dfs = []
@@ -60,4 +75,4 @@ cdef class PRSModel:
             )
 
         dfs = pd.concat(dfs)
-        dfs.to_csv(f_name, sep="\t")
+        dfs.to_csv(f_name, sep="\t", index=False)
