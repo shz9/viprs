@@ -212,6 +212,8 @@ cdef class prs_gibbs_sbayes(PRSModel):
                 bxxb += snp_xxb
                 ssr += snp_ssr
 
+            self.sig_e_snp[c] = np.clip(sig_e_snp, 1e-12, 1e12)
+
         ssr = 1. + 2.*(ssr + bxxb)
         self.bxxb = 2. * bxxb
 
