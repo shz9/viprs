@@ -14,9 +14,11 @@ gs = GWASSimulator("../../data/1000G_EUR_Phase3_plink/1000G.EUR.QC.22.bed",
 gs.simulate()
 
 print("> Initializing model...")
-vc = vem_prs_sbayes(gs)
+vc = vem_prs(gs)
 print("> Fitting model...")
 vc.fit(max_iter=500)
+
+print(vc.get_heritability(), vc.pi)
 
 print("Done!")
 

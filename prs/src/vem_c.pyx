@@ -23,7 +23,7 @@ cdef class vem_prs(PRSModel):
         bint scale_prior, load_ld
         dict var_mu_beta, var_sigma_beta, var_gamma  # Variational parameters
         dict beta_hat, ld, ld_bounds  # Inputs to the algorithm
-        dict shapes, history, fix_params  # Helpers
+        dict history, fix_params  # Helpers
 
     def __init__(self, gdl, scale_prior=False, fix_params=None, load_ld=True):
         """
@@ -44,7 +44,6 @@ cdef class vem_prs(PRSModel):
         self.beta_hat = {c: b.values for c, b in self.gdl.beta_hats.items()}
 
         self.scale_prior = scale_prior
-        self.shapes = self.gdl.shapes
         self.fix_params = fix_params or {}
         self.fix_params = {k: np.array(v).flatten() for k, v in self.fix_params}
 

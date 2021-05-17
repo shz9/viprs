@@ -24,7 +24,7 @@ cdef class prs_gibbs(PRSModel):
         tuple beta_prior, sigma_beta_prior, sigma_epsilon_prior
         dict s_beta, s_gamma  # Sampled beta and gamma
         dict beta_hat, ld, ld_bounds  # Inputs to the algorithm
-        dict shapes, fix_params  # Helpers
+        dict fix_params  # Helpers
         dict rs_gamma, rs_beta
         RunStats rs_pi, rs_sigma_beta, rs_sigma_epsilon, rs_h2g  # Running stats objects
 
@@ -45,7 +45,6 @@ cdef class prs_gibbs(PRSModel):
         self.ld = self.gdl.get_ld_matrices()
         self.ld_bounds = self.gdl.get_ld_boundaries()
 
-        self.shapes = self.gdl.shapes
         self.fix_params = fix_params or {}
         self.fix_params = {k: np.array(v).flatten() for k, v in self.fix_params}
 
