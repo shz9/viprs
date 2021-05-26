@@ -3,6 +3,10 @@ sys.path.append('../')
 from prs.gwasimulator.GWASSimulator import GWASSimulator
 from prs.src.vem_c_sbayes import vem_prs_sbayes
 from prs.src.vem_c import vem_prs
+from prs.src.VIPRSModel import VIPRSModel
+from prs.src.GibbsPRS import GibbsPRS
+from prs.src.GibbsPRSSBayes import GibbsPRSSBayes
+from prs.src.VIPRSSBayesModel import VIPRSSBayesModel
 
 gs = GWASSimulator("../../data/1000G_EUR_Phase3_plink/1000G.EUR.QC.22.bed",
                    keep_snps="../../data/w_snplist_no_MHC.snplist.bz2",
@@ -14,11 +18,12 @@ gs = GWASSimulator("../../data/1000G_EUR_Phase3_plink/1000G.EUR.QC.22.bed",
 gs.simulate()
 
 print("> Initializing model...")
-vc = vem_prs(gs)
+vc = GibbsPRSSBayes(gs)
 print("> Fitting model...")
-vc.fit(max_iter=500)
+vc.fit()
 
-print(vc.get_heritability(), vc.pi)
+print(vc.get_heritability(), vc.rs_pi.mean())
+#print(vc.history['ELBO'][-30:])
 
 print("Done!")
 

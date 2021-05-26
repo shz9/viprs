@@ -50,13 +50,13 @@ cdef class prs_gibbs(PRSModel):
 
         self.initialize()
 
-    def initialize(self):
+    cpdef initialize(self):
         self.beta_hat = {c: b.values for c, b in self.gdl.beta_hats.items()}
         self.initialize_theta()
         self.initialize_local_params()
         self.initialize_running_stats()
 
-    def initialize_running_stats(self):
+    cpdef initialize_running_stats(self):
 
         self.rs_beta = {c: RunStatsVec(c_size) for c, c_size in self.shapes.items()}
         self.rs_gamma = {c: RunStatsVec(c_size) for c, c_size in self.shapes.items()}
@@ -66,7 +66,7 @@ cdef class prs_gibbs(PRSModel):
         self.rs_sigma_epsilon = RunStats()
         self.rs_h2g = RunStats()
 
-    def initialize_theta(self):
+    cpdef initialize_theta(self):
 
         if 'sigma_beta' not in self.fix_params:
             self.sigma_beta = np.random.uniform()
@@ -83,7 +83,7 @@ cdef class prs_gibbs(PRSModel):
         else:
             self.pi = self.fix_params['pi'][0]
 
-    def initialize_local_params(self):
+    cpdef initialize_local_params(self):
 
         self.s_beta = {}
         self.s_gamma = {}
@@ -93,7 +93,7 @@ cdef class prs_gibbs(PRSModel):
             self.s_gamma[c] = np.random.binomial(1, self.pi, size=c_size).astype(np.float)
             self.s_beta[c] = np.random.normal(scale=np.sqrt(self.sigma_beta), size=c_size)
 
-    def sample_local_parameters(self):
+    cpdef sample_local_parameters(self):
         """
 
         :return:
@@ -146,7 +146,7 @@ cdef class prs_gibbs(PRSModel):
 
                 prod[j] = s_gamma[j]*s_beta[j]
 
-    def sample_global_parameters(self):
+    cpdef sample_global_parameters(self):
         """
         In the M-step, we update the global parameters of
         the model.
@@ -209,11 +209,14 @@ cdef class prs_gibbs(PRSModel):
                                           loc=0.,
                                           scale=self.sigma_epsilon_prior[1] + .5*self.N*ssr).rvs()
 
-    def get_heritability(self):
+    cpdef get_proportion_causal(self):
+        return self.rs_pi.mean()
+
+    cpdef get_heritability(self):
 
         return self.rs_h2g.mean()
 
-    def fit(self, n_samples=10000, burn_in=2000, continued=False):
+    cpdef fit(self, n_samples=10000, burn_in=2000, continued=False):
 
         if not continued:
             self.initialize()

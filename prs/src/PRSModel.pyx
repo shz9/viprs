@@ -29,6 +29,9 @@ cdef class PRSModel:
     cpdef fit(self):
         raise NotImplementedError
 
+    cpdef get_proportion_causal(self):
+        return None
+
     cpdef get_heritability(self):
         return None
 

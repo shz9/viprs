@@ -1,15 +1,14 @@
 
 cdef class PRSModel:
 
-    cdef public int N
-    cdef public int M
-    cdef public gdl
-    cdef public pip
-    cdef public inf_beta
-    cdef public shapes
+    cdef public:
+        int N, M
+        gdl
+        dict pip, inf_beta, shapes
 
     cpdef fit(self)
 
+    cpdef get_proportion_causal(self)
     cpdef get_heritability(self)
     cpdef get_pip(self)
     cpdef get_inf_beta(self)

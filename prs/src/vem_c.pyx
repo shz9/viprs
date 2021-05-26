@@ -45,18 +45,18 @@ cdef class vem_prs(PRSModel):
 
         self.scale_prior = scale_prior
         self.fix_params = fix_params or {}
-        self.fix_params = {k: np.array(v).flatten() for k, v in self.fix_params}
+        self.fix_params = {k: np.array(v).flatten() for k, v in self.fix_params.items()}
 
         self.history = {}
 
         self.initialize()
 
-    def initialize(self):
+    cpdef initialize(self):
         self.initialize_variational_params()
         self.initialize_theta()
         self.init_history()
 
-    def init_history(self):
+    cpdef init_history(self):
 
         self.history = {
             'ELBO': [],
@@ -66,7 +66,7 @@ cdef class vem_prs(PRSModel):
             'heritability': []
         }
 
-    def initialize_theta(self):
+    cpdef initialize_theta(self):
 
         if 'sigma_beta' not in self.fix_params:
             self.sigma_beta = np.random.uniform()
@@ -83,7 +83,7 @@ cdef class vem_prs(PRSModel):
         else:
             self.pi = self.fix_params['pi'][0]
 
-    def initialize_variational_params(self):
+    cpdef initialize_variational_params(self):
 
         self.var_mu_beta = {}
         self.var_sigma_beta = {}
@@ -95,7 +95,7 @@ cdef class vem_prs(PRSModel):
             self.var_mu_beta[c] = np.random.normal(scale=1./np.sqrt(self.M), size=c_size)
             self.var_sigma_beta[c] = np.repeat(1./self.M, c_size)
 
-    def e_step(self):
+    cpdef e_step(self):
         """
         In the E-step, we update the variational parameters
         for each SNP.
@@ -148,7 +148,7 @@ cdef class vem_prs(PRSModel):
             self.var_gamma[c] = np.array(var_gamma)
             self.var_mu_beta[c] = np.array(var_mu_beta)
 
-    def m_step(self):
+    cpdef m_step(self):
         """
         In the M-step, we update the global parameters of
         the model.
@@ -178,7 +178,7 @@ cdef class vem_prs(PRSModel):
             if self.scale_prior:
                 self.sigma_beta /= self.sigma_epsilon
 
-            self.sigma_beta = np.clip(self.sigma_beta, 1e-12, np.inf)
+            self.sigma_beta = np.clip(self.sigma_beta, 1e-12, self.sigma_epsilon)
 
         self.history['sigma_beta'].append(self.sigma_beta)
 
@@ -220,7 +220,7 @@ cdef class vem_prs(PRSModel):
 
         self.history['sigma_epsilon'].append(self.sigma_epsilon)
 
-    def objective(self):
+    cpdef objective(self):
 
         loglik = 0.  # log of joint density
         ent = 0.  # entropy
@@ -266,7 +266,10 @@ cdef class vem_prs(PRSModel):
 
         return elbo
 
-    def get_heritability(self):
+    cpdef get_proportion_causal(self):
+        return self.pi
+
+    cpdef get_heritability(self):
 
         sigma_g = np.sum([
             np.sum(self.var_gamma[c] * (self.var_mu_beta[c] ** 2 + self.var_sigma_beta[c]))
@@ -279,7 +282,7 @@ cdef class vem_prs(PRSModel):
 
         return h2g
 
-    def fit(self, max_iter=500, continued=False, tol=1e-6, max_elbo_drops=10):
+    cpdef fit(self, max_iter=500, continued=False, tol=1e-6, max_elbo_drops=10):
 
         if not continued:
             self.initialize()

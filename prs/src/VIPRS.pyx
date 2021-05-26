@@ -7,26 +7,21 @@
 # cython: nonecheck=False
 # cython: language_level=3
 # cython: infer_types=True
+
 import numpy as np
+cimport numpy as np
 from libc.math cimport log
 from .PRSModel cimport PRSModel
-from .c_utils cimport dot, sigmoid, elementwise_add_mult, clip
+from .c_utils cimport dot, elementwise_add_mult, sigmoid, clip
 
 
-cdef class vem_prs_opt(PRSModel):
+cdef class VIPRS(PRSModel):
 
-    cdef public:
-        double pi, sigma_beta, sigma_epsilon  # Global parameters
-        bint scale_prior
-        dict var_mu_beta, var_sigma_beta, var_gamma  # Variational parameters
-        dict beta_hat, ld, ld_bounds  # Inputs to the algorithm
-        dict q, history, fix_params  # Helpers
-
-    def __init__(self, gdl, scale_prior=False, fix_params=None, load_ld=True):
+    def __init__(self, gdl, fix_params=None, load_ld=True):
         """
-        :param scale_prior: If set to true, scale the prior over the parameters
-                following the Carbonetto & Stephens (2012) model).
         :param gdl: An instance of GWAS data loader
+        :param fix_params: A dictionary of parameters with their fixed values.
+        :param load_ld: A flag that specifies whether to load the LD matrix to memory.
         """
 
         super().__init__(gdl)
@@ -36,14 +31,11 @@ cdef class vem_prs_opt(PRSModel):
         self.var_gamma = {}
         self.q = {}
 
-        if load_ld:
-            self.gdl.load_ld()
-
+        self.load_ld = load_ld
         self.ld = self.gdl.get_ld_matrices()
         self.ld_bounds = self.gdl.get_ld_boundaries()
-        self.beta_hat = self.gdl.beta_hats
+        self.beta_hat = {c: b.values for c, b in self.gdl.beta_hats.items()}
 
-        self.scale_prior = scale_prior
         self.fix_params = fix_params or {}
         self.fix_params = {k: np.array(v).flatten() for k, v in self.fix_params.items()}
 
@@ -52,7 +44,6 @@ cdef class vem_prs_opt(PRSModel):
         self.initialize()
 
     cpdef initialize(self):
-        self.beta_hat = self.gdl.beta_hats
         self.initialize_variational_params()
         self.initialize_theta()
         self.init_history()
@@ -68,6 +59,10 @@ cdef class vem_prs_opt(PRSModel):
         }
 
     cpdef initialize_theta(self):
+        """
+        This method initializes the global hyper-parameters
+        :return:
+        """
 
         if 'sigma_beta' not in self.fix_params:
             self.sigma_beta = np.random.uniform()
@@ -85,6 +80,10 @@ cdef class vem_prs_opt(PRSModel):
             self.pi = self.fix_params['pi'][0]
 
     cpdef initialize_variational_params(self):
+        """
+        This method initializes the variational parameters.
+        :return:
+        """
 
         self.var_mu_beta = {}
         self.var_sigma_beta = {}
@@ -92,7 +91,6 @@ cdef class vem_prs_opt(PRSModel):
 
         for c, c_size in self.shapes.items():
 
-            self.q[c] = np.zeros(shape=c_size)
             self.var_gamma[c] = np.random.uniform(size=c_size)
             self.var_mu_beta[c] = np.random.normal(scale=1./np.sqrt(self.M), size=c_size)
             self.var_sigma_beta[c] = np.repeat(1./self.M, c_size)
@@ -105,29 +103,24 @@ cdef class vem_prs_opt(PRSModel):
         """
 
         cdef:
-            unsigned int i, start, end
+            unsigned int j, start, end, j_idx
             double u_j
-            double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, q, Di
+            double[::1] var_prod, var_mu_beta, var_sigma_beta, var_gamma, beta_hat, q, Dj
             long[:, ::1] ld_bound
-
-        # The prior variance parameter (can be defined in two ways):
-        cdef double prior_var = self.sigma_epsilon*self.sigma_beta if self.scale_prior else self.sigma_beta
-
-        # The denominator for the mu_beta updates:
-        cdef double denom = (1. + self.sigma_epsilon / (self.N * prior_var))
-
-        # The log(pi) for the gamma updates
-        cdef double log_pi = log(self.pi / (1. - self.pi))
+            # The denominator for the mu_beta updates:
+            double denom = (1. + self.sigma_epsilon / (self.N * self.sigma_beta))
+            # The log(pi) for the gamma updates
+            double logodds_pi = log(self.pi / (1. - self.pi))
 
         for c, c_size in self.shapes.items():
 
             # Updates for sigma_beta variational parameters:
             self.var_sigma_beta[c] = np.repeat(
-                self.sigma_epsilon / (self.N + self.sigma_epsilon / prior_var),
+                self.sigma_epsilon / (self.N + self.sigma_epsilon / self.sigma_beta),
                 c_size
             )
 
-            beta_hat = self.beta_hat[c].values
+            beta_hat = self.beta_hat[c]
             var_mu_beta = self.var_mu_beta[c]
             var_sigma_beta = self.var_sigma_beta[c]
             var_gamma = self.var_gamma[c]
@@ -136,77 +129,66 @@ cdef class vem_prs_opt(PRSModel):
 
             var_prod = np.multiply(var_gamma, var_mu_beta)
 
-            for i, Di in enumerate(self.ld[c]):
+            for j, Dj in enumerate(self.ld[c]):
 
+                start, end = ld_bound[:, j]
+                j_idx = j - start
 
-                start, end = ld_bound[0, i], ld_bound[1, i]
-                i_idx = i - start
+                var_mu_beta[j] = (beta_hat[j] - dot(Dj, var_prod[start: end]) +
+                                  Dj[j_idx]*var_prod[j]) / denom
 
-                # Compute the variational estimate of mu beta:
-                var_mu_beta[i] = (beta_hat[i] - dot(Di, var_prod[start: end]) +
-                                  Di[i_idx]*var_prod[i]) / denom
+                u_j = (logodds_pi + .5*log(var_sigma_beta[j] / self.sigma_beta) +
+                       (.5/var_sigma_beta[j])*var_mu_beta[j]*var_mu_beta[j])
+                var_gamma[j] = clip(sigmoid(u_j), 1e-6, 1. - 1e-6)
 
-                # Compute the variational estimate of gamma
-                u_i = (log_pi + .5*log(var_sigma_beta[i] / prior_var) +
-                       (.5/var_sigma_beta[i])*var_mu_beta[i]*var_mu_beta[i])
-                var_gamma[i] = clip(sigmoid(u_i), 1e-6, 1. - 1e-6)
+                var_prod[j] = var_gamma[j]*var_mu_beta[j]
 
-                # Update the expectation of beta:
-                var_prod[i] = var_gamma[i]*var_mu_beta[i]
+                if j_idx > 0:
+                    # Update the q factor for snp j by adding the contribution of previous SNPs.
+                    q[j] = dot(Dj[:j_idx], var_prod[start: j])
+                    # Update the q factors for all previously updated SNPs that are in LD with SNP j
+                    q[start: j] = elementwise_add_mult(q[start: j], Dj[:j_idx], var_prod[j])
 
-                if i_idx > 0:
-                    # Update the q factor for snp i by adding the contribution of previous SNPs.
-                    q[i] = dot(Di[:i_idx], var_prod[start: i])
-                    # Update the q factors for all previously updated SNPs that are in LD with SNP i
-                    q[start: i] = elementwise_add_mult(q[start: i], Di[:i_idx], var_prod[i])
 
             self.q[c] = np.array(q)
             self.var_gamma[c] = np.array(var_gamma)
             self.var_mu_beta[c] = np.array(var_mu_beta)
 
-    cpdef m_step(self):
-        """
-        In the M-step, we update the global parameters of
-        the model.
-        :return:
-        """
-
-        # Update pi:
-
-        var_gamma_sum = np.sum([
-            np.sum(self.var_gamma[c])
-            for c in self.var_gamma
-        ])
+    cpdef update_pi(self):
 
         if 'pi' not in self.fix_params:
-            self.pi = var_gamma_sum / self.M
-            self.pi = clip(self.pi, 1./self.M, 1.)
 
-        self.history['pi'].append(self.pi)
+            var_gamma_sum = np.sum([
+                np.sum(self.var_gamma[c])
+                for c in self.shapes
+            ])
+
+            self.pi = clip(var_gamma_sum / self.M, 1./self.M, 1.)
+
+    cpdef update_sigma_beta(self):
 
         if 'sigma_beta' not in self.fix_params:
-            # Update sigma_beta:
+
+            var_gamma_sum = np.sum([
+                np.sum(self.var_gamma[c])
+                for c in self.shapes
+            ])
+
             self.sigma_beta = np.sum([
                 np.dot(self.var_gamma[c],
                        self.var_mu_beta[c] ** 2 + self.var_sigma_beta[c])
                 for c in self.var_mu_beta]) / var_gamma_sum
 
-            if self.scale_prior:
-                self.sigma_beta /= self.sigma_epsilon
-
             self.sigma_beta = clip(self.sigma_beta, 1e-12, 1e12)
 
-        self.history['sigma_beta'].append(self.sigma_beta)
+    cpdef update_sigma_epsilon(self):
 
         if 'sigma_epsilon' not in self.fix_params:
-
-            # Update sigma_epsilon
-            scale_prior_adj = (1. + 1. / (self.N * self.sigma_beta)) if self.scale_prior else 1.
 
             sig_eps = 0.
 
             for c, c_size in self.shapes.items():
-                beta_hat = self.beta_hat[c].values
+                beta_hat = self.beta_hat[c]
                 var_gamma = self.var_gamma[c]
                 var_mu_beta = self.var_mu_beta[c]
                 var_sigma_beta = self.var_sigma_beta[c]
@@ -215,33 +197,35 @@ cdef class vem_prs_opt(PRSModel):
 
                 sig_eps += (
                         - 2. * np.dot(var_prod, beta_hat) +
-                        scale_prior_adj * np.dot(var_gamma, var_mu_beta * var_mu_beta + var_sigma_beta) +
+                        np.dot(var_gamma, var_mu_beta * var_mu_beta + var_sigma_beta) +
                         np.dot(var_prod, q)
                 )
 
-            final_sig_e = 1. + sig_eps
+            self.sigma_epsilon = clip(1. + sig_eps, 1e-12, 1e12)
 
-            if self.scale_prior:
-                final_sig_e *= (self.N / (self.N + var_gamma_sum))
 
-            self.sigma_epsilon = clip(final_sig_e, 1e-12, 1e12)
+    cpdef m_step(self):
+        """
+        In the M-step, we update the global parameters of
+        the model.
+        :return:
+        """
 
-        self.history['sigma_epsilon'].append(self.sigma_epsilon)
+        self.update_pi()
+        self.update_sigma_beta()
+        self.update_sigma_epsilon()
 
     cpdef objective(self):
 
         loglik = 0.  # log of joint density
         ent = 0.  # entropy
 
-        cdef double prior_var = self.sigma_epsilon * self.sigma_beta if self.scale_prior else self.sigma_beta
-
         # Add the fixed quantities:
-
         loglik -= .5 * self.N * (np.log(2 * np.pi * self.sigma_epsilon) + 1. / self.sigma_epsilon)
-        loglik -= .5 * self.M * np.log(2. * np.pi * prior_var)
+        loglik -= .5 * self.M * np.log(2. * np.pi * self.sigma_beta)
         loglik += self.M * np.log(1. - self.pi)
 
-        ent += .5 * self.M * np.log(2. * np.pi * np.e * prior_var)
+        ent += .5 * self.M * np.log(2. * np.pi * np.e * self.sigma_beta)
 
         for c in self.var_mu_beta:
             beta_hat = self.beta_hat[c]
@@ -254,23 +238,19 @@ cdef class vem_prs_opt(PRSModel):
                     + np.sum(gamma_mu_sig)
             )
 
-            loglik += (-.5 / prior_var) * (
+            loglik += (-.5 / self.sigma_beta) * (
                     np.sum(gamma_mu_sig) +
-                    prior_var * np.sum(1 - self.var_gamma[c])
+                    self.sigma_beta * np.sum(1 - self.var_gamma[c])
             )
 
             loglik += np.log(self.pi / (1. - self.pi)) * np.sum(self.var_gamma[c])
 
-            ent += .5 * np.dot(self.var_gamma[c], np.log(self.var_sigma_beta[c] / prior_var))
+            ent += .5 * np.dot(self.var_gamma[c], np.log(self.var_sigma_beta[c] / self.sigma_beta))
 
             ent -= np.dot(self.var_gamma[c], np.log(self.var_gamma[c] / (1. - self.var_gamma[c])))
             ent -= np.sum(np.log(1. - self.var_gamma[c]))
 
         elbo = loglik + ent
-
-        self.history['ELBO'].append(elbo)
-        #self.history['loglikelihood'].append(loglik)
-        #self.history['entropy'].append(ent)
 
         return elbo
 
@@ -287,38 +267,50 @@ cdef class vem_prs_opt(PRSModel):
 
         h2g = sigma_g / (sigma_g + self.sigma_epsilon)
 
-        self.history['heritability'].append(h2g)
-
         return h2g
 
-    cpdef fit(self, max_iter=500, continued=False, tol=1e-6, max_elbo_drops=10):
+    cpdef fit(self, max_iter=1000, continued=False, tol=1e-6, max_elbo_drops=10, max_divergences=10):
 
         if not continued:
             self.initialize()
 
+        if self.load_ld:
+            self.gdl.load_ld()
+
+        divergence_count = 0
         elbo_dropped_count = 0
         converged = False
 
         for i in range(1, max_iter + 1):
-
             self.e_step()
             self.m_step()
-            self.objective()
-            self.get_heritability()
+
+            self.history['ELBO'].append(self.objective())
 
             if i > 1:
 
-                if self.history['ELBO'][i-1] < self.history['ELBO'][i-2]:
-                    elbo_dropped_count += 1
-                    print(f"Warning (Iteration {i}): ELBO dropped from {self.history['ELBO'][i-2]:.6f} "
-                          f"to {self.history['ELBO'][i-1]:.6f}.")
+                curr_elbo = self.history['ELBO'][i - 1]
+                prev_elbo = self.history['ELBO'][i - 2]
 
-                if np.abs(self.history['ELBO'][i-1] - self.history['ELBO'][i-2]) <= tol:
-                    print(f"Converged at iteration {i} | ELBO: {self.history['ELBO'][i-1]:.6f}")
+                if curr_elbo < prev_elbo:
+                    elbo_dropped_count += 1
+                    print(f"Warning (Iteration {i}): ELBO dropped from {prev_elbo:.6f} "
+                          f"to {curr_elbo:.6f}.")
+
+                if np.abs(curr_elbo - prev_elbo) <= tol:
+                    print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
                     break
                 elif elbo_dropped_count > max_elbo_drops:
                     print("The optimization is halted due to numerical instabilities!")
                     break
+
+                if i > 2:
+                    prev_prev_elbo = self.history['ELBO'][i - 3]
+                    if abs(1. - prev_elbo / prev_prev_elbo) < abs(1. - curr_elbo / prev_elbo):
+                        divergence_count += 1
+
+                    if divergence_count > max_divergences:
+                        raise Exception("The optimization algorithm is not converging!")
 
         if i == max_iter:
             print("Max iterations reached without convergence. "

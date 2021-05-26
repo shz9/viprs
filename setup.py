@@ -45,6 +45,22 @@ ext_modules = cythonize([
     Extension("prs.src.vem_c",
               ["prs/src/vem_c.pyx"],
               libraries=["m"],
+              extra_compile_args=["-ffast-math"]),
+    Extension("prs.src.VIPRS",
+              ["prs/src/VIPRS.pyx"],
+              libraries=["m"],
+              extra_compile_args=["-ffast-math"]),
+    Extension("prs.src.VIPRSSBayes",
+              ["prs/src/VIPRSSBayes.pyx"],
+              libraries=["m"],
+              extra_compile_args=["-ffast-math"]),
+    Extension("prs.src.GibbsPRS",
+              ["prs/src/GibbsPRS.pyx"],
+              libraries=["m"],
+              extra_compile_args=["-ffast-math"]),
+    Extension("prs.src.GibbsPRSSBayes",
+              ["prs/src/GibbsPRSSBayes.pyx"],
+              libraries=["m"],
               extra_compile_args=["-ffast-math"])
 ], language_level="3")
 

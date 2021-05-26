@@ -7,26 +7,16 @@
 # cython: nonecheck=False
 # cython: language_level=3
 # cython: infer_types=True
+
 import numpy as np
 from scipy.stats import invgamma
-from libc.math cimport exp, log, sqrt
+from libc.math cimport log, sqrt
 from .PRSModel cimport PRSModel
-from .c_utils cimport dot, sigmoid
+from .c_utils cimport dot, sigmoid, elementwise_add_mult, clip
 from .run_stats cimport RunStats, RunStatsVec
 
 
-cdef class prs_gibbs(PRSModel):
-
-    cdef public:
-        double pi, sigma_beta, sigma_epsilon  # Global parameters
-        double bxxb  # genotypic variance
-        bint load_ld
-        tuple beta_prior, sigma_beta_prior, sigma_epsilon_prior
-        dict s_beta, s_gamma  # Sampled beta and gamma
-        dict beta_hat, ld, ld_bounds  # Inputs to the algorithm
-        dict fix_params  # Helpers
-        dict rs_gamma, rs_beta
-        RunStats rs_pi, rs_sigma_beta, rs_sigma_epsilon, rs_h2g  # Running stats objects
+cdef class GibbsPRS(PRSModel):
 
     def __init__(self, gdl,
                  beta_prior=(10., 1e4), sigma_beta_prior=(1e-4, 1e-4), sigma_epsilon_prior=(1., 1.),
@@ -41,22 +31,28 @@ cdef class prs_gibbs(PRSModel):
         self.sigma_beta_prior = sigma_beta_prior
         self.sigma_epsilon_prior = sigma_epsilon_prior
 
+        self.q = {}
+        self.s_beta = {}
+        self.rs_beta = {}
+        self.s_gamma = {}
+        self.rs_gamma = {}
+
         self.load_ld = load_ld
         self.ld = self.gdl.get_ld_matrices()
         self.ld_bounds = self.gdl.get_ld_boundaries()
+        self.beta_hat = {c: b.values for c, b in self.gdl.beta_hats.items()}
 
         self.fix_params = fix_params or {}
         self.fix_params = {k: np.array(v).flatten() for k, v in self.fix_params}
 
         self.initialize()
 
-    def initialize(self):
-        self.beta_hat = {c: b.values for c, b in self.gdl.beta_hats.items()}
+    cpdef initialize(self):
         self.initialize_theta()
         self.initialize_local_params()
         self.initialize_running_stats()
 
-    def initialize_running_stats(self):
+    cpdef initialize_running_stats(self):
 
         self.rs_beta = {c: RunStatsVec(c_size) for c, c_size in self.shapes.items()}
         self.rs_gamma = {c: RunStatsVec(c_size) for c, c_size in self.shapes.items()}
@@ -66,24 +62,24 @@ cdef class prs_gibbs(PRSModel):
         self.rs_sigma_epsilon = RunStats()
         self.rs_h2g = RunStats()
 
-    def initialize_theta(self):
+    cpdef initialize_theta(self):
 
         if 'sigma_beta' not in self.fix_params:
-            self.sigma_beta = 1./ self.M #np.random.uniform()
+            self.sigma_beta = np.random.uniform()
         else:
             self.sigma_beta = self.fix_params['sigma_beta'][0]
 
         if 'sigma_epsilon' not in self.fix_params:
-            self.sigma_epsilon = 0.8 #np.random.uniform()
+            self.sigma_epsilon = np.random.uniform()
         else:
             self.sigma_epsilon = self.fix_params['sigma_epsilon'][0]
 
         if 'pi' not in self.fix_params:
-            self.pi = 0.1 #np.random.uniform()
+            self.pi = np.random.uniform()
         else:
             self.pi = self.fix_params['pi'][0]
 
-    def initialize_local_params(self):
+    cpdef initialize_local_params(self):
 
         self.s_beta = {}
         self.s_gamma = {}
@@ -93,29 +89,25 @@ cdef class prs_gibbs(PRSModel):
             self.s_gamma[c] = np.random.binomial(1, self.pi, size=c_size).astype(np.float)
             self.s_beta[c] = np.random.normal(scale=np.sqrt(self.sigma_beta), size=c_size)
 
-    def sample_local_parameters(self):
+    cpdef sample_local_parameters(self):
         """
 
         :return:
         """
 
-        cdef unsigned int j, start, end
-        cdef double u_j, mu_beta_j
-        cdef double[::1] prod, s_beta, s_gamma, beta_hat, s_unif, s_norm, Dj
-        cdef long[:, ::1] ld_bound
-
-        # The prior variance parameter (can be defined in two ways):
-        cdef double prior_var = self.sigma_beta
-
-        # The denominator for the mu_beta updates:
-        cdef double denom = (1. + self.sigma_epsilon / (self.N * prior_var))
-
-        # The log(pi) for the gamma updates
-        cdef double logodds_pi = log(self.pi / (1. - self.pi))
-
-        # The variance of the conditional distribution:
-        cdef double s_var = self.sigma_epsilon / (self.N + self.sigma_epsilon / prior_var)
-        cdef double sqrt_s_var = sqrt(s_var), sqrt_prior_var = sqrt(prior_var)
+        cdef:
+            unsigned int j, start, end, j_idx
+            double u_j, mu_beta_j
+            double[::1] prod, s_beta, s_gamma, beta_hat, s_unif, s_norm, q, Dj
+            long[:, ::1] ld_bound
+            # The denominator for the mu_beta updates:
+            double denom = (1. + self.sigma_epsilon / (self.N * self.sigma_beta))
+            # The log(pi) for the gamma updates
+            double logodds_pi = log(self.pi / (1. - self.pi))
+            # The variance of the conditional distribution:
+            double s_var = self.sigma_epsilon / (self.N + self.sigma_epsilon / self.sigma_beta)
+            double sqrt_s_var = sqrt(s_var)
+            double sqrt_prior_var = sqrt(self.sigma_beta)
 
         for c, c_size in self.shapes.items():
             beta_hat = self.beta_hat[c]
@@ -124,17 +116,19 @@ cdef class prs_gibbs(PRSModel):
             ld_bound = self.ld_bounds[c]
             s_unif = np.random.uniform(size=c_size)
             s_norm = np.random.normal(size=c_size)
+            q = np.zeros(shape=c_size)
 
             prod = np.multiply(s_gamma, s_beta)
 
             for j, Dj in enumerate(self.ld[c]):
 
                 start, end = ld_bound[:, j]
+                j_idx = j - start
 
                 mu_beta_j = (beta_hat[j] - dot(Dj, prod[start: end]) +
-                                  Dj[j - start]*prod[j]) / denom
+                                  Dj[j_idx]*prod[j]) / denom
 
-                u_j = (logodds_pi + .5*log(s_var / prior_var) +
+                u_j = (logodds_pi + .5*log(s_var / self.sigma_beta) +
                        (.5/s_var)*mu_beta_j*mu_beta_j)
 
                 if s_unif[j] > sigmoid(u_j):
@@ -146,25 +140,38 @@ cdef class prs_gibbs(PRSModel):
 
                 prod[j] = s_gamma[j]*s_beta[j]
 
-    def sample_global_parameters(self):
-        """
-        In the M-step, we update the global parameters of
-        the model.
-        :return:
-        """
+                if j_idx > 0:
+                    # Update the q factor for snp i by adding the contribution of previous SNPs.
+                    q[j] = dot(Dj[:j_idx], prod[start: j])
 
-        n_causal = np.sum([
-            np.sum(self.s_gamma[c])
-            for c in self.shapes
-        ])
+                    if prod[j] != 0.:
+                        # Update the q factors for all previously updated SNPs that are in LD with SNP j
+                        q[start: j] = elementwise_add_mult(q[start: j], Dj[:j_idx], prod[j])
+
+            self.q[c] = np.array(q)
+
+    cpdef sample_pi(self):
 
         # Update pi:
         if 'pi' not in self.fix_params:
+
+            n_causal = np.sum([
+                np.sum(self.s_gamma[c])
+                for c in self.shapes
+            ])
+
             self.pi = np.random.beta(self.beta_prior[0] + n_causal,
                                      self.beta_prior[1] + (self.M - n_causal))
 
-        # Update sigma_beta:
+    cpdef sample_sigma_beta(self):
+
         if 'sigma_beta' not in self.fix_params:
+
+            n_causal = np.sum([
+                np.sum(self.s_gamma[c])
+                for c in self.shapes
+            ])
+
             sum_beta_sq = np.sum([
                 np.sum(self.s_gamma[c]*self.s_beta[c]**2)
                 for c in self.shapes
@@ -174,46 +181,48 @@ cdef class prs_gibbs(PRSModel):
                                        loc=0.,
                                        scale=self.sigma_beta_prior[1] + .5*sum_beta_sq).rvs()
 
-        # Update sigma_epsilon
-
-        cdef double bxxb = 0., ssr = 0.
-        cdef unsigned int i, j, c_size
-        cdef double[::1] s_gamma, s_beta, beta_hat, Di
-        cdef long[:, ::1] ld_bound
-
-        for c, c_size in self.shapes.items():
-
-            beta_hat = self.beta_hat[c]
-            s_gamma = self.s_gamma[c]
-            s_beta = self.s_beta[c]
-            ld_bound = self.ld_bounds[c]
-
-            for i, Di in enumerate(self.ld[c]):
-
-                if s_gamma[i] == 0:
-                    continue
-
-                ssr -= s_beta[i] * beta_hat[i]
-
-                bxxb += .5 * s_beta[i] * s_beta[i]
-
-                for j in range(i + 1, ld_bound[1, i]):
-                    bxxb += Di[j - ld_bound[0, i]] * s_beta[i] * s_gamma[j] * s_beta[j]
-
-        ssr = 1. + 2.*(ssr + bxxb)
-        self.bxxb = 2. * bxxb
+    cpdef sample_sigma_epsilon(self):
 
         if 'sigma_epsilon' not in self.fix_params:
 
+            sigma_g = 0.
+            ssr = 0.
+
+            for c, c_size in self.shapes.items():
+                beta_hat = self.beta_hat[c]
+                prod = np.multiply(self.s_gamma[c], self.s_beta[c])
+                q = self.q[c]
+
+                sigma_g += (
+                        np.dot(prod, prod) +
+                        np.dot(prod, q)
+                )
+
+                ssr += - 2. * np.dot(prod, beta_hat)
+
+            ssr = clip(1. + ssr + sigma_g, 1e-12, 1e12)
+
+            self.sigma_g = sigma_g
             self.sigma_epsilon = invgamma(self.sigma_epsilon_prior[0] + .5*self.N,
                                           loc=0.,
                                           scale=self.sigma_epsilon_prior[1] + .5*self.N*ssr).rvs()
 
-    def get_heritability(self):
+
+    cpdef sample_global_parameters(self):
+
+        self.sample_pi()
+        self.sample_sigma_beta()
+        self.sample_sigma_epsilon()
+
+    cpdef get_proportion_causal(self):
+
+        return self.rs_pi.mean()
+
+    cpdef get_heritability(self):
 
         return self.rs_h2g.mean()
 
-    def fit(self, n_samples=10000, burn_in=2000, continued=False):
+    cpdef fit(self, n_samples=10000, burn_in=2000, continued=False):
 
         if not continued:
             self.initialize()
@@ -237,7 +246,7 @@ cdef class prs_gibbs(PRSModel):
                 self.rs_pi.push(self.pi)
                 self.rs_sigma_beta.push(self.sigma_beta)
                 self.rs_sigma_epsilon.push(self.sigma_epsilon)
-                self.rs_h2g.push(self.bxxb / (self.bxxb + self.sigma_epsilon))
+                self.rs_h2g.push(self.sigma_g / (self.sigma_g + self.sigma_epsilon))
 
         self.pip = {c : rs.mean() for c, rs in self.rs_gamma.items()}
         self.inf_beta = {c : rs.mean() for c, rs in self.rs_beta.items()}
