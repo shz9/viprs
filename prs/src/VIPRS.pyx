@@ -10,6 +10,7 @@
 
 import numpy as np
 cimport numpy as np
+from tqdm import tqdm
 from libc.math cimport log
 from .PRSModel cimport PRSModel
 from .c_utils cimport dot, elementwise_add_mult, sigmoid, clip
@@ -37,13 +38,15 @@ cdef class VIPRS(PRSModel):
         self.beta_hat = {c: b.values for c, b in self.gdl.beta_hats.items()}
 
         self.fix_params = fix_params or {}
-        self.fix_params = {k: np.array(v).flatten() for k, v in self.fix_params.items()}
 
         self.history = {}
 
         self.initialize()
 
     cpdef initialize(self):
+
+        print("> Initializing model parameters")
+
         self.initialize_variational_params()
         self.initialize_theta()
         self.init_history()
@@ -65,17 +68,17 @@ cdef class VIPRS(PRSModel):
         """
 
         if 'sigma_beta' not in self.fix_params:
-            self.sigma_beta = np.random.uniform()
+            self.sigma_beta = np.random.uniform(low=1e-6, high=.1)
         else:
             self.sigma_beta = self.fix_params['sigma_beta'][0]
 
         if 'sigma_epsilon' not in self.fix_params:
-            self.sigma_epsilon = np.random.uniform()
+            self.sigma_epsilon = np.random.uniform(low=.5, high=1.)
         else:
             self.sigma_epsilon = self.fix_params['sigma_epsilon'][0]
 
         if 'pi' not in self.fix_params:
-            self.pi = np.random.uniform()
+            self.pi = np.random.uniform(low=1. / self.M, high=.5)
         else:
             self.pi = self.fix_params['pi'][0]
 
@@ -269,7 +272,7 @@ cdef class VIPRS(PRSModel):
 
         return h2g
 
-    cpdef fit(self, max_iter=1000, continued=False, tol=1e-6, max_elbo_drops=10, max_divergences=10):
+    cpdef fit(self, max_iter=1000, continued=False, tol=1e-6, max_elbo_drops=10):
 
         if not continued:
             self.initialize()
@@ -277,11 +280,12 @@ cdef class VIPRS(PRSModel):
         if self.load_ld:
             self.gdl.load_ld()
 
-        divergence_count = 0
         elbo_dropped_count = 0
         converged = False
 
-        for i in range(1, max_iter + 1):
+        print("> Performing model fit...")
+
+        for i in tqdm(range(1, max_iter + 1)):
             self.e_step()
             self.m_step()
 
@@ -305,12 +309,9 @@ cdef class VIPRS(PRSModel):
                     break
 
                 if i > 2:
-                    prev_prev_elbo = self.history['ELBO'][i - 3]
-                    if abs(1. - prev_elbo / prev_prev_elbo) < abs(1. - curr_elbo / prev_elbo):
-                        divergence_count += 1
-
-                    if divergence_count > max_divergences:
-                        raise Exception("The optimization algorithm is not converging!")
+                    if abs((curr_elbo - prev_elbo) / prev_elbo) > 1.:
+                        raise Exception(f"Stopping at iteration {i}: "
+                                        f"The optimization algorithm is not converging!")
 
         if i == max_iter:
             print("Max iterations reached without convergence. "

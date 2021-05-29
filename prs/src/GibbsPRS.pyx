@@ -9,6 +9,7 @@
 # cython: infer_types=True
 
 import numpy as np
+from tqdm import tqdm
 from scipy.stats import invgamma
 from libc.math cimport log, sqrt
 from .PRSModel cimport PRSModel
@@ -48,6 +49,9 @@ cdef class GibbsPRS(PRSModel):
         self.initialize()
 
     cpdef initialize(self):
+
+        print("> Initializing model parameters")
+
         self.initialize_theta()
         self.initialize_local_params()
         self.initialize_running_stats()
@@ -65,17 +69,17 @@ cdef class GibbsPRS(PRSModel):
     cpdef initialize_theta(self):
 
         if 'sigma_beta' not in self.fix_params:
-            self.sigma_beta = np.random.uniform()
+            self.sigma_beta = np.random.uniform(low=1e-6, high=.1)
         else:
             self.sigma_beta = self.fix_params['sigma_beta'][0]
 
         if 'sigma_epsilon' not in self.fix_params:
-            self.sigma_epsilon = np.random.uniform()
+            self.sigma_epsilon = np.random.uniform(low=.5, high=1.)
         else:
             self.sigma_epsilon = self.fix_params['sigma_epsilon'][0]
 
         if 'pi' not in self.fix_params:
-            self.pi = np.random.uniform()
+            self.pi = np.random.uniform(low=1. / self.M, high=.5)
         else:
             self.pi = self.fix_params['pi'][0]
 
@@ -233,7 +237,9 @@ cdef class GibbsPRS(PRSModel):
         self.pip = self.s_gamma.copy()
         self.inf_beta = self.s_beta.copy()
 
-        for i in range(burn_in + n_samples):
+        print("> Sampling from the posterior...")
+
+        for i in tqdm(range(burn_in + n_samples)):
             self.sample_local_parameters()
             self.sample_global_parameters()
 
@@ -250,8 +256,5 @@ cdef class GibbsPRS(PRSModel):
 
         self.pip = {c : rs.mean() for c, rs in self.rs_gamma.items()}
         self.inf_beta = {c : rs.mean() for c, rs in self.rs_beta.items()}
-
-        if self.load_ld:
-            self.gdl.release_ld()
 
         return self
