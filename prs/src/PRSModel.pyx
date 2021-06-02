@@ -41,16 +41,18 @@ cdef class PRSModel:
     cpdef get_inf_beta(self):
         return self.inf_beta
 
-    cpdef predict_phenotype(self):
+    cpdef predict(self, gdl=None):
 
         if self.inf_beta is None:
             raise Exception("Inferred betas are None. Call `.fit()` first.")
 
-        index = self.gdl.test_idx
-        prs = np.zeros_like(index, dtype=float)
+        if gdl is None:
+            gdl = self.gdl
 
-        for c in self.gdl.genotypes:
-            prs += np.dot(self.gdl.genotypes[c]['G'][index, :], self.inf_beta[c])
+        prs = np.zeros(gdl.N, dtype=float)
+
+        for c in gdl.genotypes:
+            prs += np.dot(gdl.genotypes[c]['G'], self.inf_beta[c])
 
         return prs
 

@@ -44,7 +44,6 @@ cdef class GibbsPRS(PRSModel):
         self.beta_hat = {c: b.values for c, b in self.gdl.beta_hats.items()}
 
         self.fix_params = fix_params or {}
-        self.fix_params = {k: np.array(v).flatten() for k, v in self.fix_params}
 
         self.initialize()
 
@@ -71,17 +70,17 @@ cdef class GibbsPRS(PRSModel):
         if 'sigma_beta' not in self.fix_params:
             self.sigma_beta = np.random.uniform(low=1e-6, high=.1)
         else:
-            self.sigma_beta = self.fix_params['sigma_beta'][0]
+            self.sigma_beta = self.fix_params['sigma_beta']
 
         if 'sigma_epsilon' not in self.fix_params:
             self.sigma_epsilon = np.random.uniform(low=.5, high=1.)
         else:
-            self.sigma_epsilon = self.fix_params['sigma_epsilon'][0]
+            self.sigma_epsilon = self.fix_params['sigma_epsilon']
 
         if 'pi' not in self.fix_params:
             self.pi = np.random.uniform(low=1. / self.M, high=.5)
         else:
-            self.pi = self.fix_params['pi'][0]
+            self.pi = self.fix_params['pi']
 
     cpdef initialize_local_params(self):
 
@@ -239,7 +238,7 @@ cdef class GibbsPRS(PRSModel):
 
         print("> Sampling from the posterior...")
 
-        for i in tqdm(range(burn_in + n_samples)):
+        for i in tqdm(range(n_samples)):
             self.sample_local_parameters()
             self.sample_global_parameters()
 

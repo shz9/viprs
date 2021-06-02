@@ -70,17 +70,17 @@ cdef class VIPRS(PRSModel):
         if 'sigma_beta' not in self.fix_params:
             self.sigma_beta = np.random.uniform(low=1e-6, high=.1)
         else:
-            self.sigma_beta = self.fix_params['sigma_beta'][0]
+            self.sigma_beta = self.fix_params['sigma_beta']
 
         if 'sigma_epsilon' not in self.fix_params:
             self.sigma_epsilon = np.random.uniform(low=.5, high=1.)
         else:
-            self.sigma_epsilon = self.fix_params['sigma_epsilon'][0]
+            self.sigma_epsilon = self.fix_params['sigma_epsilon']
 
         if 'pi' not in self.fix_params:
             self.pi = np.random.uniform(low=1. / self.M, high=.5)
         else:
-            self.pi = self.fix_params['pi'][0]
+            self.pi = self.fix_params['pi']
 
     cpdef initialize_variational_params(self):
         """
@@ -301,7 +301,7 @@ cdef class VIPRS(PRSModel):
                     print(f"Warning (Iteration {i}): ELBO dropped from {prev_elbo:.6f} "
                           f"to {curr_elbo:.6f}.")
 
-                if np.abs(curr_elbo - prev_elbo) <= tol:
+                if abs(curr_elbo - prev_elbo) <= tol:
                     print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
                     break
                 elif elbo_dropped_count > max_elbo_drops:
@@ -309,7 +309,7 @@ cdef class VIPRS(PRSModel):
                     break
 
                 if i > 2:
-                    if abs((curr_elbo - prev_elbo) / prev_elbo) > 1.:
+                    if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 10.:
                         raise Exception(f"Stopping at iteration {i}: "
                                         f"The optimization algorithm is not converging!")
 

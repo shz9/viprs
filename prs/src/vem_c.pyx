@@ -45,7 +45,6 @@ cdef class vem_prs(PRSModel):
 
         self.scale_prior = scale_prior
         self.fix_params = fix_params or {}
-        self.fix_params = {k: np.array(v).flatten() for k, v in self.fix_params.items()}
 
         self.history = {}
 
@@ -71,17 +70,17 @@ cdef class vem_prs(PRSModel):
         if 'sigma_beta' not in self.fix_params:
             self.sigma_beta = np.random.uniform(low=1e-6, high=.1)
         else:
-            self.sigma_beta = self.fix_params['sigma_beta'][0]
+            self.sigma_beta = self.fix_params['sigma_beta']
 
         if 'sigma_epsilon' not in self.fix_params:
             self.sigma_epsilon = np.random.uniform(low=.5, high=1.)
         else:
-            self.sigma_epsilon = self.fix_params['sigma_epsilon'][0]
+            self.sigma_epsilon = self.fix_params['sigma_epsilon']
 
         if 'pi' not in self.fix_params:
             self.pi = np.random.uniform(low=1./self.M, high=.5)
         else:
-            self.pi = self.fix_params['pi'][0]
+            self.pi = self.fix_params['pi']
 
     cpdef initialize_variational_params(self):
 

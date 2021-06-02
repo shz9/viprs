@@ -13,7 +13,7 @@ cdef class PRSModel:
     cpdef get_pip(self)
     cpdef get_inf_beta(self)
 
-    cpdef predict_phenotype(self)
+    cpdef predict(self, gdl=*)
 
     cpdef read_inferred_params(self, f_name)
     cpdef write_inferred_params(self, f_name)
