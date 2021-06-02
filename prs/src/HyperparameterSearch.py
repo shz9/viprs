@@ -65,7 +65,10 @@ class HyperparameterSearch(object):
                           n_calls=n_calls,  # the number of evaluations of f
                           n_random_starts=n_random_starts)  # the random seed
 
-        self.prs_m.fix_params = dict(zip(opt_params, res.x))
+        final_best_params = dict(zip(opt_params, res.x))
+        print("Bayesian optimization identified best hyperparameters as:", final_best_params)
+
+        self.prs_m.fix_params = final_best_params
         return self.prs_m.fit()
 
     def fit_grid_search(self, opt_params=('sigma_epsilon', 'pi'),
@@ -94,12 +97,15 @@ class HyperparameterSearch(object):
                 max_objective = objective
                 best_params = copy.deepcopy(p)
 
-        self.prs_m.fix_params = dict(zip(opt_params, best_params))
+        final_best_params = dict(zip(opt_params, best_params))
+        print("Grid search identified best hyperparameters as:", final_best_params)
+
+        self.prs_m.fix_params = final_best_params
         return self.prs_m.fit()
 
 
 def fit_model_averaging(vi_prs_m, opt_params=('sigma_epsilon', 'pi'),
-                        n_steps=10, max_iter=100, tol=1e-4):
+                        n_steps=10, max_iter=200, tol=1e-4):
     steps = {
         'sigma_epsilon': np.linspace(1. / n_steps, 1., n_steps),
         'pi': np.clip(10. ** (-np.linspace(np.floor(np.log10(vi_prs_m.M)), 0., n_steps)),
