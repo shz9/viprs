@@ -62,11 +62,15 @@ cdef class PRSModel:
         self.pip = {}
         self.inf_beta = {}
 
-        # TODO: make sure that the SNP order in the
-        # read file is the same as in the genotype matrix...
         for c, c_size in self.shapes.items():
-            self.pip[c] = df.loc[df['CHR'] == c, 'PIP']
-            self.inf_beta[c] = df.loc[df['CHR'] == c, 'BETA']
+
+            c_df = pd.DataFrame({'CHR': c,
+                                 'SNP': self.gdl.genotypes[c]['G'].variant.values})
+
+            c_df = c_df.merge(df, how='left').fillna(0.)
+
+            self.pip[c] = c_df['PIP'].values
+            self.inf_beta[c] = c_df['BETA'].values
 
     cpdef write_inferred_params(self, f_name):
 

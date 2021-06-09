@@ -230,7 +230,7 @@ cdef class VIPRS(PRSModel):
 
         ent += .5 * self.M * np.log(2. * np.pi * np.e * self.sigma_beta)
 
-        for c in self.var_mu_beta:
+        for c in self.shapes:
             beta_hat = self.beta_hat[c]
             gamma_mu = self.var_gamma[c] * self.var_mu_beta[c]
             gamma_mu_sig = self.var_gamma[c] * (self.var_mu_beta[c] ** 2 + self.var_sigma_beta[c])
@@ -272,7 +272,10 @@ cdef class VIPRS(PRSModel):
 
         return h2g
 
-    cpdef fit(self, max_iter=1000, continued=False, tol=1e-6, max_elbo_drops=10):
+    cpdef fit(self, max_iter=1000, continued=False, ftol=1e-4, xtol=1e-4, max_elbo_drops=10):
+        """
+        TODO: implement ftol and xtol as stopping criteria...
+        """
 
         if not continued:
             self.initialize()
@@ -301,7 +304,7 @@ cdef class VIPRS(PRSModel):
                     print(f"Warning (Iteration {i}): ELBO dropped from {prev_elbo:.6f} "
                           f"to {curr_elbo:.6f}.")
 
-                if abs(curr_elbo - prev_elbo) <= tol:
+                if abs(curr_elbo - prev_elbo) <= ftol:
                     print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
                     break
                 elif elbo_dropped_count > max_elbo_drops:
