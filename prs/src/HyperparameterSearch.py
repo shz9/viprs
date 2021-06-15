@@ -48,7 +48,7 @@ class HyperparameterSearch(object):
         def opt_func(p):
             self.prs_m.fix_params = dict(zip(opt_params, p))
             try:
-                self.prs_m.fit(max_iter=max_iter, tol=tol)
+                self.prs_m.fit(max_iter=max_iter, ftol=tol, xtol=tol)
                 return -self.objective()
             except Exception as e:
                 return 1e12
@@ -88,7 +88,7 @@ class HyperparameterSearch(object):
             self.prs_m.fix_params = dict(zip(opt_params, p))
 
             try:
-                self.prs_m.fit(max_iter=max_iter, tol=tol)
+                self.prs_m.fit(max_iter=max_iter, ftol=tol, xtol=tol)
             except Exception:
                 continue
 
@@ -123,7 +123,7 @@ def fit_model_averaging(vi_prs_m, opt_params=('sigma_epsilon', 'pi'),
         vi_prs_m.fix_params = dict(zip(opt_params, p))
 
         try:
-            vi_prs_m.fit(max_iter=max_iter, tol=tol)
+            vi_prs_m.fit(max_iter=max_iter, ftol=tol, xtol=tol)
         except Exception as e:
             continue
 

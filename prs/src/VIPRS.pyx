@@ -273,9 +273,6 @@ cdef class VIPRS(PRSModel):
         return h2g
 
     cpdef fit(self, max_iter=1000, continued=False, ftol=1e-4, xtol=1e-4, max_elbo_drops=10):
-        """
-        TODO: implement ftol and xtol as stopping criteria...
-        """
 
         if not continued:
             self.initialize()
@@ -307,6 +304,9 @@ cdef class VIPRS(PRSModel):
                 if abs(curr_elbo - prev_elbo) <= ftol:
                     print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
                     break
+                elif max([np.abs(v - self.pip[c]).max() for c, v in self.var_gamma.items()]) <= xtol:
+                    print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
+                    break
                 elif elbo_dropped_count > max_elbo_drops:
                     print("The optimization is halted due to numerical instabilities!")
                     break
@@ -317,12 +317,12 @@ cdef class VIPRS(PRSModel):
                                         f"The optimization algorithm is not converging!\n"
                                         f"Previous ELBO: {prev_elbo:.6f} | Current ELBO: {curr_elbo:.6f}")
 
-        if i == max_iter:
-            print("Max iterations reached without convergence. "
-                  "You may need to run the model for more iterations.")
+            self.pip = {c: v.copy() for c, v in self.var_gamma.items()}
+            self.inf_beta = {c: v * self.var_mu_beta[c]
+                             for c, v in self.var_gamma.items()}
 
-        self.pip = self.var_gamma
-        self.inf_beta = {c: self.var_gamma[c] * self.var_mu_beta[c]
-                         for c, v in self.var_gamma.items()}
+        if i == max_iter:
+            print("Warning: Max iterations reached without convergence. "
+                  "You may need to run the model for more iterations.")
 
         return self
