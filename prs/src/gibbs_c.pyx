@@ -90,7 +90,7 @@ cdef class prs_gibbs(PRSModel):
 
         for c, c_size in self.shapes.items():
 
-            self.s_gamma[c] = np.random.binomial(1, self.pi, size=c_size).astype(np.float)
+            self.s_gamma[c] = np.random.binomial(1, self.pi, size=c_size).astype(np.float64)
             self.s_beta[c] = np.random.normal(scale=np.sqrt(self.sigma_beta), size=c_size)
 
     cpdef sample_local_parameters(self):

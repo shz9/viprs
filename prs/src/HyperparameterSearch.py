@@ -105,7 +105,7 @@ class HyperparameterSearch(object):
 
 
 def fit_model_averaging(vi_prs_m, opt_params=('sigma_epsilon', 'pi'),
-                        n_steps=10, max_iter=200, tol=1e-4):
+                        n_steps=10, max_iter=100, tol=1e-4):
     steps = {
         'sigma_epsilon': np.linspace(1. / n_steps, 1., n_steps),
         'pi': np.clip(10. ** (-np.linspace(np.floor(np.log10(vi_prs_m.M)), 0., n_steps)),

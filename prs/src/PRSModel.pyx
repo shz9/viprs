@@ -56,9 +56,18 @@ cdef class PRSModel:
 
         return prs
 
-    cpdef read_inferred_params(self, f_name):
+    cpdef read_inferred_params(self, f_names):
 
-        df = pd.read_csv(f_name, sep="\t")
+        if isinstance(f_names, str):
+            f_names = [f_names]
+
+        eff_table = []
+
+        for f_name in f_names:
+            eff_table.append(pd.read_csv(f_name, sep="\t"))
+
+        eff_table = pd.concat(eff_table)
+
         self.pip = {}
         self.inf_beta = {}
 
@@ -66,8 +75,7 @@ cdef class PRSModel:
 
             c_df = pd.DataFrame({'CHR': c,
                                  'SNP': self.gdl.genotypes[c]['G'].variant.values})
-
-            c_df = c_df.merge(df, how='left').fillna(0.)
+            c_df = c_df.merge(eff_table, how='left').fillna(0.)
 
             self.pip[c] = c_df['PIP'].values
             self.inf_beta[c] = c_df['BETA'].values
