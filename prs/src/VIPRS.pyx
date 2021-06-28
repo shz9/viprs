@@ -313,6 +313,7 @@ cdef class VIPRS(PRSModel):
 
                 if i > 2:
                     if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 10.:
+                        # TODO: change the generic exception.
                         raise Exception(f"Stopping at iteration {i}: "
                                         f"The optimization algorithm is not converging!\n"
                                         f"Previous ELBO: {prev_elbo:.6f} | Current ELBO: {curr_elbo:.6f}")

@@ -44,7 +44,7 @@ cdef class PRSModel:
     cpdef predict(self, gdl=None):
 
         if self.inf_beta is None:
-            raise Exception("Inferred betas are None. Call `.fit()` first.")
+            raise Exception("Inferred betas are not set. Call `.fit()` first.")
 
         if gdl is None:
             gdl = self.gdl
@@ -83,10 +83,17 @@ cdef class PRSModel:
     cpdef write_inferred_params(self, f_name):
 
         dfs = []
+
+        snps = self.gdl.snps
+        ref_allel = self.gdl.ref_alleles
+        alt_allel = self.gdl.alt_alleles
+
         for c, betas in self.inf_beta.items():
             dfs.append(
                 pd.DataFrame({'CHR': c,
-                              'SNP': self.gdl.snps[c],
+                              'SNP': snps[c],
+                              'A1': alt_allel[c],
+                              'A2': ref_allel[c],
                               'PIP': self.pip[c],
                               'BETA': betas})
             )
