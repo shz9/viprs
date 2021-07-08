@@ -8,10 +8,7 @@
 # cython: language_level=3
 # cython: infer_types=True
 
-cimport cython
 import pandas as pd
-import numpy as np
-cimport numpy as np
 
 cdef class PRSModel:
 
@@ -49,12 +46,7 @@ cdef class PRSModel:
         if gdl is None:
             gdl = self.gdl
 
-        prs = np.zeros(gdl.N, dtype=float)
-
-        for c in gdl.genotypes:
-            prs += np.dot(gdl.genotypes[c]['G'], self.inf_beta[c])
-
-        return prs
+        return gdl.predict(self.inf_beta)
 
     cpdef read_inferred_params(self, f_names):
 
@@ -74,7 +66,7 @@ cdef class PRSModel:
         for c, c_size in self.shapes.items():
 
             c_df = pd.DataFrame({'CHR': c,
-                                 'SNP': self.gdl.genotypes[c]['G'].variant.values})
+                                 'SNP': self.gdl.genotypes[c].variant.values})
             c_df = c_df.merge(eff_table, how='left').fillna(0.)
 
             self.pip[c] = c_df['PIP'].values

@@ -13,6 +13,7 @@ cimport numpy as np
 from tqdm import tqdm
 from libc.math cimport log
 from .PRSModel cimport PRSModel
+from .exceptions import OptimizationDivergence
 from .c_utils cimport dot, elementwise_add_mult, sigmoid, clip
 
 
@@ -35,7 +36,7 @@ cdef class VIPRS(PRSModel):
         self.load_ld = load_ld
         self.ld = self.gdl.get_ld_matrices()
         self.ld_bounds = self.gdl.get_ld_boundaries()
-        self.beta_hat = {c: b.values for c, b in self.gdl.beta_hats.items()}
+        self.beta_hat = self.gdl.beta_hats
 
         self.fix_params = fix_params or {}
 
@@ -313,10 +314,9 @@ cdef class VIPRS(PRSModel):
 
                 if i > 2:
                     if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 10.:
-                        # TODO: change the generic exception.
-                        raise Exception(f"Stopping at iteration {i}: "
-                                        f"The optimization algorithm is not converging!\n"
-                                        f"Previous ELBO: {prev_elbo:.6f} | Current ELBO: {curr_elbo:.6f}")
+                        raise OptimizationDivergence(f"Stopping at iteration {i}: "
+                                                     f"The optimization algorithm is not converging!\n"
+                                                     f"Previous ELBO: {prev_elbo:.6f} | Current ELBO: {curr_elbo:.6f}")
 
             self.pip = {c: v.copy() for c, v in self.var_gamma.items()}
             self.inf_beta = {c: v * self.var_mu_beta[c]
