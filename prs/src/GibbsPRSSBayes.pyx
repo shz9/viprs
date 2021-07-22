@@ -32,7 +32,7 @@ cdef class GibbsPRSSBayes(GibbsPRS):
                          sigma_epsilon_prior=sigma_epsilon_prior,
                          fix_params=fix_params, load_ld=load_ld)
 
-        self.yy = {c: yy.values for c, yy in self.gdl.compute_yy_per_snp().items()}
+        self.yy = self.gdl.compute_yy_per_snp()
         self.sig_e_snp = {}
 
     cpdef initialize_theta(self):

@@ -9,6 +9,7 @@
 # cython: infer_types=True
 
 import pandas as pd
+import os.path as osp
 
 cdef class PRSModel:
 
@@ -72,7 +73,7 @@ cdef class PRSModel:
             self.pip[c] = c_df['PIP'].values
             self.inf_beta[c] = c_df['BETA'].values
 
-    cpdef write_inferred_params(self, f_name):
+    cpdef write_inferred_params(self, f_name, per_chromosome=False):
 
         dfs = []
 
@@ -81,14 +82,19 @@ cdef class PRSModel:
         alt_allel = self.gdl.alt_alleles
 
         for c, betas in self.inf_beta.items():
-            dfs.append(
-                pd.DataFrame({'CHR': c,
+
+            df = pd.DataFrame({'CHR': c,
                               'SNP': snps[c],
                               'A1': alt_allel[c],
                               'A2': ref_allel[c],
                               'PIP': self.pip[c],
                               'BETA': betas})
-            )
 
-        dfs = pd.concat(dfs)
-        dfs.to_csv(f_name, sep="\t", index=False)
+            if per_chromosome:
+                df.to_csv(osp.join(f_name, f'chr_{c}.fit'), sep="\t", index=False)
+            else:
+                dfs.append(df)
+
+        if not per_chromosome:
+            dfs = pd.concat(dfs)
+            dfs.to_csv(f_name, sep="\t", index=False)
