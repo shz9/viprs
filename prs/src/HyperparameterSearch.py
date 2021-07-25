@@ -1,15 +1,49 @@
 import numpy as np
 from scipy import stats
 from skopt import gp_minimize
+from tqdm import tqdm
 import itertools
 import copy
+from .exceptions import OptimizationDivergence
+
+
+def generate_grid(M, n_steps=10, sigma_epsilon_steps=None, pi_steps=None, sigma_beta_steps=None):
+
+    if sigma_epsilon_steps is None:
+        sigma_epsilon_steps = n_steps
+    if pi_steps is None:
+        pi_steps = n_steps
+    if sigma_beta_steps is None:
+        sigma_beta_steps = n_steps
+
+    return {
+        'sigma_epsilon': np.linspace(1. / sigma_epsilon_steps, 1., sigma_epsilon_steps),
+        'sigma_beta': (1./M)*np.linspace(1. / sigma_beta_steps, 1., sigma_beta_steps),
+        'pi': np.clip(10. ** (-np.linspace(np.floor(np.log10(M)), 0., pi_steps)),
+                      a_min=1. / M, a_max=1. - 1. / M)
+    }
+
+
+def fit_model_fixed_params(vi_model, fixed_params, **fit_kwargs):
+
+    vi_model.fix_params = fixed_params
+
+    try:
+        vi_model.fit(**fit_kwargs)
+    except Exception as e:
+        raise e
+
+    return vi_model
+
 
 
 class HyperparameterSearch(object):
 
-    def __init__(self, prs_m, objective='ELBO', validation_gdl=None):
+    def __init__(self, prs_m, objective='ELBO', validation_gdl=None, verbose=False):
 
         self.prs_m = prs_m
+        self.prs_m.verbose = verbose
+        self.verbose = verbose
         self._opt_objective = objective
         self._validation_gdl = validation_gdl
 
@@ -50,8 +84,10 @@ class HyperparameterSearch(object):
             try:
                 self.prs_m.fit(max_iter=max_iter, ftol=tol, xtol=tol)
                 return -self.objective()
-            except Exception as e:
+            except OptimizationDivergence:
                 return 1e12
+            except Exception as e:
+                raise e
 
         param_bounds = {
             'sigma_epsilon': (1e-6, 1.),
@@ -71,25 +107,28 @@ class HyperparameterSearch(object):
         self.prs_m.fix_params = final_best_params
         return self.prs_m.fit()
 
-    def fit_grid_search(self, opt_params=('sigma_epsilon', 'pi'),
-                        n_steps=10, max_iter=100, tol=1e-4):
-
+    def fit_grid_search(self, opt_params=('sigma_epsilon', 'pi'), max_iter=100, tol=1e-4, **kwargs):
+        """
+        TODO: Update the code to parallelize over configurations.
+        :param opt_params:
+        :param max_iter:
+        :param tol:
+        :param kwargs:
+        :return:
+        """
         max_objective = -1e12
         best_params = None
 
-        steps = {
-            'sigma_epsilon': np.linspace(1. / n_steps, 1., n_steps),
-            'pi': np.clip(10. ** (-np.linspace(np.floor(np.log10(self.prs_m.M)), 0., n_steps)),
-                          a_min=1./self.prs_m.M, a_max=1. - 1. / self.prs_m.M)
-        }
+        steps = generate_grid(self.prs_m.M, **kwargs)
 
-        for p in itertools.product(*[steps[k] for k in opt_params]):
-
-            self.prs_m.fix_params = dict(zip(opt_params, p))
+        for p in tqdm(list(itertools.product(*[steps[k] for k in opt_params]))):
 
             try:
-                self.prs_m.fit(max_iter=max_iter, ftol=tol, xtol=tol)
-            except Exception:
+                self.prs_m = fit_model_fixed_params(self.prs_m, dict(zip(opt_params, p)),
+                                                    max_iter=max_iter, xtol=tol, ftol=tol)
+            except Exception as e:
+                if self.verbose:
+                    print(e)
                 continue
 
             objective = self.objective()
@@ -99,48 +138,52 @@ class HyperparameterSearch(object):
 
         final_best_params = dict(zip(opt_params, best_params))
         print("Grid search identified best hyperparameters as:", final_best_params)
+        print("Refitting the model with those hyperparameters...")
 
         self.prs_m.fix_params = final_best_params
         return self.prs_m.fit()
 
 
 def fit_model_averaging(vi_prs_m, opt_params=('sigma_epsilon', 'pi'),
-                        n_steps=10, max_iter=100, tol=1e-4):
-    steps = {
-        'sigma_epsilon': np.linspace(1. / n_steps, 1., n_steps),
-        'pi': np.clip(10. ** (-np.linspace(np.floor(np.log10(vi_prs_m.M)), 0., n_steps)),
-                      a_min=1. / vi_prs_m.M, a_max=1. - 1. / vi_prs_m.M)
-    }
+                        max_iter=100, tol=1e-4, verbose=False, obj_transform=lambda x: x, **kwargs):
+
+    """
+    TODO: Update the code to parallelize over configurations.
+    :param vi_prs_m:
+    :param opt_params:
+    :param max_iter:
+    :param tol:
+    :param kwargs:
+    :return:
+    """
+
+    steps = generate_grid(vi_prs_m.M, **kwargs)
 
     gamma = {c: np.zeros(c_size) for c, c_size in vi_prs_m.shapes.items()}
     mu_beta = {c: np.zeros(c_size) for c, c_size in vi_prs_m.shapes.items()}
-    h2g = 0.
-    pi = 0.
     elbo_sum = 0.
 
-    for p in itertools.product(*[steps[k] for k in opt_params]):
+    vi_prs_m.verbose = verbose
 
-        vi_prs_m.fix_params = dict(zip(opt_params, p))
+    for p in tqdm(list(itertools.product(*[steps[k] for k in opt_params]))):
 
         try:
-            vi_prs_m.fit(max_iter=max_iter, ftol=tol, xtol=tol)
+            vi_prs_m = fit_model_fixed_params(vi_prs_m, dict(zip(opt_params, p)),
+                                              max_iter=max_iter, xtol=tol, ftol=tol)
         except Exception as e:
+            if verbose:
+                print(e)
             continue
 
-        elbo = vi_prs_m.objective()
+        elbo = obj_transform(vi_prs_m.objective())
         elbo_sum += elbo
-        h2g += elbo * vi_prs_m.get_heritability()
-        pi += elbo * vi_prs_m.pi
 
         for c in vi_prs_m.shapes:
             gamma[c] += elbo * vi_prs_m.var_gamma[c]
             mu_beta[c] += elbo * vi_prs_m.var_mu_beta[c]
 
-    h2g /= elbo_sum
-    pi /= elbo_sum
-
     for c in vi_prs_m.shapes:
         gamma[c] /= elbo_sum
         mu_beta[c] /= elbo_sum
 
-    return gamma, mu_beta, h2g, pi
+    return gamma, mu_beta

@@ -19,7 +19,7 @@ from .c_utils cimport dot, elementwise_add_mult, sigmoid, clip
 
 cdef class VIPRS(PRSModel):
 
-    def __init__(self, gdl, fix_params=None, load_ld=True):
+    def __init__(self, gdl, fix_params=None, load_ld=True, verbose=True):
         """
         :param gdl: An instance of GWAS data loader
         :param fix_params: A dictionary of parameters with their fixed values.
@@ -40,13 +40,13 @@ cdef class VIPRS(PRSModel):
 
         self.fix_params = fix_params or {}
 
+        self.verbose = verbose
         self.history = {}
-
-        self.initialize()
 
     cpdef initialize(self):
 
-        print("> Initializing model parameters")
+        if self.verbose:
+            print("> Initializing model parameters")
 
         self.initialize_variational_params()
         self.initialize_theta()
@@ -284,9 +284,10 @@ cdef class VIPRS(PRSModel):
         elbo_dropped_count = 0
         converged = False
 
-        print("> Performing model fit...")
+        if self.verbose:
+            print("> Performing model fit...")
 
-        for i in tqdm(range(1, max_iter + 1)):
+        for i in tqdm(range(1, max_iter + 1), disable=not self.verbose):
             self.e_step()
             self.m_step()
 

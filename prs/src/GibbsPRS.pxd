@@ -5,7 +5,7 @@ cdef class GibbsPRS(PRSModel):
 
     cdef public:
         double pi, sigma_beta, sigma_epsilon, sigma_g  # Global parameters
-        bint load_ld
+        bint load_ld, verbose  # Binary flags
         tuple beta_prior, sigma_beta_prior, sigma_epsilon_prior
         dict q, s_beta, s_gamma  # q factor, Sampled beta and gamma
         dict beta_hat, ld, ld_bounds  # Inputs to the algorithm

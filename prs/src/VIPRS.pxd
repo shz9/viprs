@@ -5,7 +5,7 @@ cdef class VIPRS(PRSModel):
 
     cdef public:
         double pi, sigma_beta, sigma_epsilon  # Global hyper-parameters
-        bint load_ld  # Flag that specifies whether to load the LD matrix to memory
+        bint load_ld, verbose  # Binary flags
         dict q, var_mu_beta, var_sigma_beta, var_gamma  # Variational parameters
         dict beta_hat, ld, ld_bounds  # Inputs to the algorithm
         dict history, fix_params  # Helpers

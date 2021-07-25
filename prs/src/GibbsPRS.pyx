@@ -21,7 +21,7 @@ cdef class GibbsPRS(PRSModel):
 
     def __init__(self, gdl,
                  beta_prior=(10., 1e4), sigma_beta_prior=(1e-4, 1e-4), sigma_epsilon_prior=(1., 1.),
-                 fix_params=None, load_ld=True):
+                 fix_params=None, load_ld=True, verbose=True):
         """
         :param gdl: An instance of GWAS data loader
         """
@@ -43,13 +43,13 @@ cdef class GibbsPRS(PRSModel):
         self.ld_bounds = self.gdl.get_ld_boundaries()
         self.beta_hat = self.gdl.compute_xy_per_snp()
 
+        self.verbose = verbose
         self.fix_params = fix_params or {}
-
-        self.initialize()
 
     cpdef initialize(self):
 
-        print("> Initializing model parameters")
+        if self.verbose:
+            print("> Initializing model parameters")
 
         self.initialize_theta()
         self.initialize_local_params()
@@ -236,9 +236,10 @@ cdef class GibbsPRS(PRSModel):
         self.pip = self.s_gamma.copy()
         self.inf_beta = self.s_beta.copy()
 
-        print("> Sampling from the posterior...")
+        if self.verbose:
+            print("> Sampling from the posterior...")
 
-        for i in tqdm(range(n_samples)):
+        for i in tqdm(range(n_samples), disable=not self.verbose):
             self.sample_local_parameters()
             self.sample_global_parameters()
 
