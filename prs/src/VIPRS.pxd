@@ -9,6 +9,7 @@ cdef class VIPRS(PRSModel):
         dict q, var_mu_beta, var_sigma_beta, var_gamma  # Variational parameters
         dict beta_hat, ld, ld_bounds  # Inputs to the algorithm
         dict history, fix_params  # Helpers
+        int threads
 
     cpdef initialize(self)
     cpdef init_history(self)

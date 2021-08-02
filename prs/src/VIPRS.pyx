@@ -11,6 +11,7 @@
 import numpy as np
 cimport numpy as np
 from tqdm import tqdm
+from threadpoolctl import threadpool_limits
 from libc.math cimport log
 from .PRSModel cimport PRSModel
 from .exceptions import OptimizationDivergence
@@ -19,7 +20,7 @@ from .c_utils cimport dot, elementwise_add_mult, sigmoid, clip
 
 cdef class VIPRS(PRSModel):
 
-    def __init__(self, gdl, fix_params=None, load_ld=True, verbose=True):
+    def __init__(self, gdl, fix_params=None, load_ld=True, verbose=True, threads=4):
         """
         :param gdl: An instance of GWAS data loader
         :param fix_params: A dictionary of parameters with their fixed values.
@@ -28,6 +29,7 @@ cdef class VIPRS(PRSModel):
 
         super().__init__(gdl)
 
+        self.threads = threads
         self.var_mu_beta = {}
         self.var_sigma_beta = {}
         self.var_gamma = {}
@@ -286,42 +288,46 @@ cdef class VIPRS(PRSModel):
 
         if self.verbose:
             print("> Performing model fit...")
+            print(f"> Using up to {self.threads} threads.")
 
-        for i in tqdm(range(1, max_iter + 1), disable=not self.verbose):
-            self.e_step()
-            self.m_step()
+        with threadpool_limits(limits=self.threads, user_api='blas'):
 
-            self.history['ELBO'].append(self.objective())
+            for i in tqdm(range(1, max_iter + 1), disable=not self.verbose):
+                self.e_step()
+                self.m_step()
 
-            if i > 1:
+                self.history['ELBO'].append(self.objective())
 
-                curr_elbo = self.history['ELBO'][i - 1]
-                prev_elbo = self.history['ELBO'][i - 2]
+                if i > 1:
 
-                if curr_elbo < prev_elbo:
-                    elbo_dropped_count += 1
-                    print(f"Warning (Iteration {i}): ELBO dropped from {prev_elbo:.6f} "
-                          f"to {curr_elbo:.6f}.")
+                    curr_elbo = self.history['ELBO'][i - 1]
+                    prev_elbo = self.history['ELBO'][i - 2]
 
-                if abs(curr_elbo - prev_elbo) <= ftol:
-                    print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
-                    break
-                elif max([np.abs(v - self.pip[c]).max() for c, v in self.var_gamma.items()]) <= xtol:
-                    print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
-                    break
-                elif elbo_dropped_count > max_elbo_drops:
-                    print("The optimization is halted due to numerical instabilities!")
-                    break
+                    if curr_elbo < prev_elbo:
+                        elbo_dropped_count += 1
+                        print(f"Warning (Iteration {i}): ELBO dropped from {prev_elbo:.6f} "
+                              f"to {curr_elbo:.6f}.")
 
-                if i > 2:
-                    if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 10.:
-                        raise OptimizationDivergence(f"Stopping at iteration {i}: "
-                                                     f"The optimization algorithm is not converging!\n"
-                                                     f"Previous ELBO: {prev_elbo:.6f} | Current ELBO: {curr_elbo:.6f}")
+                    if abs(curr_elbo - prev_elbo) <= ftol:
+                        print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
+                        break
+                    elif max([np.abs(v - self.pip[c]).max() for c, v in self.var_gamma.items()]) <= xtol:
+                        print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
+                        break
+                    elif elbo_dropped_count > max_elbo_drops:
+                        print("The optimization is halted due to numerical instabilities!")
+                        break
 
-            self.pip = {c: v.copy() for c, v in self.var_gamma.items()}
-            self.inf_beta = {c: v * self.var_mu_beta[c]
-                             for c, v in self.var_gamma.items()}
+                    if i > 2:
+                        if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 10.:
+                            raise OptimizationDivergence(f"Stopping at iteration {i}: "
+                                                         f"The optimization algorithm is not converging!\n"
+                                                         f"Previous ELBO: {prev_elbo:.6f} | "
+                                                         f"Current ELBO: {curr_elbo:.6f}")
+
+                self.pip = {c: v.copy() for c, v in self.var_gamma.items()}
+                self.inf_beta = {c: v * self.var_mu_beta[c]
+                                 for c, v in self.var_gamma.items()}
 
         if i == max_iter:
             print("Warning: Max iterations reached without convergence. "

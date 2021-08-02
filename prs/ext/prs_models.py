@@ -177,7 +177,7 @@ class SBayesR(PRSModel):
 
     def create_ldm(self):
         sbayesr_ld_cmd = f"""
-            gctb_2.0/gctb --bfile {self.gdl.bed_files[0].replace('.bed', '')} \
+            ../external/gctb_2.0/gctb --bfile {self.gdl.bed_files[22].replace('.bed', '')} \
             --make-sparse-ldm --out temp/sbayesr/ldmat
         """
         run_shell_script(sbayesr_ld_cmd)
@@ -190,23 +190,23 @@ class SBayesR(PRSModel):
         ss_tables = ss_tables[['SNP', 'A1', 'A2', 'MAF', 'BETA', 'SE', 'PVAL', 'N']]
         ss_tables.columns = ['SNP', 'A1', 'A2', 'freq', 'b', 'se', 'p', 'n']
 
-        ss_tables.to_csv(f"temp/sbayesr/{self.gdl.phenotype_id}.ma", index=False, sep=" ")
+        ss_tables.to_csv(f"temp/sbayesr/pheno.ma", index=False, sep=" ")
 
         sbayesr_cmd = f"""
             ../external/gctb_2.0/gctb --sbayes R \
                  --ldm {self.ldm} \
                  --pi {','.join(map(str, self.pi))} \
                  --gamma {','.join(map(str, self.gamma))} \
-                 --gwas-summary temp/sbayesr/{self.gdl.phenotype_id}.ma \
+                 --gwas-summary temp/sbayesr/pheno.ma \
                  --chain-length {self.chain_length} \
                  --burn-in {self.burn_in} \
                  --out-freq {self.out_freq} \
-                 --out temp/sbayesr/{self.gdl.phenotype_id}
+                 --out temp/sbayesr/test
         """
 
         run_shell_script(sbayesr_cmd)
 
-        snp_effects = pd.read_csv(f"temp/sbayesr/{self.gdl.phenotype_id}.snpRes", sep="\s+")
+        snp_effects = pd.read_csv(f"temp/sbayesr/test.snpRes", sep="\s+")
 
         self.inf_beta = {}
         self.pip = {}
@@ -220,11 +220,11 @@ class SBayesR(PRSModel):
                                     index=self.gdl.beta_hats[i].index)
             self.pip[i][snp_effects['Name']] = snp_effects['PIP'].values
 
-        params = pd.read_csv(f"temp/sbayesr/{self.gdl.phenotype_id}.parRes", sep="\s+", skiprows=1)
+        params = pd.read_csv(f"temp/sbayesr/test.parRes", sep="\s+", skiprows=1)
         self.heritability = params.loc['hsq', 'Mean']
 
         # Delete temporary files:
-        delete_temp_files(f"temp/sbayesr/{self.gdl.phenotype_id}")
+        delete_temp_files(f"temp/sbayesr/test")
 
         return self
 
