@@ -3,8 +3,7 @@ from scipy import stats
 from skopt import gp_minimize
 from tqdm import tqdm
 import itertools
-from multiprocessing import Pool
-import copy
+import multiprocessing
 from pprint import pprint
 
 from .PRSModel import PRSModel
@@ -177,33 +176,32 @@ class GridSearch(HyperparameterSearch):
         print("> Performing Grid Search over the following grid:")
         pprint({k: v for k, v in steps.items() if k in self.opt_params})
 
-        pool = Pool(self.n_proc)
-
         opts = [(self.viprs, dict(zip(self.opt_params, p)), {'max_iter': max_iter, 'ftol': tol, 'xtol': tol})
                 for p in itertools.product(*[steps[k] for k in self.opt_params])]
 
         max_objective = -1e12
+        best_params = None
 
-        for idx, fit_result in tqdm(enumerate(pool.imap(fit_model_fixed_params, opts)), total=len(opts)):
+        ctx = multiprocessing.get_context("spawn")
 
-            if fit_result[0] is None:
-                continue
+        with ctx.Pool(self.n_proc, maxtasksperchild=1) as pool:
 
-            objective = self.objective(fit_result)
-            if objective > max_objective:
-                max_objective = objective
-                best_params = copy.deepcopy([opts[idx][1][opt] for opt in self.opt_params])
+            for idx, fit_result in tqdm(enumerate(pool.imap_unordered(fit_model_fixed_params, opts)), total=len(opts)):
 
-        pool.close()
-        pool.join()
+                if fit_result[0] is None:
+                    continue
 
-        final_best_params = dict(zip(self.opt_params, best_params))
+                objective = self.objective(fit_result)
+                if objective > max_objective:
+                    max_objective = objective
+                    best_params = opts[idx][1]
+
         print("> Grid search identified the best hyperparameters as:")
-        pprint(final_best_params)
+        pprint(best_params)
 
         print("> Refitting the model with the best hyperparameters...")
 
-        self.viprs.fix_params = final_best_params
+        self.viprs.fix_params = best_params
         return self.viprs.fit()
 
 
@@ -262,30 +260,28 @@ class BMA(PRSModel):
         print("> Performing Bayesian Model Averaging with the following grid:")
         pprint({k: v for k, v in steps.items() if k in self.opt_params})
 
-        pool = Pool(self.n_proc)
-
         opts = [(self.viprs, dict(zip(self.opt_params, p)), {'max_iter': max_iter, 'ftol': tol, 'xtol': tol})
                 for p in itertools.product(*[steps[k] for k in self.opt_params])]
 
         elbo_sum = 0.
 
-        for elbo, n_var_gamma, n_var_mu_beta, n_var_sigma_beta in \
-                tqdm(pool.imap(fit_model_fixed_params, opts), total=len(opts)):
+        ctx = multiprocessing.get_context("spawn")
 
-            if elbo is None:
-                continue
-            else:
-                elbo = self.obj_transform(elbo)
+        with ctx.Pool(self.n_proc, maxtasksperchild=1) as pool:
+            for elbo, n_var_gamma, n_var_mu_beta, n_var_sigma_beta in \
+                    tqdm(pool.imap_unordered(fit_model_fixed_params, opts), total=len(opts)):
 
-            elbo_sum += elbo
+                if elbo is None:
+                    continue
+                else:
+                    elbo = self.obj_transform(elbo)
 
-            for c in self.shapes:
-                self.var_gamma[c] += elbo * n_var_gamma[c]
-                self.var_mu_beta[c] += elbo * n_var_mu_beta[c]
-                self.var_sigma_beta[c] += elbo * n_var_sigma_beta[c]
+                elbo_sum += elbo
 
-        pool.close()
-        pool.join()
+                for c in self.shapes:
+                    self.var_gamma[c] += elbo * n_var_gamma[c]
+                    self.var_mu_beta[c] += elbo * n_var_mu_beta[c]
+                    self.var_sigma_beta[c] += elbo * n_var_sigma_beta[c]
 
         for c in self.shapes:
             self.var_gamma[c] /= elbo_sum
