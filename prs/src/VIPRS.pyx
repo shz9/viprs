@@ -10,6 +10,7 @@
 
 import numpy as np
 cimport numpy as np
+import warnings
 from tqdm import tqdm
 from threadpoolctl import threadpool_limits
 from libc.math cimport log
@@ -57,11 +58,7 @@ cdef class VIPRS(PRSModel):
     cpdef init_history(self):
 
         self.history = {
-            'ELBO': [],
-            'pi': [],
-            'sigma_beta': [],
-            'sigma_epsilon': [],
-            'heritability': []
+            'ELBO': []
         }
 
     cpdef initialize_theta(self):
@@ -305,8 +302,8 @@ cdef class VIPRS(PRSModel):
 
                     if curr_elbo < prev_elbo:
                         elbo_dropped_count += 1
-                        print(f"Warning (Iteration {i}): ELBO dropped from {prev_elbo:.6f} "
-                              f"to {curr_elbo:.6f}.")
+                        warnings.warn(f"Iteration {i}: ELBO dropped from {prev_elbo:.6f} "
+                                      f"to {curr_elbo:.6f}.")
 
                     if abs(curr_elbo - prev_elbo) <= ftol:
                         print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
@@ -315,7 +312,7 @@ cdef class VIPRS(PRSModel):
                         print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
                         break
                     elif elbo_dropped_count > max_elbo_drops:
-                        print("The optimization is halted due to numerical instabilities!")
+                        warnings.warn("The optimization is halted due to numerical instabilities!")
                         break
 
                     if i > 2:
@@ -330,7 +327,7 @@ cdef class VIPRS(PRSModel):
                                  for c, v in self.var_gamma.items()}
 
         if i == max_iter:
-            print("Warning: Max iterations reached without convergence. "
-                  "You may need to run the model for more iterations.")
+            warnings.warn("Max iterations reached without convergence. "
+                          "You may need to run the model for more iterations.")
 
         return self

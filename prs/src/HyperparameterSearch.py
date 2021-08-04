@@ -186,7 +186,7 @@ class GridSearch(HyperparameterSearch):
 
         with ctx.Pool(self.n_proc, maxtasksperchild=1) as pool:
 
-            for idx, fit_result in tqdm(enumerate(pool.imap_unordered(fit_model_fixed_params, opts)), total=len(opts)):
+            for idx, fit_result in tqdm(enumerate(pool.imap(fit_model_fixed_params, opts)), total=len(opts)):
 
                 if fit_result[0] is None:
                     continue
