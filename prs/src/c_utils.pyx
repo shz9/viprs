@@ -24,6 +24,12 @@ cdef double sigmoid(double x):
 @cython.wraparound(False)
 @cython.nonecheck(False)
 cdef double dot(double[::1] v1, double[::1] v2):
+    """
+    TODO: Figure out a way to parallelize this with prange
+    :param v1: 
+    :param v2: 
+    :return: 
+    """
 
     cdef unsigned int i, end = v1.shape[0]
     cdef double s = 0.
@@ -38,6 +44,13 @@ cdef double dot(double[::1] v1, double[::1] v2):
 @cython.wraparound(False)
 @cython.nonecheck(False)
 cdef double[::1] elementwise_add_mult(double[::1] v1, const double[::1] v2, double s):
+    """
+    TODO: Figure out a way to parallelize this with prange
+    :param v1: 
+    :param v2: 
+    :param s: 
+    :return: 
+    """
 
     cdef unsigned int i, end = v1.shape[0]
 

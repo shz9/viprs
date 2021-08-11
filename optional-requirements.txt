@@ -1,0 +1,1 @@
+scikit-optimize==0.8.1

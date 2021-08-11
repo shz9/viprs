@@ -1,6 +1,5 @@
 import numpy as np
 from scipy import stats
-from skopt import gp_minimize
 from tqdm import tqdm
 import itertools
 import multiprocessing
@@ -119,6 +118,8 @@ class BayesOpt(HyperparameterSearch):
         :param tol:
         :return:
         """
+
+        from skopt import gp_minimize
 
         def opt_func(p):
             fit_result = fit_model_fixed_params((self.viprs,

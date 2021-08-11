@@ -23,6 +23,7 @@ cdef class VIPRS(PRSModel):
 
     def __init__(self, gdl, fix_params=None, load_ld=True, verbose=True, threads=4):
         """
+        TODO: Restructure the code to use sample size per SNP instead of total GWAS sample size.
         :param gdl: An instance of GWAS data loader
         :param fix_params: A dictionary of parameters with their fixed values.
         :param load_ld: A flag that specifies whether to load the LD matrix to memory.
@@ -64,6 +65,7 @@ cdef class VIPRS(PRSModel):
     cpdef initialize_theta(self):
         """
         This method initializes the global hyper-parameters
+        TODO: Implement better strategies for initializing hyperparameters
         :return:
         """
 

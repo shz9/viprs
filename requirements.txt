@@ -1,0 +1,5 @@
+Cython==0.29.23
+threadpoolctl==2.1.0
+numpy==1.20.2
+tqdm==4.60.0
+zarr==2.7.1
