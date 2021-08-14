@@ -1,4 +1,5 @@
 *.ipynb_checkpoints
+*/dask-worker-space/*
 data
 *temp*
 build

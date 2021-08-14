@@ -6,7 +6,7 @@ cdef class VIPRS(PRSModel):
     cdef public:
         double pi, sigma_beta, sigma_epsilon  # Global hyper-parameters
         bint load_ld, verbose  # Binary flags
-        dict q, var_mu_beta, var_sigma_beta, var_gamma  # Variational parameters
+        dict q, var_gamma, var_mu_beta, var_sigma_beta, mean_beta, mean_beta_sq  # Variational parameters
         dict beta_hat, ld, ld_bounds  # Inputs to the algorithm
         dict history, fix_params  # Helpers
         int threads

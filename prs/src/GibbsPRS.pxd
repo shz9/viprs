@@ -11,6 +11,7 @@ cdef class GibbsPRS(PRSModel):
         dict beta_hat, ld, ld_bounds  # Inputs to the algorithm
         dict fix_params  # Helpers
         dict rs_gamma, rs_beta
+        int threads
         RunStats rs_pi, rs_sigma_beta, rs_sigma_epsilon, rs_h2g  # Running stats objects
 
 

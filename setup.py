@@ -6,14 +6,14 @@ import numpy as np
 import os
 import platform
 
-#if platform.system() == 'Darwin':
-#    os.environ['CC'] = '/usr/local/opt/llvm/bin/clang++'
+if platform.system() == 'Darwin':
+    os.environ['CC'] = '/usr/local/opt/llvm/bin/clang++'
 
 ext_modules = cythonize([
     Extension("prs.src.c_utils",
               ["prs/src/c_utils.pyx"],
               libraries=["m"],
-              extra_compile_args=["-ffast-math"]),
+              extra_compile_args=["-ffast-math", "-fopenmp"]),
     Extension("prs.src.run_stats",
               ["prs/src/run_stats.pyx"],
               libraries=["m"],

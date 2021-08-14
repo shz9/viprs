@@ -4,7 +4,7 @@ cdef class PRSModel:
     cdef public:
         int N, M
         gdl
-        dict pip, inf_beta, shapes
+        dict pip, inf_beta, Nj, shapes
 
     cpdef fit(self)
 

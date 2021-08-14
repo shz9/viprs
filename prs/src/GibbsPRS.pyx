@@ -12,8 +12,9 @@ import numpy as np
 from tqdm import tqdm
 from scipy.stats import invgamma
 from libc.math cimport log, sqrt
+
 from .PRSModel cimport PRSModel
-from .c_utils cimport dot, sigmoid, elementwise_add_mult, clip
+from .c_utils cimport dot, mt_sum, sigmoid, elementwise_add_mult, clip
 from .run_stats cimport RunStats, RunStatsVec
 
 
@@ -21,12 +22,14 @@ cdef class GibbsPRS(PRSModel):
 
     def __init__(self, gdl,
                  beta_prior=(10., 1e4), sigma_beta_prior=(1e-4, 1e-4), sigma_epsilon_prior=(1., 1.),
-                 fix_params=None, load_ld=True, verbose=True):
+                 fix_params=None, load_ld=True, verbose=True, threads=4):
         """
         :param gdl: An instance of GWAS data loader
         """
 
         super().__init__(gdl)
+
+        self.threads = threads
 
         self.beta_prior = beta_prior
         self.sigma_beta_prior = sigma_beta_prior
@@ -128,7 +131,7 @@ cdef class GibbsPRS(PRSModel):
                 start, end = ld_bound[:, j]
                 j_idx = j - start
 
-                mu_beta_j = (beta_hat[j] - dot(Dj, prod[start: end]) +
+                mu_beta_j = (beta_hat[j] - dot(Dj, prod[start: end], self.threads) +
                                   Dj[j_idx]*prod[j]) / denom
 
                 u_j = (logodds_pi + .5*log(s_var / self.sigma_beta) +
@@ -145,11 +148,11 @@ cdef class GibbsPRS(PRSModel):
 
                 if j_idx > 0:
                     # Update the q factor for snp i by adding the contribution of previous SNPs.
-                    q[j] = dot(Dj[:j_idx], prod[start: j])
+                    q[j] = dot(Dj[:j_idx], prod[start: j], self.threads)
 
                     if prod[j] != 0.:
                         # Update the q factors for all previously updated SNPs that are in LD with SNP j
-                        q[start: j] = elementwise_add_mult(q[start: j], Dj[:j_idx], prod[j])
+                        q[start: j] = elementwise_add_mult(q[start: j], Dj[:j_idx], prod[j], self.threads)
 
             self.q[c] = np.array(q)
 
@@ -159,7 +162,7 @@ cdef class GibbsPRS(PRSModel):
         if 'pi' not in self.fix_params:
 
             n_causal = np.sum([
-                np.sum(self.s_gamma[c])
+                mt_sum(self.s_gamma[c], self.threads)
                 for c in self.shapes
             ])
 
@@ -171,12 +174,12 @@ cdef class GibbsPRS(PRSModel):
         if 'sigma_beta' not in self.fix_params:
 
             n_causal = np.sum([
-                np.sum(self.s_gamma[c])
+                mt_sum(self.s_gamma[c], self.threads)
                 for c in self.shapes
             ])
 
             sum_beta_sq = np.sum([
-                np.sum(self.s_gamma[c]*self.s_beta[c]**2)
+                mt_sum(self.s_gamma[c]*self.s_beta[c]**2, self.threads)
                 for c in self.shapes
             ])
 
@@ -197,11 +200,11 @@ cdef class GibbsPRS(PRSModel):
                 q = self.q[c]
 
                 sigma_g += (
-                        np.dot(prod, prod) +
-                        np.dot(prod, q)
+                        dot(prod, prod, self.threads) +
+                        dot(prod, q, self.threads)
                 )
 
-                ssr += - 2. * np.dot(prod, beta_hat)
+                ssr += - 2. * dot(prod, beta_hat, self.threads)
 
             ssr = clip(1. + ssr + sigma_g, 1e-12, 1e12)
 

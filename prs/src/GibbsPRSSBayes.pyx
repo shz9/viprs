@@ -84,7 +84,7 @@ cdef class GibbsPRSSBayes(GibbsPRS):
                 j_idx = j - start
 
                 s_var = sig_e[j] / (self.N + sig_e[j] / self.sigma_beta)
-                mu_beta_j = (beta_hat[j] - dot(Dj, prod[start: end]) +
+                mu_beta_j = (beta_hat[j] - dot(Dj, prod[start: end], self.threads) +
                                   Dj[j_idx]*prod[j]) / (1. + sig_e[j] / (self.N * self.sigma_beta))
 
                 u_j = (logodds_pi + .5*log(s_var / self.sigma_beta) +
@@ -101,11 +101,11 @@ cdef class GibbsPRSSBayes(GibbsPRS):
 
                 if j_idx > 0:
                     # Update the q factor for snp i by adding the contribution of previous SNPs.
-                    q[j] = dot(Dj[:j_idx], prod[start: j])
+                    q[j] = dot(Dj[:j_idx], prod[start: j], self.threads)
 
                     if prod[j] != 0.:
                         # Update the q factors for all previously updated SNPs that are in LD with SNP j
-                        q[start: j] = elementwise_add_mult(q[start: j], Dj[:j_idx], prod[j])
+                        q[start: j] = elementwise_add_mult(q[start: j], Dj[:j_idx], prod[j], self.threads)
 
             self.q[c] = np.array(q)
 
@@ -127,7 +127,7 @@ cdef class GibbsPRSSBayes(GibbsPRS):
                 snp_sse = self.yy[c] + -2.*prod*beta_hat + snp_var
                 self.sig_e_snp[c] = np.clip(snp_sse, 1e-12, 1e12)
 
-                ssr += -2. * np.dot(prod, beta_hat)
+                ssr += -2. * dot(prod, beta_hat, self.threads)
 
             ssr = clip(1. + ssr + sigma_g, 1e-12, 1e12)
 
