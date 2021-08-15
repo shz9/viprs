@@ -21,7 +21,7 @@ from .c_utils cimport dot, mt_sum, elementwise_add_mult, sigmoid, clip
 
 cdef class VIPRS(PRSModel):
 
-    def __init__(self, gdl, fix_params=None, load_ld=True, verbose=True, threads=4):
+    def __init__(self, gdl, fix_params=None, load_ld=True, verbose=True, threads=1):
         """
         TODO: Restructure the code to use sample size per SNP instead of total GWAS sample size.
         :param gdl: An instance of GWAS data loader
@@ -67,7 +67,6 @@ cdef class VIPRS(PRSModel):
     cpdef initialize_theta(self):
         """
         This method initializes the global hyper-parameters
-        TODO: Implement better strategies for initializing hyperparameters
         :return:
         """
 
@@ -215,7 +214,6 @@ cdef class VIPRS(PRSModel):
                 )
 
             self.sigma_epsilon = clip(1. + sig_eps, 1e-12, 1. - 1e-12)
-
 
     cpdef m_step(self):
         """

@@ -56,7 +56,7 @@ cdef double mt_sum(double[::1] v1, int n_threads):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
-cdef double[::1] elementwise_add_mult(double[::1] v1, const double[::1] v2, double s, int n_threads):
+cdef double[::1] elementwise_add_mult(double[::1] v1, double[::1] v2, double s, int n_threads):
     """
     Multi-threaded elementwise addition and multiplication
     """
