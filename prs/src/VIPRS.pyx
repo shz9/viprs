@@ -78,11 +78,11 @@ cdef class VIPRS(PRSModel):
         if 'sigma_epsilon' not in self.fix_params:
             if 'sigma_beta' not in self.fix_params:
                 try:
-                    naive_h2g = self.gdl.estimate_snp_heritability()
+                    naive_h2g = clip(self.gdl.estimate_snp_heritability(), .01, .99)
                 except Exception as e:
                     naive_h2g = np.random.uniform(low=.01, high=.99)
 
-                self.sigma_epsilon = clip(1. - naive_h2g, .01, .99)
+                self.sigma_epsilon = 1. - naive_h2g
                 self.sigma_beta = naive_h2g / (self.pi * self.M)
             else:
                 self.sigma_beta = self.fix_params['sigma_beta']
