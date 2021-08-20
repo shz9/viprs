@@ -9,7 +9,28 @@ from .PRSModel import PRSModel
 from .VIPRS import VIPRS
 
 
+def generate_bounded_localized_grid(local_val, n_steps=10, precision=.05, min_val=0., max_val=1.):
+    """
+    Generate a bounded and localized grid.
+    This function takes a value between `min_val` and `max_val` (if not, will be clipped)
+    and then generates a grid of `n_steps` around it using
+    the specified precision (or close to it).
+    """
+    rounded_val = precision*int(np.clip(local_val, min_val, max_val)/precision)
+    return np.linspace(max(rounded_val - precision*.5*n_steps, min_val + precision),
+                       min(rounded_val + precision*.5*n_steps, max_val - precision), n_steps)
+
+
 def generate_grid(M, n_steps=10, sigma_epsilon_steps=None, pi_steps=None, sigma_beta_steps=None):
+    """
+    TODO: Use a bounded and localized grid for sigma_epsilon/sigma_beta
+    :param M:
+    :param n_steps:
+    :param sigma_epsilon_steps:
+    :param pi_steps:
+    :param sigma_beta_steps:
+    :return:
+    """
 
     if sigma_epsilon_steps is None:
         sigma_epsilon_steps = n_steps
@@ -212,7 +233,7 @@ class BMA(PRSModel):
     """
 
     def __init__(self, gdl, viprs=None, opt_params=('sigma_epsilon', 'pi'),
-                 verbose=False, obj_transform=None, n_proc=1):
+                 verbose=False, n_proc=1):
         """
 
         :param gdl:
@@ -238,7 +259,6 @@ class BMA(PRSModel):
 
         self.shapes = self.viprs.shapes
         self.opt_params = opt_params
-        self.obj_transform = obj_transform or (lambda x: x)
 
         self.var_gamma = None
         self.var_mu_beta = None
@@ -264,7 +284,10 @@ class BMA(PRSModel):
         opts = [(self.viprs, dict(zip(self.opt_params, p)), {'max_iter': max_iter, 'ftol': tol, 'xtol': tol})
                 for p in itertools.product(*[steps[k] for k in self.opt_params])]
 
-        elbo_sum = 0.
+        elbos = []
+        var_gammas = []
+        var_mu_betas = []
+        var_sigma_betas = []
 
         ctx = multiprocessing.get_context("spawn")
 
@@ -274,20 +297,22 @@ class BMA(PRSModel):
 
                 if elbo is None:
                     continue
-                else:
-                    elbo = self.obj_transform(elbo)
 
-                elbo_sum += elbo
+                elbos.append(elbo)
+                var_gammas.append(n_var_gamma)
+                var_mu_betas.append(n_var_mu_beta)
+                var_sigma_betas.append(n_var_sigma_beta)
 
-                for c in self.shapes:
-                    self.var_gamma[c] += elbo * n_var_gamma[c]
-                    self.var_mu_beta[c] += elbo * n_var_mu_beta[c]
-                    self.var_sigma_beta[c] += elbo * n_var_sigma_beta[c]
+        elbos = np.array(elbos)
+        # Correction for negative ELBOs:
+        elbos = elbos - elbos.min() + 1.
+        elbos /= elbos.sum()
 
-        for c in self.shapes:
-            self.var_gamma[c] /= elbo_sum
-            self.var_mu_beta[c] /= elbo_sum
-            self.var_sigma_beta[c] /= elbo_sum
+        for idx in range(len(elbos)):
+            for c in self.shapes:
+                self.var_gamma[c] += var_gammas[idx][c]*elbos[idx]
+                self.var_mu_beta[c] += var_mu_betas[idx][c]*elbos[idx]
+                self.var_sigma_beta[c] += var_sigma_betas[idx][c]*elbos[idx]
 
         self.pip = self.var_gamma
         self.inf_beta = {c: self.var_gamma[c]*mu for c, mu in self.var_mu_beta.items()}
