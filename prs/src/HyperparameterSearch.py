@@ -1,3 +1,4 @@
+import pandas as pd
 import numpy as np
 from scipy import stats
 from tqdm import tqdm
@@ -21,9 +22,8 @@ def generate_bounded_localized_grid(local_val, n_steps=10, precision=.05, min_va
                        min(rounded_val + precision*.5*n_steps, max_val - precision), n_steps)
 
 
-def generate_grid(M, n_steps=10, sigma_epsilon_steps=None, pi_steps=None, sigma_beta_steps=None):
+def generate_grid(M, n_steps=10, h2g_estimate=None, sigma_epsilon_steps=None, pi_steps=None, sigma_beta_steps=None):
     """
-    TODO: Use a bounded and localized grid for sigma_epsilon/sigma_beta
     :param M:
     :param n_steps:
     :param sigma_epsilon_steps:
@@ -39,12 +39,24 @@ def generate_grid(M, n_steps=10, sigma_epsilon_steps=None, pi_steps=None, sigma_
     if sigma_beta_steps is None:
         sigma_beta_steps = n_steps
 
-    return {
-        'sigma_epsilon': np.linspace(1. / sigma_epsilon_steps, 1., sigma_epsilon_steps),
-        'sigma_beta': (1./M)*np.linspace(1. / sigma_beta_steps, 1., sigma_beta_steps),
+    grid = {
         'pi': np.clip(10. ** (-np.linspace(np.floor(np.log10(M)), 0., pi_steps)),
                       a_min=1. / M, a_max=1. - 1. / M)
     }
+
+    if h2g_estimate is None:
+
+        grid['sigma_epsilon'] = np.clip(np.linspace(1. / sigma_epsilon_steps, 1., sigma_epsilon_steps),
+                                        a_min=.05, a_max=.95)
+        grid['sigma_beta'] = (1./M)*np.linspace(1. / sigma_beta_steps, 1., sigma_beta_steps)
+
+    else:
+        h2g_grid = generate_bounded_localized_grid(h2g_estimate, n_steps=n_steps)
+
+        grid['sigma_epsilon'] = 1. - h2g_grid
+        grid['sigma_beta'] = (1. / M) * h2g_grid
+
+    return grid
 
 
 def fit_model_fixed_params(params):
@@ -105,7 +117,16 @@ class HyperparameterSearch(object):
             return fit_result[0]
         else:
             _, gamma, beta, _ = fit_result
-            prs = self._validation_gdl.predict({c: gamma[c]*b for c, b in beta.items()})
+
+            # Match inferred betas with the SNPs in the validation GDL:
+            v_inf_beta = {}
+            for c, shp in self._validation_gdl.shapes.items():
+                idx_beta = pd.Series(np.zeros(shp), index=self._validation_gdl.snps[c])
+                idx_beta[self.gdl.snps[c]] = gamma[c]*beta[c]
+                v_inf_beta[c] = idx_beta.values
+
+            # Predict:
+            prs = self._validation_gdl.predict(v_inf_beta)
             _, _, r_val, _, _ = stats.linregress(prs, self._validation_gdl.phenotypes)
             return r_val**2
 
@@ -181,6 +202,7 @@ class GridSearch(HyperparameterSearch):
                  viprs=None,
                  objective='ELBO',
                  validation_gdl=None,
+                 localized_grid=True,
                  verbose=False,
                  opt_params=('sigma_epsilon', 'pi'),
                  n_proc=1):
@@ -189,12 +211,18 @@ class GridSearch(HyperparameterSearch):
                          verbose=verbose,
                          opt_params=opt_params)
 
+        self.localized_grid = localized_grid
         self.viprs.threads = 1
         self.n_proc = n_proc
 
     def fit(self, max_iter=100, tol=1e-4, **grid_kwargs):
 
-        steps = generate_grid(self.gdl.M, **grid_kwargs)
+        if self.localized_grid:
+            h2g = self.gdl.estimate_snp_heritability()
+            steps = generate_grid(self.gdl.M, h2g_estimate=h2g, **grid_kwargs)
+        else:
+            steps = generate_grid(self.gdl.M, **grid_kwargs)
+
         print("> Performing Grid Search over the following grid:")
         pprint({k: v for k, v in steps.items() if k in self.opt_params})
 
@@ -232,8 +260,12 @@ class BMA(PRSModel):
     Bayesian Model Averaging fitting procedure
     """
 
-    def __init__(self, gdl, viprs=None, opt_params=('sigma_epsilon', 'pi'),
-                 verbose=False, n_proc=1):
+    def __init__(self, gdl,
+                 viprs=None,
+                 opt_params=('sigma_epsilon', 'pi'),
+                 verbose=False,
+                 localized_grid=True,
+                 n_proc=1):
         """
 
         :param gdl:
@@ -256,6 +288,7 @@ class BMA(PRSModel):
 
         self.viprs.verbose = verbose
         self.viprs.threads = 1
+        self.localized_grid = localized_grid
 
         self.shapes = self.viprs.shapes
         self.opt_params = opt_params
@@ -277,7 +310,12 @@ class BMA(PRSModel):
 
         self.initialize()
 
-        steps = generate_grid(self.M, **grid_kwargs)
+        if self.localized_grid:
+            h2g = self.gdl.estimate_snp_heritability()
+            steps = generate_grid(self.gdl.M, h2g_estimate=h2g, **grid_kwargs)
+        else:
+            steps = generate_grid(self.gdl.M, **grid_kwargs)
+
         print("> Performing Bayesian Model Averaging with the following grid:")
         pprint({k: v for k, v in steps.items() if k in self.opt_params})
 
