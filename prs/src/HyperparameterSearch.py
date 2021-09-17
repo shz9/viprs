@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import copy
 from scipy import stats
 from tqdm import tqdm
 import itertools
@@ -89,6 +90,8 @@ class HyperparameterSearch(object):
         else:
             self.viprs = viprs
 
+        self.validation_result = None
+
         self.opt_params = opt_params
         self._opt_objective = objective
         self._validation_gdl = validation_gdl
@@ -105,6 +108,16 @@ class HyperparameterSearch(object):
         if self._opt_objective == 'validation':
             assert self._validation_gdl is not None
             assert self._validation_gdl.phenotypes is not None
+
+    def write_validation_result(self, v_filename):
+
+        if self.validation_result is None:
+            raise Exception("Validation result is not set!")
+        elif len(self.validation_result) < 1:
+            raise Exception("Validation result is not set!")
+
+        v_df = pd.DataFrame(self.validation_result)
+        v_df.to_csv(v_filename, index=False, sep="\t")
 
     def objective(self, fit_result):
         """
@@ -164,8 +177,12 @@ class BayesOpt(HyperparameterSearch):
         from skopt import gp_minimize
 
         def opt_func(p):
-            fit_result = fit_model_fixed_params((self.viprs,
-                                                 dict(zip(self.opt_params, p)),
+
+            fix_params = dict(zip(self.opt_params, p))
+            if 'pi' in fix_params:
+                fix_params['pi'] = 10**fix_params['pi']
+
+            fit_result = fit_model_fixed_params((self.viprs, fix_params,
                                                  {'max_iter': max_iter, 'ftol': tol, 'xtol': tol}))
 
             if fit_result[0] is None:
@@ -174,9 +191,9 @@ class BayesOpt(HyperparameterSearch):
                 return -self.objective(fit_result)
 
         param_bounds = {
-            'sigma_epsilon': (1e-6, 1. - 1e-6),
+            'sigma_epsilon': (1e-2, 1. - 1e-2),
             'sigma_beta': (1e-12, .5),
-            'pi': (1. / self.gdl.M, 1. - 1. / self.gdl.M)
+            'pi': (-np.floor(np.log10(self.gdl.M)), -.001)
         }
 
         res = gp_minimize(opt_func,  # the function to minimize
@@ -185,7 +202,24 @@ class BayesOpt(HyperparameterSearch):
                           n_calls=n_calls,  # the number of evaluations of f
                           n_random_starts=n_random_starts)  # the random seed
 
+        # Store validation result
+        self.validation_result = []
+        for obj, x in zip(res.func_vals, res.x_iters):
+            v_res = dict(zip(self.opt_params, x))
+            if 'pi' in v_res:
+                v_res['pi'] = 10**v_res['pi']
+
+            if self._opt_objective == 'ELBO':
+                v_res['ELBO'] = -obj
+            else:
+                v_res['Validation R2'] = -obj
+
+            self.validation_result.append(v_res)
+
+        # Extract the best performing hyperparameters:
         final_best_params = dict(zip(self.opt_params, res.x))
+        if 'pi' in final_best_params:
+            final_best_params['pi'] = 10 ** final_best_params['pi']
         print("> Bayesian Optimization identified the best hyperparameters as:")
         pprint(final_best_params)
 
@@ -231,6 +265,7 @@ class GridSearch(HyperparameterSearch):
 
         max_objective = -1e12
         best_params = None
+        self.validation_result = []
 
         ctx = multiprocessing.get_context("spawn")
 
@@ -245,6 +280,13 @@ class GridSearch(HyperparameterSearch):
                 if objective > max_objective:
                     max_objective = objective
                     best_params = opts[idx][1]
+
+                self.validation_result.append(copy.copy(opts[idx][1]))
+                if self._opt_objective == 'ELBO':
+                    self.validation_result[-1]['ELBO'] = objective
+                else:
+                    self.validation_result[-1]['Validation R2'] = objective
+                    self.validation_result[-1]['ELBO'] = fit_result[0]
 
         print("> Grid search identified the best hyperparameters as:")
         pprint(best_params)
