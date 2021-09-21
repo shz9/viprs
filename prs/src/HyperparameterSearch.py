@@ -11,19 +11,18 @@ from .PRSModel import PRSModel
 from .VIPRS import VIPRS
 
 
-def generate_bounded_localized_grid(local_val, n_steps=10, precision=.05, min_val=0., max_val=1.):
+def generate_bounded_localized_grid(local_val, n_steps=9, base=1.75, a_min=1e-6, a_max=1. - 1e-6):
     """
     Generate a bounded and localized grid.
-    This function takes a value between `min_val` and `max_val` (if not, will be clipped)
-    and then generates a grid of `n_steps` around it using
-    the specified precision (or close to it).
+    This function takes a value between `a_min` and `a_max`
+    and then generates a grid of `n_steps` around it using the specified base.
     """
-    rounded_val = precision*int(np.clip(local_val, min_val, max_val)/precision)
-    return np.linspace(max(rounded_val - precision*.5*n_steps, min_val + precision),
-                       min(rounded_val + precision*.5*n_steps, max_val - precision), n_steps)
+
+    lb_grid = (base ** (np.arange(-np.floor(n_steps / 2), np.ceil(n_steps / 2))))*local_val
+    return np.unique(np.clip(lb_grid, a_min=a_min, a_max=a_max))
 
 
-def generate_grid(M, n_steps=10, h2g_estimate=None, sigma_epsilon_steps=None, pi_steps=None, sigma_beta_steps=None):
+def generate_grid(M, n_steps=9, h2g_estimate=None, sigma_epsilon_steps=None, pi_steps=None, sigma_beta_steps=None):
     """
     :param M:
     :param n_steps:
@@ -47,8 +46,7 @@ def generate_grid(M, n_steps=10, h2g_estimate=None, sigma_epsilon_steps=None, pi
 
     if h2g_estimate is None:
 
-        grid['sigma_epsilon'] = np.clip(np.linspace(1. / sigma_epsilon_steps, 1., sigma_epsilon_steps),
-                                        a_min=.05, a_max=.95)
+        grid['sigma_epsilon'] = np.linspace(.1, .99, sigma_epsilon_steps)
         grid['sigma_beta'] = (1./M)*np.linspace(1. / sigma_beta_steps, 1., sigma_beta_steps)
 
     else:
@@ -191,7 +189,7 @@ class BayesOpt(HyperparameterSearch):
                 return -self.objective(fit_result)
 
         param_bounds = {
-            'sigma_epsilon': (1e-2, 1. - 1e-2),
+            'sigma_epsilon': (1e-6, 1. - 1e-6),
             'sigma_beta': (1e-12, .5),
             'pi': (-np.floor(np.log10(self.gdl.M)), -.001)
         }
