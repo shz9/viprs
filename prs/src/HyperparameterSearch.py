@@ -93,11 +93,28 @@ class HyperparameterSearch(object):
         self.opt_params = opt_params
         self._opt_objective = objective
         self._validation_gdl = validation_gdl
+        self._validation_to_train_map = None
 
         self.verbose = verbose
         self.viprs.verbose = verbose
+
         if self._validation_gdl is not None:
             self._validation_gdl.verbose = verbose
+
+            # Match the index of SNPs in the training dataset
+            # and SNPs in the validation dataset:
+            self._validation_to_train_map = {}
+
+            for c, train_snps in self.gdl.snps.items():
+                valid_snps = self._validation_gdl.snps[c]
+
+                train_df = pd.DataFrame({'SNP': train_snps}).reset_index()
+                train_df.columns = ['train_index', 'SNP']
+
+                valid_df = pd.DataFrame({'SNP': valid_snps}).reset_index()
+                valid_df.columns = ['validation_index', 'SNP']
+
+                self._validation_to_train_map[c] = train_df.merge(valid_df)[['train_index', 'validation_index']]
 
         assert self._opt_objective in ['ELBO', 'validation']
 
@@ -132,9 +149,11 @@ class HyperparameterSearch(object):
             # Match inferred betas with the SNPs in the validation GDL:
             v_inf_beta = {}
             for c, shp in self._validation_gdl.shapes.items():
-                idx_beta = pd.Series(np.zeros(shp), index=self._validation_gdl.snps[c])
-                idx_beta[self.gdl.snps[c]] = gamma[c]*beta[c]
-                v_inf_beta[c] = idx_beta.values
+                valid_beta = np.zeros(shp)
+                valid_beta[self._validation_to_train_map[c]['validation_index'].values] = (gamma[c]*beta[c])[
+                    self._validation_to_train_map[c]['train_index'].values
+                ]
+                v_inf_beta[c] = valid_beta
 
             # Predict:
             prs = self._validation_gdl.predict(v_inf_beta)
