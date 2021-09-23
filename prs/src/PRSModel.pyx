@@ -8,6 +8,7 @@
 # cython: language_level=3
 # cython: infer_types=True
 
+import numpy as np
 import pandas as pd
 import os.path as osp
 
@@ -65,11 +66,19 @@ cdef class PRSModel:
         self.pip = {}
         self.inf_beta = {}
 
-        for c, c_size in self.shapes.items():
+        for c, snps in self.gdl.snps.items():
 
-            c_df = pd.DataFrame({'CHR': c,
-                                 'SNP': self.gdl.genotypes[c].variant.values})
-            c_df = c_df.merge(eff_table, how='left').fillna(0.)
+            c_df = pd.DataFrame({'CHR': c, 'SNP': snps, 'A1': self.gdl.alt_alleles[c]})
+            c_df = c_df.merge(eff_table, how='left', on='SNP')
+
+            # Fill in missing values:
+            c_df['PIP'] = c_df.fillna(0.)
+            c_df['BETA'] = c_df.fillna(0.)
+            c_df['A1_y'] = c_df['A1_y'].fillna(c_df['A1_x'])
+
+            # Correct for potential strand flipping:
+            strand_flipped = np.not_equal(c_df['A1_x'].values, c_df['A1_y'].values).astype(int)
+            c_df['BETA'] = (-2.*strand_flipped + 1.) * c_df['BETA']
 
             self.pip[c] = c_df['PIP'].values
             self.inf_beta[c] = c_df['BETA'].values
