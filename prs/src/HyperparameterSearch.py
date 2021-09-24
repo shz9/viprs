@@ -152,7 +152,7 @@ class HyperparameterSearch(object):
             for c, shp in self._validation_gdl.shapes.items():
                 valid_beta = np.zeros(shape=(shp, len(fit_results)))
                 valid_beta[self._validation_to_train_map[c]['validation_index'].values, :] = np.array(
-                    [gamma[c] * beta[c] for _, gamma, beta, _ in fit_results])[
+                    [gamma[c] * beta[c] for _, gamma, beta, _ in fit_results]).T[
                     self._validation_to_train_map[c]['train_index'].values, :
                 ]
                 v_inf_beta[c] = valid_beta
@@ -284,7 +284,7 @@ class BayesOpt(HyperparameterSearch):
         return self.viprs.fit()
 
 
-class GridSearch(HyperparameterSearch):
+class GridSearchSlow(HyperparameterSearch):
 
     def __init__(self,
                  gdl,
@@ -353,7 +353,7 @@ class GridSearch(HyperparameterSearch):
         return self.viprs.fit()
 
 
-class GridSearch2(HyperparameterSearch):
+class GridSearch(HyperparameterSearch):
 
     def __init__(self,
                  gdl,
