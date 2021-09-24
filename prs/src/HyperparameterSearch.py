@@ -7,6 +7,7 @@ import itertools
 import multiprocessing
 from pprint import pprint
 
+from .evaluation import compute_r2
 from .PRSModel import PRSModel
 from .VIPRS import VIPRS
 
@@ -79,9 +80,11 @@ class HyperparameterSearch(object):
                  objective='ELBO',
                  validation_gdl=None,
                  verbose=False,
-                 opt_params=('sigma_epsilon', 'pi')):
+                 opt_params=('sigma_epsilon', 'pi'),
+                 n_jobs=1):
 
         self.gdl = gdl
+        self.n_jobs = n_jobs
 
         if viprs is None:
             self.viprs = VIPRS(gdl)
@@ -134,6 +137,37 @@ class HyperparameterSearch(object):
         v_df = pd.DataFrame(self.validation_result)
         v_df.to_csv(v_filename, index=False, sep="\t")
 
+    def multi_objective(self, fit_results):
+        """
+        This method evaluates multiple models simultaneously
+        :param fit_results:
+        :return:
+        """
+
+        if self._opt_objective == 'ELBO':
+            return [fr[0] for fr in fit_results]
+        else:
+
+            v_inf_beta = {}
+            for c, shp in self._validation_gdl.shapes.items():
+                valid_beta = np.zeros(shape=(shp, len(fit_results)))
+                valid_beta[self._validation_to_train_map[c]['validation_index'].values, :] = np.array(
+                    [gamma[c] * beta[c] for _, gamma, beta, _ in fit_results])[
+                    self._validation_to_train_map[c]['train_index'].values, :
+                ]
+                v_inf_beta[c] = valid_beta
+
+            prs = self._validation_gdl.predict(v_inf_beta)
+
+            ctx = multiprocessing.get_context("spawn")
+
+            with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
+                r2_results = pool.starmap(compute_r2,
+                                          [(prs[:, i].flatten(), self._validation_gdl.phenotypes)
+                                           for i in range(len(fit_results))])
+
+            return r2_results
+
     def objective(self, fit_result):
         """
         A method that takes the output of `fit_model_fixed_params`
@@ -157,8 +191,8 @@ class HyperparameterSearch(object):
 
             # Predict:
             prs = self._validation_gdl.predict(v_inf_beta)
-            _, _, r_val, _, _ = stats.linregress(prs, self._validation_gdl.phenotypes)
-            return r_val**2
+
+            return compute_r2(prs, self._validation_gdl.phenotypes)
 
     def fit(self):
         raise NotImplementedError
@@ -172,11 +206,15 @@ class BayesOpt(HyperparameterSearch):
                  objective='ELBO',
                  validation_gdl=None,
                  verbose=False,
-                 opt_params=('sigma_epsilon', 'pi')):
-        super().__init__(gdl, viprs=viprs,objective=objective,
+                 opt_params=('sigma_epsilon', 'pi'),
+                 n_jobs=1):
+        
+        super().__init__(gdl, viprs=viprs,
+                         objective=objective,
                          validation_gdl=validation_gdl,
                          verbose=verbose,
-                         opt_params=opt_params)
+                         opt_params=opt_params,
+                         n_jobs=n_jobs)
 
     def fit(self, n_calls=20, n_random_starts=5, acq_func="LCB",
             max_iter=100, tol=1e-4):
@@ -256,15 +294,16 @@ class GridSearch(HyperparameterSearch):
                  localized_grid=True,
                  verbose=False,
                  opt_params=('sigma_epsilon', 'pi'),
-                 n_proc=1):
+                 n_jobs=1):
+
         super().__init__(gdl, viprs=viprs, objective=objective,
                          validation_gdl=validation_gdl,
                          verbose=verbose,
-                         opt_params=opt_params)
+                         opt_params=opt_params,
+                         n_jobs=n_jobs)
 
         self.localized_grid = localized_grid
         self.viprs.threads = 1
-        self.n_proc = n_proc
 
     def fit(self, max_iter=100, tol=1e-4, **grid_kwargs):
 
@@ -286,7 +325,7 @@ class GridSearch(HyperparameterSearch):
 
         ctx = multiprocessing.get_context("spawn")
 
-        with ctx.Pool(self.n_proc, maxtasksperchild=1) as pool:
+        with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
 
             for idx, fit_result in tqdm(enumerate(pool.imap(fit_model_fixed_params, opts)), total=len(opts)):
 
@@ -314,6 +353,77 @@ class GridSearch(HyperparameterSearch):
         return self.viprs.fit()
 
 
+class GridSearch2(HyperparameterSearch):
+
+    def __init__(self,
+                 gdl,
+                 viprs=None,
+                 objective='ELBO',
+                 validation_gdl=None,
+                 localized_grid=True,
+                 verbose=False,
+                 opt_params=('sigma_epsilon', 'pi'),
+                 n_jobs=1):
+
+        super().__init__(gdl, viprs=viprs, objective=objective,
+                         validation_gdl=validation_gdl,
+                         verbose=verbose,
+                         opt_params=opt_params,
+                         n_jobs=n_jobs)
+
+        self.localized_grid = localized_grid
+        self.viprs.threads = 1
+
+    def fit(self, max_iter=100, tol=1e-4, **grid_kwargs):
+
+        if self.localized_grid:
+            h2g = self.gdl.estimate_snp_heritability()
+            steps = generate_grid(self.gdl.M, h2g_estimate=h2g, **grid_kwargs)
+        else:
+            steps = generate_grid(self.gdl.M, **grid_kwargs)
+
+        print("> Performing Grid Search over the following grid:")
+        pprint({k: v for k, v in steps.items() if k in self.opt_params})
+
+        opts = [(self.viprs, dict(zip(self.opt_params, p)), {'max_iter': max_iter, 'ftol': tol, 'xtol': tol})
+                for p in itertools.product(*[steps[k] for k in self.opt_params])]
+
+        self.validation_result = []
+        fit_results = []
+        params = []
+
+        ctx = multiprocessing.get_context("spawn")
+
+        with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
+
+            for idx, fit_result in tqdm(enumerate(pool.imap(fit_model_fixed_params, opts)), total=len(opts)):
+
+                if fit_result[0] is None:
+                    continue
+
+                fit_results.append(fit_result)
+                params.append(copy.copy(opts[idx][1]))
+                self.validation_result.append(copy.copy(opts[idx][1]))
+                self.validation_result[-1]['ELBO'] = fit_result[0]
+
+        res_objectives = self.multi_objective(fit_results)
+
+        if self._opt_objective == 'validation':
+            for i in range(len(self.validation_result)):
+                self.validation_result[i]['Validation R2'] = res_objectives[i]
+
+        best_idx = np.argmax(res_objectives)
+        best_params = params[best_idx]
+
+        print("> Grid search identified the best hyperparameters as:")
+        pprint(best_params)
+
+        print("> Refitting the model with the best hyperparameters...")
+
+        self.viprs.fix_params = best_params
+        return self.viprs.fit()
+
+
 class BMA(PRSModel):
     """
     Bayesian Model Averaging fitting procedure
@@ -324,7 +434,7 @@ class BMA(PRSModel):
                  opt_params=('sigma_epsilon', 'pi'),
                  verbose=False,
                  localized_grid=True,
-                 n_proc=1):
+                 n_jobs=1):
         """
 
         :param gdl:
@@ -332,12 +442,12 @@ class BMA(PRSModel):
         :param opt_params:
         :param verbose:
         :param obj_transform:
-        :param n_proc:
+        :param n_jobs:
         """
 
         super().__init__(gdl)
 
-        self.n_proc = n_proc
+        self.n_jobs = n_jobs
         self.verbose = verbose
 
         if viprs is None:
@@ -388,7 +498,7 @@ class BMA(PRSModel):
 
         ctx = multiprocessing.get_context("spawn")
 
-        with ctx.Pool(self.n_proc, maxtasksperchild=1) as pool:
+        with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
             for elbo, n_var_gamma, n_var_mu_beta, n_var_sigma_beta in \
                     tqdm(pool.imap_unordered(fit_model_fixed_params, opts), total=len(opts)):
 
