@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import copy
-from scipy import stats
 from tqdm import tqdm
 import itertools
 import multiprocessing

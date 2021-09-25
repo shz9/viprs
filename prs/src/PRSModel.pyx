@@ -72,8 +72,8 @@ cdef class PRSModel:
             c_df = c_df.merge(eff_table, how='left', on='SNP')
 
             # Fill in missing values:
-            c_df['PIP'] = c_df.fillna(0.)
-            c_df['BETA'] = c_df.fillna(0.)
+            c_df['PIP'] = c_df['PIP'].fillna(0.)
+            c_df['BETA'] = c_df['BETA'].fillna(0.)
             c_df['A1_y'] = c_df['A1_y'].fillna(c_df['A1_x'])
 
             # Correct for potential strand flipping:
