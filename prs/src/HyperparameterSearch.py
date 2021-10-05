@@ -6,7 +6,7 @@ import itertools
 import multiprocessing
 from pprint import pprint
 
-from .evaluation import compute_r2
+from .evaluation import compute_r2, compute_auc
 from .PRSModel import PRSModel
 from .VIPRS import VIPRS
 
@@ -158,10 +158,15 @@ class HyperparameterSearch(object):
 
             prs = self._validation_gdl.predict(v_inf_beta)
 
+            if self._validation_gdl.phenotype_likelihood == 'binomial':
+                eval_func = compute_auc
+            else:
+                eval_func = compute_r2
+
             ctx = multiprocessing.get_context("spawn")
 
             with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
-                r2_results = pool.starmap(compute_r2,
+                r2_results = pool.starmap(eval_func,
                                           [(prs[:, i].flatten(), self._validation_gdl.phenotypes)
                                            for i in range(len(fit_results))])
 
@@ -191,7 +196,12 @@ class HyperparameterSearch(object):
             # Predict:
             prs = self._validation_gdl.predict(v_inf_beta)
 
-            return compute_r2(prs, self._validation_gdl.phenotypes)
+            if self._validation_gdl.phenotype_likelihood == 'binomial':
+                eval_func = compute_auc
+            else:
+                eval_func = compute_r2
+
+            return eval_func(prs, self._validation_gdl.phenotypes)
 
     def fit(self):
         raise NotImplementedError

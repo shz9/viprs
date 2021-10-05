@@ -11,9 +11,9 @@ cdef class VIPRS(PRSModel):
         dict history, fix_params  # Helpers
         int threads
 
-    cpdef initialize(self)
+    cpdef initialize(self, theta_0=*)
     cpdef init_history(self)
-    cpdef initialize_theta(self)
+    cpdef initialize_theta(self, theta_0=*)
     cpdef initialize_variational_params(self)
     cpdef e_step(self)
     cpdef update_pi(self)
@@ -21,3 +21,4 @@ cdef class VIPRS(PRSModel):
     cpdef update_sigma_epsilon(self)
     cpdef m_step(self)
     cpdef objective(self)
+    cpdef write_inferred_theta(self, f_name)

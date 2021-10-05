@@ -28,9 +28,9 @@ cdef class VIPRSSBayes(VIPRS):
         self.yy = self.gdl.compute_yy_per_snp()
         self.sig_e_snp = {}
 
-    cpdef initialize_theta(self):
+    cpdef initialize_theta(self, theta_0=None):
 
-        super(VIPRSSBayes, self).initialize_theta()
+        super(VIPRSSBayes, self).initialize_theta(theta_0=theta_0)
         self.sig_e_snp = {c: np.repeat(self.sigma_epsilon, c_size)
                           for c, c_size in self.shapes.items()}
 

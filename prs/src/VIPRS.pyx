@@ -10,9 +10,10 @@
 
 import numpy as np
 cimport numpy as np
+import pandas as pd
 import warnings
 from tqdm import tqdm
-from libc.math cimport log
+from libc.math cimport log, sqrt
 
 from .PRSModel cimport PRSModel
 from .exceptions import OptimizationDivergence
@@ -49,12 +50,12 @@ cdef class VIPRS(PRSModel):
         self.verbose = verbose
         self.history = {}
 
-    cpdef initialize(self):
+    cpdef initialize(self, theta_0=None):
 
         if self.verbose:
             print("> Initializing model parameters")
 
-        self.initialize_theta()
+        self.initialize_theta(theta_0)
         self.initialize_variational_params()
         self.init_history()
 
@@ -64,19 +65,27 @@ cdef class VIPRS(PRSModel):
             'ELBO': []
         }
 
-    cpdef initialize_theta(self):
+    cpdef initialize_theta(self, theta_0=None):
         """
         This method initializes the global hyper-parameters
         :return:
         """
 
-        if 'pi' not in self.fix_params:
+        if theta_0 is not None and self.fix_params is not None:
+            theta_0.update(self.fix_params)
+        elif self.fix_params is not None:
+            theta_0 = self.fix_params
+        elif theta_0 is None:
+            theta_0 = {}
+
+
+        if 'pi' not in theta_0:
             self.pi = np.random.uniform(low=1. / self.M, high=.5)
         else:
-            self.pi = self.fix_params['pi']
+            self.pi = theta_0['pi']
 
-        if 'sigma_epsilon' not in self.fix_params:
-            if 'sigma_beta' not in self.fix_params:
+        if 'sigma_epsilon' not in theta_0:
+            if 'sigma_beta' not in theta_0:
                 try:
                     naive_h2g = clip(self.gdl.estimate_snp_heritability(), 1e-6, 1. - 1e-6)
                 except Exception as e:
@@ -85,13 +94,13 @@ cdef class VIPRS(PRSModel):
                 self.sigma_epsilon = 1. - naive_h2g
                 self.sigma_beta = naive_h2g / (self.pi * self.M)
             else:
-                self.sigma_beta = self.fix_params['sigma_beta']
+                self.sigma_beta = theta_0['sigma_beta']
                 self.sigma_epsilon = clip(1. - self.sigma_beta*(self.pi * self.M), 1e-6, 1. - 1e-6)
         else:
-            self.sigma_epsilon = self.fix_params['sigma_epsilon']
+            self.sigma_epsilon = theta_0['sigma_epsilon']
 
-            if 'sigma_beta' in self.fix_params:
-                self.sigma_beta = self.fix_params['sigma_beta']
+            if 'sigma_beta' in theta_0:
+                self.sigma_beta = theta_0['sigma_beta']
             else:
                 self.sigma_beta = (1. - self.sigma_epsilon) / (self.pi * self.M)
 
@@ -109,7 +118,7 @@ cdef class VIPRS(PRSModel):
         for c, c_size in self.shapes.items():
 
             self.var_gamma[c] = np.repeat(self.pi, c_size)
-            self.var_mu_beta[c] = np.random.normal(scale=self.sigma_beta, size=c_size)
+            self.var_mu_beta[c] = np.random.normal(scale=sqrt(self.sigma_beta), size=c_size)
             self.var_sigma_beta[c] = np.repeat(self.sigma_beta, c_size)
 
             self.mean_beta[c] = self.var_gamma[c]*self.var_mu_beta[c]
@@ -277,10 +286,19 @@ cdef class VIPRS(PRSModel):
 
         return h2g
 
-    cpdef fit(self, max_iter=1000, continued=False, ftol=1e-4, xtol=1e-4, max_elbo_drops=10):
+    cpdef write_inferred_theta(self, f_name):
+
+        theta_table = {
+            'Parameter': ['Residual_variance', 'Effect_variance', 'Proportion_causal', 'Heritability'],
+            'Value': [self.sigma_epsilon, self.sigma_beta, self.pi, self.get_heritability()]
+        }
+
+        pd.DataFrame(theta_table).to_csv(f_name, sep="\t", index=False)
+
+    cpdef fit(self, max_iter=1000, theta_0=None, continued=False, ftol=1e-4, xtol=1e-4, max_elbo_drops=10):
 
         if not continued:
-            self.initialize()
+            self.initialize(theta_0)
 
         if self.load_ld:
             self.gdl.load_ld()
