@@ -295,7 +295,7 @@ cdef class VIPRS(PRSModel):
 
         pd.DataFrame(theta_table).to_csv(f_name, sep="\t", index=False)
 
-    cpdef fit(self, max_iter=1000, theta_0=None, continued=False, ftol=1e-4, xtol=1e-4, max_elbo_drops=10):
+    cpdef fit(self, max_iter=1000, theta_0=None, continued=False, ftol=1e-6, xtol=1e-6, max_elbo_drops=10):
 
         if not continued:
             self.initialize(theta_0)
