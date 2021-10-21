@@ -83,9 +83,9 @@ cdef class PRSModel:
             self.pip[c] = c_df['PIP'].values
             self.inf_beta[c] = c_df['BETA'].values
 
-    cpdef write_inferred_params(self, f_name, per_chromosome=False):
+    cpdef to_table(self, per_chromosome=False):
 
-        dfs = []
+        tables = {}
 
         snps = self.gdl.snps
         ref_allel = self.gdl.ref_alleles
@@ -94,17 +94,31 @@ cdef class PRSModel:
         for c, betas in self.inf_beta.items():
 
             df = pd.DataFrame({'CHR': c,
-                              'SNP': snps[c],
-                              'A1': alt_allel[c],
-                              'A2': ref_allel[c],
-                              'PIP': self.pip[c],
-                              'BETA': betas})
+                               'SNP': snps[c],
+                               'A1': alt_allel[c],
+                               'A2': ref_allel[c],
+                               'PIP': self.pip[c],
+                               'BETA': betas})
 
-            if per_chromosome:
-                df.to_csv(osp.join(f_name, f'chr_{c}.fit'), sep="\t", index=False)
-            else:
-                dfs.append(df)
+            tables[c] = df
 
         if not per_chromosome:
-            dfs = pd.concat(dfs)
-            dfs.to_csv(f_name, sep="\t", index=False)
+            return pd.concat(tables.values())
+        else:
+            return tables
+
+    cpdef write_inferred_params(self, f_name, per_chromosome=False):
+
+        tables = self.to_table(per_chromosome=per_chromosome)
+
+        if per_chromosome:
+            for c, tab in tables.items():
+                try:
+                    tab.to_csv(osp.join(f_name, f'chr_{c}.fit'), sep="\t", index=False)
+                except Exception as e:
+                    raise e
+        else:
+            try:
+                tables.to_csv(f_name, sep="\t", index=False)
+            except Exception as e:
+                raise e

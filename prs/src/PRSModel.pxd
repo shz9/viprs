@@ -14,6 +14,7 @@ cdef class PRSModel:
     cpdef get_inf_beta(self)
 
     cpdef predict(self, gdl=*)
+    cpdef to_table(self, per_chromosome=*)
 
     cpdef read_inferred_params(self, f_name)
     cpdef write_inferred_params(self, f_name, per_chromosome=*)

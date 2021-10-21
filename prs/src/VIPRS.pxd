@@ -4,10 +4,12 @@ from .PRSModel cimport PRSModel
 cdef class VIPRS(PRSModel):
 
     cdef public:
-        double pi, sigma_beta, sigma_epsilon  # Global hyper-parameters
+        double sigma_epsilon  # Residual variance
+        dict pi, sigma_beta  # Priors
         bint load_ld, verbose  # Binary flags
-        dict q, var_gamma, var_mu_beta, var_sigma_beta, mean_beta, mean_beta_sq  # Variational parameters
-        dict beta_hat, ld, ld_bounds  # Inputs to the algorithm
+        dict var_gamma, var_mu_beta, var_sigma_beta  # Per-SNP Variational parameters
+        dict q, mean_beta, mean_beta_sq  # Properties of the variational distribution
+        dict std_beta, ld, ld_bounds  # Inputs to the algorithm
         dict history, fix_params  # Helpers
         int threads
 

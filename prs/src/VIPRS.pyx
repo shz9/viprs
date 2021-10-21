@@ -18,39 +18,61 @@ from libc.math cimport log, sqrt
 from .PRSModel cimport PRSModel
 from .exceptions import OptimizationDivergence
 from .c_utils cimport dot, mt_sum, elementwise_add_mult, sigmoid, clip
+from .utils import dict_mean, dict_sum, dict_concat, dict_repeat, dict_set
 
 
 cdef class VIPRS(PRSModel):
 
     def __init__(self, gdl, fix_params=None, load_ld=True, verbose=True, threads=1):
         """
-        TODO: Restructure the code to use sample size per SNP instead of total GWAS sample size.
         :param gdl: An instance of GWAS data loader
         :param fix_params: A dictionary of parameters with their fixed values.
         :param load_ld: A flag that specifies whether to load the LD matrix to memory.
+        :param verbose: Verbosity of the information printed to standard output
+        :param threads: The number of threads to use (experimental)
         """
 
         super().__init__(gdl)
 
-        self.threads = threads
+        # Global hyperparameters:
+        self.pi = {}
+        self.sigma_beta = {}
+
+        # Variational parameters:
         self.var_gamma = {}
         self.var_mu_beta = {}
         self.var_sigma_beta = {}
+
+        # Properties of proposed distribution:
         self.mean_beta = {}  # E[B] = \gamma*\mu_beta
         self.mean_beta_sq = {}  # E[B^2] = \gamma*(\mu_beta^2 + \sigma_beta^2)
+
+        # q-factor (keeps track of LD-related terms)
         self.q = {}
 
+        # ---------- Inputs to the model: ----------
+
+        # LD-related quantities:
         self.load_ld = load_ld
         self.ld = self.gdl.get_ld_matrices()
         self.ld_bounds = self.gdl.get_ld_boundaries()
-        self.beta_hat = self.gdl.compute_xy_per_snp()
 
+        # Standardized betas:
+        self.std_beta = self.gdl.compute_xy_per_snp()
+
+        # ---------- General properties: ----------
+
+        self.threads = threads
         self.fix_params = fix_params or {}
 
         self.verbose = verbose
         self.history = {}
 
     cpdef initialize(self, theta_0=None):
+        """
+        A convenience method to initialize all the objects associated with the model.
+        :param theta_0: 
+        """
 
         if self.verbose:
             print("> Initializing model parameters")
@@ -60,6 +82,10 @@ cdef class VIPRS(PRSModel):
         self.init_history()
 
     cpdef init_history(self):
+        """
+        Initialize the history object to track various quantities.
+        (For now, we track the ELBO only).
+        """
 
         self.history = {
             'ELBO': []
@@ -67,8 +93,8 @@ cdef class VIPRS(PRSModel):
 
     cpdef initialize_theta(self, theta_0=None):
         """
-        This method initializes the global hyper-parameters
-        :return:
+        Initialize the global hyper-parameters
+        :param theta_0: A dictionary of initial values for the hyperparameters theta
         """
 
         if theta_0 is not None and self.fix_params is not None:
@@ -78,37 +104,78 @@ cdef class VIPRS(PRSModel):
         elif theta_0 is None:
             theta_0 = {}
 
-
+        # ----------------------------------------------
+        # (1) Initialize pi from a uniform
         if 'pi' not in theta_0:
-            self.pi = np.random.uniform(low=1. / self.M, high=.5)
+            init_pi = np.random.uniform(low=1. / self.M, high=.5)
         else:
-            self.pi = theta_0['pi']
+            init_pi = theta_0['pi']
+
+        # If pi is not a dict, convert to a dictionary of per-SNP values:
+        if not isinstance(init_pi, dict):
+            self.pi = dict_repeat(init_pi, self.shapes)
+        else:
+            self.pi = init_pi
+
+        # For the remaining steps, estimate the mean value of pi:
+        mean_pi = dict_mean(self.pi)
+
+        # ----------------------------------------------
+        # (2) Initialize sigma_epsilon and sigma_beta
+        # Assuming that the genotype and phenotype are normalized,
+        # these two quantities are conceptually linked.
+        # The initialization routine here assumes that:
+        # Var(y) = h2 + sigma_epsilon
+        # Where, by assumption, Var(y) = 1,
+        # And h2 ~= pi*M*sigma_beta
 
         if 'sigma_epsilon' not in theta_0:
             if 'sigma_beta' not in theta_0:
+
+                # If neither sigma_beta nor sigma_epsilon are given,
+                # then initialize using the SNP heritability estimate
+
                 try:
                     naive_h2g = clip(self.gdl.estimate_snp_heritability(), 1e-6, 1. - 1e-6)
                 except Exception as e:
                     naive_h2g = np.random.uniform(low=.001, high=.999)
 
                 self.sigma_epsilon = 1. - naive_h2g
-                self.sigma_beta = naive_h2g / (self.pi * self.M)
+                self.sigma_beta = dict_repeat(naive_h2g / (mean_pi * self.M), self.shapes)
             else:
-                self.sigma_beta = theta_0['sigma_beta']
-                self.sigma_epsilon = clip(1. - self.sigma_beta*(self.pi * self.M), 1e-6, 1. - 1e-6)
+
+                # If sigma_beta is given, use it to initialize sigma_epsilon
+
+                init_sigma_beta = theta_0['sigma_beta']
+
+                if not isinstance(init_sigma_beta, dict):
+                    mean_sigma_beta = init_sigma_beta
+                    self.sigma_beta = dict_repeat(init_sigma_beta, self.shapes)
+                else:
+                    mean_sigma_beta = dict_mean(init_sigma_beta)
+                    self.sigma_beta = init_sigma_beta
+
+                self.sigma_epsilon = clip(1. - mean_sigma_beta*(mean_pi * self.M), 1e-6, 1. - 1e-6)
         else:
+
+            # If sigma_epsilon is given, use it in the initialization
+
             self.sigma_epsilon = theta_0['sigma_epsilon']
 
             if 'sigma_beta' in theta_0:
-                self.sigma_beta = theta_0['sigma_beta']
+                init_sigma_beta = theta_0['sigma_beta']
             else:
-                self.sigma_beta = (1. - self.sigma_epsilon) / (self.pi * self.M)
+                init_sigma_beta = (1. - self.sigma_epsilon) / (mean_pi * self.M)
+
+            if not isinstance(init_sigma_beta, dict):
+                self.sigma_beta = dict_repeat(init_sigma_beta, self.shapes)
+            else:
+                self.sigma_beta = init_sigma_beta
 
 
     cpdef initialize_variational_params(self):
         """
-        This method initializes the variational parameters.
-        :return:
+        Initialize the variational parameters.
         """
 
         self.var_mu_beta = {}
@@ -117,35 +184,39 @@ cdef class VIPRS(PRSModel):
 
         for c, c_size in self.shapes.items():
 
-            self.var_gamma[c] = np.repeat(self.pi, c_size)
-            self.var_mu_beta[c] = np.random.normal(scale=sqrt(self.sigma_beta), size=c_size)
-            self.var_sigma_beta[c] = np.repeat(self.sigma_beta, c_size)
+            self.var_gamma[c] = self.pi[c].copy()
+            self.var_mu_beta[c] = np.random.normal(scale=np.sqrt(self.sigma_beta[c]), size=c_size)
+            self.var_sigma_beta[c] = self.sigma_beta[c].copy()
 
             self.mean_beta[c] = self.var_gamma[c]*self.var_mu_beta[c]
             self.mean_beta_sq[c] = self.var_gamma[c]*(self.var_mu_beta[c]**2 + self.var_sigma_beta[c])
 
     cpdef e_step(self):
         """
-        In the E-step, we update the variational parameters
-        for each SNP.
-        :return:
+        In the E-step, update the variational parameters for each SNP 
+        in a coordinate-wise fashion.
         """
 
+        # Initialize memoryviews objects for fast access
         cdef:
             unsigned int j, start, end, j_idx
             double u_j
-            double[::1] var_gamma, var_mu_beta, var_sigma_beta, mean_beta, mean_beta_sq, beta_hat, q, Dj
-            long[::1] N
+            double[::1] logodds_pi, sigma_beta  # Per-SNP priors
+            double[::1] var_gamma, var_mu_beta, var_sigma_beta  # Variational parameters
+            double[::1] std_beta, Dj  # Inputs
+            double[::1] mean_beta, mean_beta_sq, q  # Properties of porposed distribution
+            long[::1] N  # Sample size per SNP
             long[:, ::1] ld_bound
-            # The log(pi) for the gamma updates
-            double logodds_pi = log(self.pi / (1. - self.pi))
 
         for c, c_size in self.shapes.items():
 
             # Updates for sigma_beta variational parameters:
-            self.var_sigma_beta[c] = self.sigma_epsilon / (self.Nj[c] + self.sigma_epsilon / self.sigma_beta)
+            self.var_sigma_beta[c] = self.sigma_epsilon / (self.Nj[c] + self.sigma_epsilon / self.sigma_beta[c])
 
-            beta_hat = self.beta_hat[c]
+            # Set the numpy vectors into memoryviews for fast access:
+            logodds_pi = np.log(self.pi[c] / (1. - self.pi[c]))
+            sigma_beta = self.sigma_beta[c]
+            std_beta = self.std_beta[c]
             var_gamma = self.var_gamma[c]
             var_mu_beta = self.var_mu_beta[c]
             var_sigma_beta = self.var_sigma_beta[c]
@@ -160,10 +231,10 @@ cdef class VIPRS(PRSModel):
                 start, end = ld_bound[:, j]
                 j_idx = j - start
 
-                var_mu_beta[j] = (beta_hat[j] - dot(Dj, mean_beta[start: end], self.threads) +
-                                  Dj[j_idx]*mean_beta[j]) / (1. + self.sigma_epsilon / (N[j] * self.sigma_beta))
+                var_mu_beta[j] = (std_beta[j] - dot(Dj, mean_beta[start: end], self.threads) +
+                                  Dj[j_idx]*mean_beta[j]) / (1. + self.sigma_epsilon / (N[j] * sigma_beta[j]))
 
-                u_j = (logodds_pi + .5*log(var_sigma_beta[j] / self.sigma_beta) +
+                u_j = (logodds_pi[j] + .5*log(var_sigma_beta[j] / sigma_beta[j]) +
                        (.5/var_sigma_beta[j])*var_mu_beta[j]*var_mu_beta[j])
                 var_gamma[j] = clip(sigmoid(u_j), 1e-6, 1. - 1e-6)
 
@@ -184,31 +255,37 @@ cdef class VIPRS(PRSModel):
             self.q[c] = np.array(q)
 
     cpdef update_pi(self):
+        """
+        Update the prior probability of a variant being causal
+        """
 
         if 'pi' not in self.fix_params:
 
-            var_gamma_sum = np.sum([
-                mt_sum(self.var_gamma[c], self.threads)
-                for c in self.shapes
-            ])
-
-            self.pi = clip(var_gamma_sum / self.M, 1./self.M, 1. - 1./self.M)
+            # Get the average of the gammas:
+            pi_estimate = dict_mean(self.var_gamma)
+            # Clip value:
+            pi_estimate = clip(pi_estimate, 1./self.M, 1. - 1./self.M)
+            # Set pi to the new estimate:
+            self.pi = dict_set(self.pi, pi_estimate)
 
     cpdef update_sigma_beta(self):
+        """
+        Update the prior variance on the effect size, sigma_beta
+        """
 
         if 'sigma_beta' not in self.fix_params:
 
-            var_gamma_sum = np.sum([
-                mt_sum(self.var_gamma[c], self.threads)
-                for c in self.shapes
-            ])
-
-            self.sigma_beta = np.sum([mt_sum(self.mean_beta_sq[c], self.threads)
-                                      for c in self.shapes]) / var_gamma_sum
-
-            self.sigma_beta = clip(self.sigma_beta, 1e-12, 1. - 1e-12)
+            # Sigma_beta estimate:
+            sigma_beta_estimate = dict_sum(self.mean_beta_sq) / dict_sum(self.var_gamma)
+            # Clip value:
+            sigma_beta_estimate = clip(sigma_beta_estimate, 1e-12, 1. - 1e-12)
+            # Set sigma_beta to the new estimate
+            self.sigma_beta = dict_set(self.sigma_beta, sigma_beta_estimate)
 
     cpdef update_sigma_epsilon(self):
+        """
+        Update the residual variance, sigma_epsilon.
+        """
 
         if 'sigma_epsilon' not in self.fix_params:
 
@@ -217,7 +294,7 @@ cdef class VIPRS(PRSModel):
             for c, c_size in self.shapes.items():
 
                 sig_eps += (
-                        - 2. * dot(self.mean_beta[c], self.beta_hat[c], self.threads) +
+                        - 2. * dot(self.mean_beta[c], self.std_beta[c], self.threads) +
                         mt_sum(self.mean_beta_sq[c], self.threads) +
                         dot(self.mean_beta[c], self.q[c], self.threads)
                 )
@@ -226,9 +303,7 @@ cdef class VIPRS(PRSModel):
 
     cpdef m_step(self):
         """
-        In the M-step, we update the global parameters of
-        the model.
-        :return:
+        In the M-step, update the global hyperparameters of the model.
         """
 
         self.update_pi()
@@ -236,45 +311,106 @@ cdef class VIPRS(PRSModel):
         self.update_sigma_epsilon()
 
     cpdef objective(self):
+        """
+        Compute the objective, Evidence Lower-BOund (ELBO)
+        from summary statistics.
+        """
 
-        loglik = 0.  # log of joint density
-        ent = 0.  # entropy
+        # The ELBO is made of two components:
+        loglik = 0.  # (1) log of joint density
+        ent = 0.  # (2) entropy
 
-        # Add the fixed quantities:
-        loglik -= .5 * self.N * (log(2 * np.pi * self.sigma_epsilon) + 1. / self.sigma_epsilon)
-        loglik -= .5 * self.M * log(2. * np.pi * self.sigma_beta)
-        loglik += self.M * log(1. - self.pi)
+        # Concatenate the dictionary items for easy computation:
+        var_gamma = dict_concat(self.var_gamma)
+        var_mu_beta = dict_concat(self.var_mu_beta)
+        var_sigma_beta = dict_concat(self.var_sigma_beta)
 
-        ent += .5 * self.M * log(2. * np.pi * np.e * self.sigma_beta)
+        pi = dict_concat(self.pi)
+        sigma_beta = dict_concat(self.sigma_beta)
 
-        for c in self.shapes:
+        q = dict_concat(self.q)
+        mean_beta = dict_concat(self.mean_beta)
+        mean_beta_sq = dict_concat(self.mean_beta_sq)
 
-            loglik += (-.5 * self.N / self.sigma_epsilon) * (
-                    - 2. * dot(self.mean_beta[c], self.beta_hat[c], self.threads)
-                    + dot(self.mean_beta[c], self.q[c], self.threads)
-                    + mt_sum(self.mean_beta_sq[c], self.threads)
-            )
+        std_beta = dict_concat(self.std_beta)
 
-            loglik += (-.5 / self.sigma_beta) * (
-                    np.sum(self.mean_beta_sq[c]) +
-                    self.sigma_beta * np.sum(1 - self.var_gamma[c])
-            )
+        # -----------------------------------------------
+        # (1) Compute the log of the joint density:
 
-            loglik += log(self.pi / (1. - self.pi)) * mt_sum(self.var_gamma[c], self.threads)
+        #
+        # (1.1) The following terms are an expansion of ||Y - X\beta||^2
+        #
+        # -N/2log(2pi*sigma_epsilon)
+        loglik -= .5 * self.N * log(2 * np.pi * self.sigma_epsilon)
 
-            ent += .5 * dot(self.var_gamma[c], np.log(self.var_sigma_beta[c] / self.sigma_beta), self.threads)
+        # -Y'Y/(2*sigma_epsilon), where we assume Y'Y = N
+        loglik -= .5*(self.N/self.sigma_epsilon)
 
-            ent -= dot(self.var_gamma[c], np.log(self.var_gamma[c] / (1. - self.var_gamma[c])), self.threads)
-            ent -= mt_sum(np.log(1. - self.var_gamma[c]), self.threads)
+        # + (1./sigma_epsilon)*\beta*(XY), where we assume XY = N\hat{\beta}
+        loglik += (self.N/self.sigma_epsilon)*dot(mean_beta, std_beta, self.threads)
+
+        # (-1/2sigma_epsilon)\beta'X'X\beta, where we assume X_j'X_j = N
+        # Note that the q factor is equivalent to X'X\beta (excluding diagonal)
+        loglik -= .5*(self.N/self.sigma_epsilon)*(dot(mean_beta, q, self.threads) +
+                                                  mt_sum(mean_beta_sq, self.threads))
+
+        #
+        # (1.2) The following terms are the priors on beta:
+        #
+        # -.5\sum_j log(2.*pi*sigma_beta_j)
+        loglik -= .5 * self.M * log(2. * np.pi) + .5*mt_sum(np.log(sigma_beta), self.threads)
+
+        # -.5\sum_j (1./sigma_beta_j)*\E_q[\beta^2]
+        loglik -= .5 * dot(1./sigma_beta, mean_beta_sq, self.threads) + .5 * mt_sum(1. - var_gamma, self.threads)
+        #
+        # (1.3) The following terms are the prior on the causal indicator:
+        #
+
+        # \sum_j log(1 - pi_j)
+        loglik += mt_sum(np.log(1. - pi), self.threads)
+
+        # \sum_j log(pi_j/(1 - pi_j))\gamma_j
+        loglik += dot(np.log(pi / (1. - pi)), var_gamma, self.threads)
+
+        # -----------------------------------------------
+        # (2) Compute the entropy of the variational distribution
+        #
+        # (2.1) The Gaussian entropy terms
+        #
+
+        # .5 \sum_j log(2.*pi*e*sigma_beta_j) + \gamma_j*log(var_sigma_beta_j) + (1 - \gamma_j)log(\sigma_beta_j)
+        ent += .5 * (
+                self.M * log(2.*np.pi*np.e) +
+                dot(var_gamma, np.log(var_sigma_beta), self.threads) +
+                dot(1. - var_gamma, np.log(sigma_beta), self.threads)
+        )
+
+        #
+        # (2.2) The Bernoulli entropy term
+        #
+
+        # .5 \sum_j -\gamma_j log(gamma_j) - (1 - \gamma_j)log(1 - \gamma_j)
+        ent -= dot(var_gamma, np.log(var_gamma), self.threads)
+        ent -= dot(1. - var_gamma, np.log(1. - var_gamma), self.threads)
+
+        # -----------------------------------------------
+
+        # Sum both elements to get the final ELBO:
 
         elbo = loglik + ent
 
         return elbo
 
     cpdef get_proportion_causal(self):
-        return self.pi
+        """
+        Estimate the proportion of causal variants for the trait.
+        """
+        return dict_mean(self.pi)
 
     cpdef get_heritability(self):
+        """
+        Estimate the heritability of the trait
+        """
 
         sigma_g = np.sum([
             mt_sum(self.mean_beta_sq[c], self.threads) +
@@ -287,15 +423,35 @@ cdef class VIPRS(PRSModel):
         return h2g
 
     cpdef write_inferred_theta(self, f_name):
+        """
+        Write the inferred (and fixed) hyperparameters to file.
+        :param f_name: The file name
+        """
 
         theta_table = {
-            'Parameter': ['Residual_variance', 'Effect_variance', 'Proportion_causal', 'Heritability'],
-            'Value': [self.sigma_epsilon, self.sigma_beta, self.pi, self.get_heritability()]
+            'Parameter': ['Residual_variance', 'Effect_variance',
+                          'Proportion_causal', 'Heritability'],
+            'Value': [self.sigma_epsilon, dict_mean(self.sigma_beta),
+                      self.get_proportion_causal(), self.get_heritability()]
         }
 
-        pd.DataFrame(theta_table).to_csv(f_name, sep="\t", index=False)
+        # Write the table to file:
+        try:
+            pd.DataFrame(theta_table).to_csv(f_name, sep="\t", index=False)
+        except Exception as e:
+            raise e
 
     cpdef fit(self, max_iter=1000, theta_0=None, continued=False, ftol=1e-6, xtol=1e-6, max_elbo_drops=10):
+        """
+        Fit the model parameters to data.
+        
+        :param max_iter: Maximum number of iterations. 
+        :param theta_0: A dictionary of values to initialize the hyperparameters
+        :param continued: If true, continue the model fitting for more iterations.
+        :param ftol: The tolerance threshold for the objective (ELBO)
+        :param xtol: The tolerance threshold for the parameters (mean beta)
+        :param max_elbo_drops: The maximum number of times the objective is allowed to drop.
+        """
 
         if not continued:
             self.initialize(theta_0)

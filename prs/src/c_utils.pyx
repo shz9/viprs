@@ -10,7 +10,7 @@
 
 cimport cython
 from cython.parallel import prange
-from libc.math cimport exp
+from libc.math cimport exp, log
 
 
 @cython.boundscheck(False)
@@ -19,6 +19,14 @@ from libc.math cimport exp
 @cython.cdivision(True)
 cdef double sigmoid(double x):
     return 1./(1. + exp(-x))
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
+@cython.cdivision(True)
+cdef double logit(double x):
+    return log(x / (1. - x))
 
 
 @cython.boundscheck(False)
