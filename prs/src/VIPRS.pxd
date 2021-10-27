@@ -23,4 +23,5 @@ cdef class VIPRS(PRSModel):
     cpdef update_sigma_epsilon(self)
     cpdef m_step(self)
     cpdef objective(self)
+    cpdef to_theta_table(self)
     cpdef write_inferred_theta(self, f_name)

@@ -422,11 +422,7 @@ cdef class VIPRS(PRSModel):
 
         return h2g
 
-    cpdef write_inferred_theta(self, f_name):
-        """
-        Write the inferred (and fixed) hyperparameters to file.
-        :param f_name: The file name
-        """
+    cpdef to_theta_table(self):
 
         theta_table = {
             'Parameter': ['Residual_variance', 'Effect_variance',
@@ -435,13 +431,21 @@ cdef class VIPRS(PRSModel):
                       self.get_proportion_causal(), self.get_heritability()]
         }
 
+        return pd.DataFrame(theta_table)
+
+    cpdef write_inferred_theta(self, f_name):
+        """
+        Write the inferred (and fixed) hyperparameters to file.
+        :param f_name: The file name
+        """
+
         # Write the table to file:
         try:
-            pd.DataFrame(theta_table).to_csv(f_name, sep="\t", index=False)
+            self.to_theta_table().to_csv(f_name, sep="\t", index=False)
         except Exception as e:
             raise e
 
-    cpdef fit(self, max_iter=1000, theta_0=None, continued=False, ftol=1e-6, xtol=1e-6, max_elbo_drops=10):
+    cpdef fit(self, max_iter=1000, theta_0=None, continued=False, ftol=1e-5, xtol=1e-5, max_elbo_drops=10):
         """
         Fit the model parameters to data.
         
@@ -493,7 +497,7 @@ cdef class VIPRS(PRSModel):
                     break
 
                 if i > 2:
-                    if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 10.:
+                    if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 1e3:
                         raise OptimizationDivergence(f"Stopping at iteration {i}: "
                                                      f"The optimization algorithm is not converging!\n"
                                                      f"Previous ELBO: {prev_elbo:.6f} | "

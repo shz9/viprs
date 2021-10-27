@@ -17,19 +17,26 @@ def generate_bounded_localized_grid(local_val, n_steps=9, base=1.75, a_min=1e-6,
     This function takes a value between `a_min` and `a_max`
     and then generates a grid of `n_steps` around it using the specified base.
     """
-
     lb_grid = (base ** (np.arange(-np.floor(n_steps / 2), np.ceil(n_steps / 2))))*local_val
     return np.unique(np.clip(lb_grid, a_min=a_min, a_max=a_max))
 
 
-def generate_grid(M, n_steps=9, h2g_estimate=None, sigma_epsilon_steps=None, pi_steps=None, sigma_beta_steps=None):
+def generate_grid(M,
+                  n_steps=9,
+                  h2g_estimate=None,
+                  sigma_epsilon_steps=None,
+                  pi_steps=None,
+                  sigma_beta_steps=None,
+                  alpha_steps=None):
     """
-    :param M:
-    :param n_steps:
-    :param sigma_epsilon_steps:
-    :param pi_steps:
-    :param sigma_beta_steps:
-    :return:
+    TODO: Give user more fine-grained control over this. Maybe turn into a class
+    that can be passed to GridSearch?
+    :param M: The number of SNps included in the model
+    :param n_steps: The overall number of steps
+    :param sigma_epsilon_steps: The number of steps for sigma epsilon
+    :param pi_steps: The number of steps for pi
+    :param sigma_beta_steps: The number of steps for sigma_beta
+    :param alpha_steps: The number of steps for alpha
     """
 
     if sigma_epsilon_steps is None:
@@ -38,10 +45,13 @@ def generate_grid(M, n_steps=9, h2g_estimate=None, sigma_epsilon_steps=None, pi_
         pi_steps = n_steps
     if sigma_beta_steps is None:
         sigma_beta_steps = n_steps
+    if alpha_steps is None:
+        alpha_steps = n_steps
 
     grid = {
         'pi': np.clip(10. ** (-np.linspace(np.floor(np.log10(M)), 0., pi_steps)),
-                      a_min=1. / M, a_max=1. - 1. / M)
+                      a_min=1. / M, a_max=1. - 1. / M),
+        'alpha': np.linspace(-1., 0., alpha_steps)
     }
 
     if h2g_estimate is None:
@@ -50,10 +60,11 @@ def generate_grid(M, n_steps=9, h2g_estimate=None, sigma_epsilon_steps=None, pi_
         grid['sigma_beta'] = (1./M)*np.linspace(1. / sigma_beta_steps, 1., sigma_beta_steps)
 
     else:
-        h2g_grid = generate_bounded_localized_grid(h2g_estimate, n_steps=n_steps)
+        h2g_grid_e = generate_bounded_localized_grid(h2g_estimate, n_steps=sigma_epsilon_steps)
+        grid['sigma_epsilon'] = 1. - h2g_grid_e
 
-        grid['sigma_epsilon'] = 1. - h2g_grid
-        grid['sigma_beta'] = (1. / M) * h2g_grid
+        h2g_grid_b = generate_bounded_localized_grid(h2g_estimate, n_steps=sigma_beta_steps)
+        grid['sigma_beta'] = (1. / M) * h2g_grid_b
 
     return grid
 
@@ -229,7 +240,6 @@ class BayesOpt(HyperparameterSearch):
             max_iter=100, tol=1e-4):
 
         """
-        :param opt_params:
         :param n_calls:
         :param n_random_starts:
         :param acq_func:
@@ -256,7 +266,8 @@ class BayesOpt(HyperparameterSearch):
 
         param_bounds = {
             'sigma_epsilon': (1e-6, 1. - 1e-6),
-            'sigma_beta': (1e-12, .5),
+            'alpha': (-1., 0.),
+            'sigma_beta': (1e-12, 1.),
             'pi': (-np.floor(np.log10(self.gdl.M)), -.001)
         }
 
