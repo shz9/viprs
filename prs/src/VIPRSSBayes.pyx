@@ -43,7 +43,7 @@ cdef class VIPRSSBayes(VIPRS):
             double[::1] var_gamma, var_mu_beta, var_sigma_beta  # Variational parameters
             double[::1] std_beta, Dj  # Inputs
             double[::1] mean_beta, mean_beta_sq, q  # Properties of porposed distribution
-            long[::1] N  # Sample size per SNP
+            double[::1] N  # Sample size per SNP
             long[:, ::1] ld_bound
 
         for c, c_size in self.shapes.items():

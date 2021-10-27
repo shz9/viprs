@@ -17,7 +17,7 @@ cdef class PRSModel:
     def __init__(self, gdl):
 
         self.N = gdl.sample_size
-        self.Nj = gdl.n_per_snp
+        self.Nj = {c: n.astype(float) for c, n in gdl.n_per_snp.items()}
         self.M = gdl.M
         self.gdl = gdl  # An instance of GWASDataLoader
         self.shapes = self.gdl.shapes
