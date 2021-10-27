@@ -76,7 +76,7 @@ cdef class PRSModel:
         for c, snps in self.gdl.snps.items():
 
             c_df = pd.DataFrame({'CHR': c, 'SNP': snps, 'A1': self.gdl.alt_alleles[c]})
-            c_df = c_df.merge(eff_table, how='left', on='SNP')
+            c_df = c_df.merge(eff_table, how='left', on='SNP').drop_duplicates(subset=['SNP'])
 
             # Fill in missing values:
             c_df['PIP'] = c_df['PIP'].fillna(0.)
