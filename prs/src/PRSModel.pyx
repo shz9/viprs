@@ -17,7 +17,14 @@ cdef class PRSModel:
     def __init__(self, gdl):
 
         self.N = gdl.sample_size
-        self.Nj = {c: n.astype(float) for c, n in gdl.n_per_snp.items()}
+
+        # Sample size per SNP:
+        try:
+            self.Nj = {c: n.astype(float) for c, n in gdl.n_per_snp.items()}
+        except AttributeError:
+            # If not provided, use the overall sample size:
+            self.Nj = {c: np.repeat(self.N, c_size).astype(float) for c, c_size in gdl.shapes}
+
         self.M = gdl.M
         self.gdl = gdl  # An instance of GWASDataLoader
         self.shapes = self.gdl.shapes
