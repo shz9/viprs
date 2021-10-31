@@ -27,7 +27,7 @@ def generate_grid(M,
                   sigma_epsilon_steps=None,
                   pi_steps=None,
                   sigma_beta_steps=None,
-                  alpha_steps=None):
+                  alpha_steps=5):
     """
     TODO: Give user more fine-grained control over this. Maybe turn into a class
     that can be passed to GridSearch?
