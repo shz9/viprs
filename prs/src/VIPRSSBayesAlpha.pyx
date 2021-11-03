@@ -21,7 +21,7 @@ cdef class VIPRSSBayesAlpha(VIPRS):
 
     cdef public:
         double alpha
-        dict alpha_factor, yy, sig_e_snp
+        dict alpha_factor, reciprocal_alpha_factor, yy, sig_e_snp
 
     def __init__(self, gdl, alpha=-.25, fix_params=None, load_ld=True, verbose=True, threads=1):
 
@@ -47,7 +47,8 @@ cdef class VIPRSSBayesAlpha(VIPRS):
         Since we need the reciprocal of this in the sigma_beta update,
         we raise to the the power of -(1. + alpha)
         """
-        self.alpha_factor = {c: (maf * (1. - maf)) ** (-(1. + alpha)) for c, maf in self.gdl.maf.items()}
+        self.reciprocal_alpha_factor = {c: (maf * (1. - maf)) ** (-(1. + alpha)) for c, maf in self.gdl.maf.items()}
+        self.alpha_factor = {c: (maf * (1. - maf)) ** (1. + alpha) for c, maf in self.gdl.maf.items()}
 
     cpdef e_step(self):
 
@@ -127,7 +128,7 @@ cdef class VIPRSSBayesAlpha(VIPRS):
 
             # Sigma_beta estimate:
             sigma_beta_estimate = dict_sum(
-                dict_elementwise_dot(self.alpha_factor, self.mean_beta_sq)
+                dict_elementwise_dot(self.reciprocal_alpha_factor, self.mean_beta_sq)
             ) / dict_sum(self.var_gamma)
             # Clip value:
             sigma_beta_estimate = clip(sigma_beta_estimate, 1e-12, 1. - 1e-12)
