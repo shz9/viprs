@@ -71,7 +71,7 @@ cdef class VIPRS(PRSModel):
     cpdef initialize(self, theta_0=None):
         """
         A convenience method to initialize all the objects associated with the model.
-        :param theta_0: 
+        :param theta_0: A dictionary of initial values for the hyperparameters theta
         """
 
         if self.verbose:

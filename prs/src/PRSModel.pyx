@@ -55,8 +55,68 @@ cdef class PRSModel:
 
         if gdl is None:
             gdl = self.gdl
+            inf_beta = self.inf_beta
+        else:
+            _, inf_beta = self.harmonize_data(gdl=gdl)
 
-        return gdl.predict(self.inf_beta)
+        return gdl.predict(inf_beta)
+
+    cpdef harmonize_data(self, gdl=None, eff_table=None):
+        """
+        Harmonize the inferred effect sizes with a GWAS Data Loader object
+        The user must provide at least one object to harmonize with existing information.
+        :param gdl: The GWAS Data Loader object
+        :param eff_table: The table of effect sizes
+        """
+
+        if gdl is None and eff_table is None:
+            return
+
+        if gdl is None:
+            gdl = self.gdl
+        if eff_table is None:
+            eff_table = self.to_table(per_chromosome=False)
+
+        snp_tables = gdl.to_snp_table(col_subset=('CHR', 'SNP', 'A1'),
+                                      per_chromosome=True)
+
+        pip = {}
+        inf_beta = {}
+
+        for c, snp_table in snp_tables.items():
+
+            # Merge the effect table with the GDL SNP table:
+            c_df = snp_table.merge(eff_table, how='left', on='SNP').drop_duplicates(subset=['SNP'])
+
+            # Fill in missing values:
+            c_df['PIP'] = c_df['PIP'].fillna(0.)
+            c_df['BETA'] = c_df['BETA'].fillna(0.)
+            c_df['A1_y'] = c_df['A1_y'].fillna(c_df['A1_x'])
+
+            # Correct for potential strand flipping:
+            strand_flipped = np.not_equal(c_df['A1_x'].values, c_df['A1_y'].values).astype(int)
+            c_df['BETA'] = (-2.*strand_flipped + 1.) * c_df['BETA']
+
+            pip[c] = c_df['PIP'].values
+            inf_beta[c] = c_df['BETA'].values
+
+        return pip, inf_beta
+
+    cpdef to_table(self, per_chromosome=False, col_subset=('CHR', 'SNP', 'A1', 'A2')):
+
+        if self.inf_beta is None:
+            raise Exception("Inferred betas are not set. Call `.fit()` first.")
+
+        tables = self.gdl.to_snp_table(per_chromosome=True, col_subset=col_subset)
+
+        for c in self.shapes:
+            tables[c]['PIP'] = self.pip[c]
+            tables[c]['BETA'] = self.inf_beta[c]
+
+        if per_chromosome:
+            return tables
+        else:
+            return pd.concat(tables.values())
 
     cpdef read_inferred_params(self, f_names):
 
@@ -70,49 +130,7 @@ cdef class PRSModel:
 
         eff_table = pd.concat(eff_table)
 
-        self.pip = {}
-        self.inf_beta = {}
-
-        for c, snps in self.gdl.snps.items():
-
-            c_df = pd.DataFrame({'CHR': c, 'SNP': snps, 'A1': self.gdl.alt_alleles[c]})
-            c_df = c_df.merge(eff_table, how='left', on='SNP').drop_duplicates(subset=['SNP'])
-
-            # Fill in missing values:
-            c_df['PIP'] = c_df['PIP'].fillna(0.)
-            c_df['BETA'] = c_df['BETA'].fillna(0.)
-            c_df['A1_y'] = c_df['A1_y'].fillna(c_df['A1_x'])
-
-            # Correct for potential strand flipping:
-            strand_flipped = np.not_equal(c_df['A1_x'].values, c_df['A1_y'].values).astype(int)
-            c_df['BETA'] = (-2.*strand_flipped + 1.) * c_df['BETA']
-
-            self.pip[c] = c_df['PIP'].values
-            self.inf_beta[c] = c_df['BETA'].values
-
-    cpdef to_table(self, per_chromosome=False):
-
-        tables = {}
-
-        snps = self.gdl.snps
-        ref_allel = self.gdl.ref_alleles
-        alt_allel = self.gdl.alt_alleles
-
-        for c, betas in self.inf_beta.items():
-
-            df = pd.DataFrame({'CHR': c,
-                               'SNP': snps[c],
-                               'A1': alt_allel[c],
-                               'A2': ref_allel[c],
-                               'PIP': self.pip[c],
-                               'BETA': betas})
-
-            tables[c] = df
-
-        if not per_chromosome:
-            return pd.concat(tables.values())
-        else:
-            return tables
+        self.pip, self.inf_beta = self.harmonize_data(eff_table=eff_table)
 
     cpdef write_inferred_params(self, f_name, per_chromosome=False):
 
