@@ -9,24 +9,26 @@ def dict_concat(d):
     return np.concatenate([d[c] for c in sorted(d.keys())])
 
 
-def dict_mean(d):
+def dict_mean(d, axis=None):
     """
     Estimate the mean of the values of a dictionary
     :param d: A dictionary where values are numeric scalars or vectors
+    :param axis: Perform aggregation along given axis.
     """
-    return np.mean([np.mean(v) for v in d.values()])
+    return np.mean(np.array([np.mean(v, axis=axis) for v in d.values()]), axis=axis)
 
 
-def dict_sum(d, transform=None):
+def dict_sum(d, axis=None, transform=None):
     """
     Estimate the sum of the values of a dictionary
     :param d: A dictionary where values are numeric scalars or vectors
+    :param axis: Perform aggregation along given axis.
     :param transform: Transformation to apply before summing.
     """
     if transform is None:
-        return np.sum([np.sum(v) for v in d.values()])
+        return np.sum(np.array([np.sum(v, axis=axis) for v in d.values()]), axis=axis)
     else:
-        return np.sum([np.sum(transform(v)) for v in d.values()])
+        return np.sum(np.array([np.sum(transform(v), axis=axis) for v in d.values()]), axis=axis)
 
 
 def dict_elementwise_transform(d, transform):
@@ -75,4 +77,4 @@ def dict_repeat(value, shapes):
     :param shapes: A dictionary of shapes. Key is arbitrary, value is integer input to np.repeat
     :param value:  The value to repeat
     """
-    return {c: np.repeat(value, c_size) for c, c_size in shapes.items()}
+    return {c: value*np.ones(shp) for c, shp in shapes.items()}

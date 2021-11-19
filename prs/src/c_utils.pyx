@@ -12,6 +12,23 @@ cimport cython
 from cython.parallel import prange
 from libc.math cimport exp, log
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
+@cython.cdivision(True)
+cdef double[::1] softmax(double[::1] x):
+
+    cdef unsigned int i, end = x.shape[0]
+    cdef double s = 0.
+
+    for i in range(end):
+        x[i] = exp(x[i])
+        s += x[i]
+
+    for i in range(end):
+        x[i] /= s
+
+    return x
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -76,6 +93,18 @@ cdef double[::1] elementwise_add_mult(double[::1] v1, double[::1] v2, double s, 
 
     return v1
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
+@cython.cdivision(True)
+cdef double[::1] clip_list(double[::1] a, double min_value, double max_value):
+
+    cdef unsigned int i, end = a.shape[0]
+
+    for i in range(end):
+        a[i] = clip(a[i], min_value, max_value)
+
+    return a
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
