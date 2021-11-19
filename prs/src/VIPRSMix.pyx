@@ -423,12 +423,12 @@ cdef class VIPRSMix(PRSModel):
 
         # Concatenate the dictionary items for easy computation:
         var_gamma = dict_concat(self.var_gamma)
-        null_gamma = 1. - var_gamma.sum(axis=1)  # The gamma for the null component
+        null_gamma = np.clip(1. - var_gamma.sum(axis=1), 1e-6, 1. - 1e-6)  # The gamma for the null component
         var_mu_beta = dict_concat(self.var_mu_beta)
         var_sigma_beta = dict_concat(self.var_sigma_beta)
 
         pi = dict_concat(self.pi)
-        null_pi = 1. - pi.sum(axis=1)  # The pi for the null component
+        null_pi = np.clip(1. - pi.sum(axis=1), 1e-6, 1. - 1e-6)  # The pi for the null component
         sigma_beta = dict_concat(self.sigma_beta)
 
         q = dict_concat(self.q)
