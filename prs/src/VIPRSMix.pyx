@@ -341,6 +341,10 @@ cdef class VIPRSMix(PRSModel):
             else:
                 pi_estimate /= self.M
 
+            # Clip and normalize:
+            pi_estimate = np.clip(pi_estimate, 1./self.M, 1. - 1./self.M)
+            pi_estimate /= np.sum(pi_estimate)
+
             # Set pi to the new estimate:
             self.pi = dict_repeat(pi_estimate, self.shapes)
 
