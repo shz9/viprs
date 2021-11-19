@@ -70,6 +70,7 @@ def generate_grid(M,
 
 
 def fit_model_fixed_params(params):
+    # TODO: Figure out how to streamline this for VIPRSMix implementations
     # vi_model, fixed_params, **fit_kwargs
     vi_model, fixed_params, fit_kwargs = params
     vi_model.fix_params = fixed_params
@@ -79,7 +80,7 @@ def fit_model_fixed_params(params):
     except Exception as e:
         return None, None, None, None
 
-    return vi_model.objective(), vi_model.var_gamma, vi_model.var_mu_beta, vi_model.var_sigma_beta
+    return vi_model.objective(), vi_model.var_gamma, vi_model.var_mu_beta, vi_model.var_sigma_beta, vi_model.inf_beta
 
 
 class HyperparameterSearch(object):
@@ -162,7 +163,7 @@ class HyperparameterSearch(object):
             for c, shp in self._validation_gdl.shapes.items():
                 valid_beta = np.zeros(shape=(shp, len(fit_results)))
                 valid_beta[self._validation_to_train_map[c]['validation_index'].values, :] = np.array(
-                    [gamma[c] * beta[c] for _, gamma, beta, _ in fit_results]).T[
+                    [inf_beta[c] for _, _, _, _, inf_beta in fit_results]).T[
                     self._validation_to_train_map[c]['train_index'].values, :
                 ]
                 v_inf_beta[c] = valid_beta
@@ -193,13 +194,13 @@ class HyperparameterSearch(object):
         if self._opt_objective == 'ELBO':
             return fit_result[0]
         else:
-            _, gamma, beta, _ = fit_result
+            _, _, _, _, inf_beta = fit_result
 
             # Match inferred betas with the SNPs in the validation GDL:
             v_inf_beta = {}
             for c, shp in self._validation_gdl.shapes.items():
                 valid_beta = np.zeros(shp)
-                valid_beta[self._validation_to_train_map[c]['validation_index'].values] = (gamma[c]*beta[c])[
+                valid_beta[self._validation_to_train_map[c]['validation_index'].values] = (inf_beta[c])[
                     self._validation_to_train_map[c]['train_index'].values
                 ]
                 v_inf_beta[c] = valid_beta
@@ -519,7 +520,7 @@ class BMA(PRSModel):
         ctx = multiprocessing.get_context("spawn")
 
         with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
-            for elbo, n_var_gamma, n_var_mu_beta, n_var_sigma_beta in \
+            for elbo, n_var_gamma, n_var_mu_beta, n_var_sigma_beta, _ in \
                     tqdm(pool.imap_unordered(fit_model_fixed_params, opts), total=len(opts)):
 
                 if elbo is None:
