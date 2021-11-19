@@ -342,11 +342,12 @@ cdef class VIPRSMix(PRSModel):
                 pi_estimate /= self.M
 
             # Clip and normalize:
-            pi_estimate = np.clip(pi_estimate, 1./self.M, 1. - 1./self.M)
+            all_pis = np.concatenate(pi_estimate, [1. - pi_estimate.sum()])
+            pi_estimate = np.clip(all_pis, 1./self.M, 1. - 1./self.M)
             pi_estimate /= np.sum(pi_estimate)
 
             # Set pi to the new estimate:
-            self.pi = dict_repeat(pi_estimate, self.shapes)
+            self.pi = dict_repeat(pi_estimate[:-1], self.shapes)
 
     cpdef update_sigma_beta(self):
         """
