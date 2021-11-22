@@ -178,6 +178,7 @@ class HyperparameterSearch(object):
             ctx = multiprocessing.get_context("spawn")
 
             with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
+                # TODO: Update this to account for flattened PRS arrays.
                 r2_results = pool.starmap(eval_func,
                                           [(prs[:, i].flatten(), self._validation_gdl.phenotypes)
                                            for i in range(len(fit_results))])
@@ -329,7 +330,7 @@ class GridSearchSlow(HyperparameterSearch):
     def fit(self, max_iter=100, tol=1e-4, **grid_kwargs):
 
         if self.localized_grid:
-            h2g = self.gdl.estimate_snp_heritability()
+            h2g = np.clip(self.gdl.estimate_snp_heritability(), a_min=1e-3, a_max=1. - 1e-3)
             steps = generate_grid(self.gdl.M, h2g_estimate=h2g, **grid_kwargs)
         else:
             steps = generate_grid(self.gdl.M, **grid_kwargs)
@@ -398,7 +399,7 @@ class GridSearch(HyperparameterSearch):
     def fit(self, max_iter=100, tol=1e-4, **grid_kwargs):
 
         if self.localized_grid:
-            h2g = self.gdl.estimate_snp_heritability()
+            h2g = np.clip(self.gdl.estimate_snp_heritability(), a_min=1e-3, a_max=1. - 1e-3)
             steps = generate_grid(self.gdl.M, h2g_estimate=h2g, **grid_kwargs)
         else:
             steps = generate_grid(self.gdl.M, **grid_kwargs)
@@ -501,7 +502,7 @@ class BMA(PRSModel):
         self.initialize()
 
         if self.localized_grid:
-            h2g = self.gdl.estimate_snp_heritability()
+            h2g = np.clip(self.gdl.estimate_snp_heritability(), a_min=1e-3, a_max=1. - 1e-3)
             steps = generate_grid(self.gdl.M, h2g_estimate=h2g, **grid_kwargs)
         else:
             steps = generate_grid(self.gdl.M, **grid_kwargs)

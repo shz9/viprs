@@ -252,7 +252,8 @@ cdef class VIPRSMix(PRSModel):
         cdef:
             unsigned int j, k, start, end, j_idx
             double mu_beta_j, gamma_denom
-            double[:, ::1] pi, sigma_beta  # Per-SNP priors
+            double[::1] null_pi
+            double[:, ::1] log_pi, sigma_beta  # Per-SNP priors
             double[:, ::1] var_gamma, var_mu_beta, var_sigma_beta  # Variational parameters
             double[::1] std_beta, Dj  # Inputs
             double[::1] mean_beta, mean_beta_sq, q  # Properties of proposed distribution
@@ -265,7 +266,8 @@ cdef class VIPRSMix(PRSModel):
             self.var_sigma_beta[c] = self.sigma_epsilon / (self.Nj[c][:, None] + self.sigma_epsilon / self.sigma_beta[c])
 
             # Set the numpy vectors into memoryviews for fast access:
-            pi = self.pi[c]
+            log_pi = np.log(self.pi[c])
+            null_pi = 1. - self.pi[c].sum(axis=1)
             sigma_beta = self.sigma_beta[c]
             std_beta = self.std_beta[c]
             var_gamma = self.var_gamma[c]
@@ -285,13 +287,13 @@ cdef class VIPRSMix(PRSModel):
                 # The numerator for all the mu_beta updates:
                 mu_beta_j = (std_beta[j] - dot(Dj, mean_beta[start: end], self.threads) + Dj[j_idx]*mean_beta[j])
                 # The denominator for normalizing the gammas (start with the null component):
-                gamma_denom = 1. - np.sum(pi[j])
+                gamma_denom = null_pi[j]
 
                 for k in range(self.K):
                     # Compute the mu beta for component `k`
                     var_mu_beta[j, k] = mu_beta_j / (1. + self.sigma_epsilon / (N[j] * sigma_beta[j, k]))
                     # Compute the unnormalized gamma for component `k`
-                    var_gamma[j, k] = exp(log(pi[j, k]) + .5*log(var_sigma_beta[j, k] / sigma_beta[j, k]) +
+                    var_gamma[j, k] = exp(log_pi[j, k] + .5*log(var_sigma_beta[j, k] / sigma_beta[j, k]) +
                                         (.5/var_sigma_beta[j, k])*var_mu_beta[j, k]*var_mu_beta[j, k])
                     # Add the gamma to the sum
                     gamma_denom += var_gamma[j, k]
