@@ -9,6 +9,8 @@
 # cython: infer_types=True
 
 cimport cython
+cimport numpy as np
+import numpy as np
 from cython.parallel import prange
 from libc.math cimport exp, log
 
@@ -17,12 +19,16 @@ from libc.math cimport exp, log
 @cython.nonecheck(False)
 @cython.cdivision(True)
 cdef double[::1] softmax(double[::1] x):
+    """
+    A numerically stable implementation of softmax
+    :param x: 
+    """
 
     cdef unsigned int i, end = x.shape[0]
-    cdef double s = 0.
+    cdef double s = 0., max_x = c_max(x)
 
     for i in range(end):
-        x[i] = exp(x[i])
+        x[i] = exp(x[i] - max_x)
         s += x[i]
 
     for i in range(end):
@@ -105,6 +111,19 @@ cdef double[::1] clip_list(double[::1] a, double min_value, double max_value):
         a[i] = clip(a[i], min_value, max_value)
 
     return a
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
+@cython.cdivision(True)
+cdef double c_max(double[::1] x):
+    cdef unsigned int i, end = x.shape[0]
+    cdef double current_max = 0.
+
+    for i in range(end):
+        if i == 0 or current_max < x[i]:
+            current_max = x[i]
+    return current_max
 
 @cython.boundscheck(False)
 @cython.wraparound(False)

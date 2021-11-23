@@ -13,7 +13,7 @@ cimport numpy as np
 from libc.math cimport log, exp
 
 from .VIPRSMix cimport VIPRSMix
-from .c_utils cimport dot, elementwise_add_mult, clip
+from .c_utils cimport dot, elementwise_add_mult, clip, softmax
 
 
 cdef class VIPRSMixSBayes(VIPRSMix):
@@ -41,7 +41,7 @@ cdef class VIPRSMixSBayes(VIPRSMix):
         cdef:
             unsigned int j, k, start, end, j_idx
             double mu_beta_j, gamma_denom
-            double[::1] null_pi, sig_e
+            double[::1] u_j, log_null_pi, sig_e
             double[:, ::1] log_pi, sigma_beta  # Per-SNP priors
             double[:, ::1] var_gamma, var_mu_beta, var_sigma_beta  # Variational parameters
             double[::1] std_beta, Dj  # Inputs
@@ -53,7 +53,7 @@ cdef class VIPRSMixSBayes(VIPRSMix):
 
             # Set the numpy vectors into memoryviews for fast access:
             log_pi = np.log(self.pi[c])
-            null_pi = 1. - self.pi[c].sum(axis=1)
+            log_null_pi = np.log(1. - self.pi[c].sum(axis=1))
             sig_e = self.sig_e_snp[c]
             sigma_beta = self.sigma_beta[c]
             std_beta = self.std_beta[c]
@@ -65,6 +65,7 @@ cdef class VIPRSMixSBayes(VIPRSMix):
             ld_bound = self.ld_bounds[c]
             N = self.Nj[c]
             q = np.zeros(shape=c_size[0])
+            u_j = np.zeros(shape=self.K + 1)
 
             for j, Dj in enumerate(self.ld[c]):
 
@@ -73,8 +74,6 @@ cdef class VIPRSMixSBayes(VIPRSMix):
 
                 # The numerator for all the mu_beta updates:
                 mu_beta_j = (std_beta[j] - dot(Dj, mean_beta[start: end], self.threads) + Dj[j_idx]*mean_beta[j])
-                # The denominator for normalizing the gammas (start with the null component):
-                gamma_denom = null_pi[j]
 
                 for k in range(self.K):
 
@@ -83,17 +82,19 @@ cdef class VIPRSMixSBayes(VIPRSMix):
                     # Compute the mu beta for component `k`
                     var_mu_beta[j, k] = mu_beta_j / (1. + sig_e[j] / (N[j] * sigma_beta[j, k]))
                     # Compute the unnormalized gamma for component `k`
-                    var_gamma[j, k] = exp(log_pi[j, k] + .5*log(var_sigma_beta[j, k] / sigma_beta[j, k]) +
-                                        (.5/var_sigma_beta[j, k])*var_mu_beta[j, k]*var_mu_beta[j, k])
-                    # Add the gamma to the sum
-                    gamma_denom += var_gamma[j, k]
+                    u_j[k] = (log_pi[j, k] + .5 * log(var_sigma_beta[j, k] / sigma_beta[j, k]) +
+                              (.5 / var_sigma_beta[j, k]) * var_mu_beta[j, k] * var_mu_beta[j, k])
+
+
+                u_j[k + 1] = log_null_pi[j]
+                u_j = softmax(u_j)
 
                 # Normalize the gammas and update the beta statistics:
                 mean_beta[j] = 0.
                 mean_beta_sq[j] = 0.
 
                 for k in range(self.K):
-                    var_gamma[j, k] = clip(var_gamma[j, k] / gamma_denom, 1e-6, 1. - 1e-6)
+                    var_gamma[j, k] = clip(u_j[k], 1e-6, 1. - 1e-6)
 
                     mean_beta[j] += var_gamma[j, k]*var_mu_beta[j, k]
                     mean_beta_sq[j] += var_gamma[j, k] * (var_mu_beta[j, k] * var_mu_beta[j, k] + var_sigma_beta[j, k])
