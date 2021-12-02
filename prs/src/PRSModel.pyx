@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 import os.path as osp
 
+from ..gwasimulator.model_utils import merge_snp_tables
+
 cdef class PRSModel:
 
     def __init__(self, gdl):
@@ -86,16 +88,11 @@ cdef class PRSModel:
         for c, snp_table in snp_tables.items():
 
             # Merge the effect table with the GDL SNP table:
-            c_df = snp_table.merge(eff_table, how='left', on='SNP').drop_duplicates(subset=['SNP'])
+            c_df = merge_snp_tables(snp_table, eff_table, how='left')
 
             # Fill in missing values:
             c_df['PIP'] = c_df['PIP'].fillna(0.)
             c_df['BETA'] = c_df['BETA'].fillna(0.)
-            c_df['A1_y'] = c_df['A1_y'].fillna(c_df['A1_x'])
-
-            # Correct for potential strand flipping:
-            strand_flipped = np.not_equal(c_df['A1_x'].values, c_df['A1_y'].values).astype(int)
-            c_df['BETA'] = (-2.*strand_flipped + 1.) * c_df['BETA']
 
             pip[c] = c_df['PIP'].values
             inf_beta[c] = c_df['BETA'].values
