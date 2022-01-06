@@ -58,7 +58,7 @@ cdef class VIPRS(PRSModel):
         self.ld_bounds = self.gdl.get_ld_boundaries()
 
         # Standardized betas:
-        self.std_beta = self.gdl.compute_xy_per_snp()
+        self.std_beta = self.gdl.compute_snp_pseudo_corr()
 
         # ---------- General properties: ----------
 
@@ -107,7 +107,7 @@ cdef class VIPRS(PRSModel):
         # ----------------------------------------------
         # (1) Initialize pi from a uniform
         if 'pi' not in theta_0:
-            init_pi = np.random.uniform(low=1. / self.M, high=.5)
+            init_pi = np.random.uniform(low=max(0.005, 1. / self.M), high=min(.1, 1. - 1./self.M))
         else:
             init_pi = theta_0['pi']
 

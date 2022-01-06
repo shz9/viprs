@@ -71,7 +71,7 @@ cdef class VIPRSMix(PRSModel):
         self.ld_bounds = self.gdl.get_ld_boundaries()
 
         # Standardized betas:
-        self.std_beta = self.gdl.compute_xy_per_snp()
+        self.std_beta = self.gdl.compute_snp_pseudo_corr()
 
         # ---------- General properties: ----------
 
@@ -121,10 +121,13 @@ cdef class VIPRSMix(PRSModel):
         # (1) Initialize pi from a uniform
         if 'pis' in theta_0:
             init_pi = theta_0['pis']
-        elif 'pi' in theta_0:
-            init_pi = theta_0['pi']*np.random.dirichlet(np.ones(self.K))
         else:
-            init_pi = np.random.dirichlet(np.ones(self.K + 1))[:self.K]
+            if 'pi' in theta_0:
+                overall_pi = theta_0['pi']
+            else:
+                overall_pi = np.random.uniform(low=max(0.005, 1. / self.M), high=min(.1, 1. - 1. / self.M))
+
+            init_pi = overall_pi*np.random.dirichlet(np.ones(self.K))
 
         # If pi is not a dict, convert to a dictionary of per-SNP values:
         if not isinstance(init_pi, dict):

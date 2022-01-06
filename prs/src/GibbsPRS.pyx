@@ -44,7 +44,7 @@ cdef class GibbsPRS(PRSModel):
         self.load_ld = load_ld
         self.ld = self.gdl.get_ld_matrices()
         self.ld_bounds = self.gdl.get_ld_boundaries()
-        self.beta_hat = self.gdl.compute_xy_per_snp()
+        self.beta_hat = self.gdl.compute_snp_pseudo_corr()
 
         self.verbose = verbose
         self.fix_params = fix_params or {}
