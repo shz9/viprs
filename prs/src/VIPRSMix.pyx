@@ -18,12 +18,12 @@ from libc.math cimport log, exp
 from .PRSModel cimport PRSModel
 from .exceptions import OptimizationDivergence
 from .c_utils cimport dot, mt_sum, elementwise_add_mult, clip, softmax
-from .utils import dict_mean, dict_sum, dict_concat, dict_repeat, dict_elementwise_dot
+from .utils import dict_mean, dict_sum, dict_concat, dict_repeat, dict_elementwise_dot, fits_in_memory
 
 
 cdef class VIPRSMix(PRSModel):
 
-    def __init__(self, gdl, K=1, prior_multipliers=None, fix_params=None, load_ld=True, verbose=True, threads=1):
+    def __init__(self, gdl, K=1, prior_multipliers=None, fix_params=None, load_ld='auto', verbose=True, threads=1):
         """
         :param gdl: An instance of GWAS data loader
         :param K: The number of components in the mixture prior
@@ -66,9 +66,15 @@ cdef class VIPRSMix(PRSModel):
         # ---------- Inputs to the model: ----------
 
         # LD-related quantities:
-        self.load_ld = load_ld
         self.ld = self.gdl.get_ld_matrices()
         self.ld_bounds = self.gdl.get_ld_boundaries()
+
+        # If load_ld is set to `auto`, then determine whether to load
+        # the LD matrices by examining the available memory resources:
+        if load_ld == 'auto':
+            self.load_ld = fits_in_memory(sum([ld.estimate_uncompressed_size() for ld in self.ld.values()]))
+        else:
+            self.load_ld = load_ld
 
         # Standardized betas:
         self.std_beta = self.gdl.compute_snp_pseudo_corr()

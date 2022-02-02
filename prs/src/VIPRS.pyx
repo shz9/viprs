@@ -18,16 +18,16 @@ from libc.math cimport log, sqrt
 from .PRSModel cimport PRSModel
 from .exceptions import OptimizationDivergence
 from .c_utils cimport dot, mt_sum, elementwise_add_mult, sigmoid, clip
-from .utils import dict_mean, dict_sum, dict_concat, dict_repeat, dict_set
+from .utils import dict_mean, dict_sum, dict_concat, dict_repeat, dict_set, fits_in_memory
 
 
 cdef class VIPRS(PRSModel):
 
-    def __init__(self, gdl, fix_params=None, load_ld=True, verbose=True, threads=1):
+    def __init__(self, gdl, fix_params=None, load_ld='auto', verbose=True, threads=1):
         """
         :param gdl: An instance of GWAS data loader
         :param fix_params: A dictionary of parameters with their fixed values.
-        :param load_ld: A flag that specifies whether to load the LD matrix to memory.
+        :param load_ld: A flag that specifies whether to load the LD matrix to memory (Default: `auto`).
         :param verbose: Verbosity of the information printed to standard output
         :param threads: The number of threads to use (experimental)
         """
@@ -53,9 +53,15 @@ cdef class VIPRS(PRSModel):
         # ---------- Inputs to the model: ----------
 
         # LD-related quantities:
-        self.load_ld = load_ld
         self.ld = self.gdl.get_ld_matrices()
         self.ld_bounds = self.gdl.get_ld_boundaries()
+
+        # If load_ld is set to `auto`, then determine whether to load
+        # the LD matrices by examining the available memory resources:
+        if load_ld == 'auto':
+            self.load_ld = fits_in_memory(sum([ld.estimate_uncompressed_size() for ld in self.ld.values()]))
+        else:
+            self.load_ld = load_ld
 
         # Standardized betas:
         self.std_beta = self.gdl.compute_snp_pseudo_corr()
@@ -315,16 +321,19 @@ cdef class VIPRS(PRSModel):
         from summary statistics.
         """
 
-        # The ELBO is made of two components:
-        loglik = 0.  # (1) log of joint density
-        ent = 0.  # (2) entropy
+        """
+                Compute the objective, Evidence Lower-BOund (ELBO)
+                from summary statistics.
+                """
 
         # Concatenate the dictionary items for easy computation:
         var_gamma = dict_concat(self.var_gamma)
+        null_gamma = 1. - var_gamma  # The gamma for the null component
         var_mu_beta = dict_concat(self.var_mu_beta)
         var_sigma_beta = dict_concat(self.var_sigma_beta)
 
         pi = dict_concat(self.pi)
+        null_pi = 1. - pi # The pi for the null component
         sigma_beta = dict_concat(self.sigma_beta)
 
         q = dict_concat(self.q)
@@ -333,6 +342,9 @@ cdef class VIPRS(PRSModel):
 
         std_beta = dict_concat(self.std_beta)
 
+        # The ELBO is made of two components:
+        elbo = 0.  # (1) log of joint density
+
         # -----------------------------------------------
         # (1) Compute the log of the joint density:
 
@@ -340,63 +352,24 @@ cdef class VIPRS(PRSModel):
         # (1.1) The following terms are an expansion of ||Y - X\beta||^2
         #
         # -N/2log(2pi*sigma_epsilon)
-        loglik -= .5 * self.N * log(2 * np.pi * self.sigma_epsilon)
+        elbo -= .5 * self.N * log(2 * np.pi * self.sigma_epsilon)
 
         # -Y'Y/(2*sigma_epsilon), where we assume Y'Y = N
-        loglik -= .5*(self.N/self.sigma_epsilon)
+        elbo -= .5 * (self.N / self.sigma_epsilon)
 
         # + (1./sigma_epsilon)*\beta*(XY), where we assume XY = N\hat{\beta}
-        loglik += (self.N/self.sigma_epsilon)*dot(mean_beta, std_beta, self.threads)
+        elbo += (self.N / self.sigma_epsilon) * dot(mean_beta, std_beta, self.threads)
 
         # (-1/2sigma_epsilon)\beta'X'X\beta, where we assume X_j'X_j = N
         # Note that the q factor is equivalent to X'X\beta (excluding diagonal)
-        loglik -= .5*(self.N/self.sigma_epsilon)*(dot(mean_beta, q, self.threads) +
-                                                  mt_sum(mean_beta_sq, self.threads))
+        elbo -= .5 * (self.N / self.sigma_epsilon) * (dot(mean_beta, q, self.threads) +
+                                                      mt_sum(mean_beta_sq, self.threads))
 
-        #
-        # (1.2) The following terms are the priors on beta:
-        #
-        # -.5\sum_j log(2.*pi*sigma_beta_j)
-        loglik -= .5 * self.M * log(2. * np.pi) + .5*mt_sum(np.log(sigma_beta), self.threads)
+        elbo -= (var_gamma * np.log(var_gamma / pi)).sum()
+        elbo -= (null_gamma * np.log(null_gamma / null_pi)).sum()
 
-        # -.5\sum_j (1./sigma_beta_j)*\E_q[\beta^2]
-        loglik -= .5 * dot(1./sigma_beta, mean_beta_sq, self.threads) + .5 * mt_sum(1. - var_gamma, self.threads)
-        #
-        # (1.3) The following terms are the prior on the causal indicator:
-        #
-
-        # \sum_j log(1 - pi_j)
-        loglik += mt_sum(np.log(1. - pi), self.threads)
-
-        # \sum_j log(pi_j/(1 - pi_j))\gamma_j
-        loglik += dot(np.log(pi / (1. - pi)), var_gamma, self.threads)
-
-        # -----------------------------------------------
-        # (2) Compute the entropy of the variational distribution
-        #
-        # (2.1) The Gaussian entropy terms
-        #
-
-        # .5 \sum_j log(2.*pi*e*sigma_beta_j) + \gamma_j*log(var_sigma_beta_j) + (1 - \gamma_j)log(\sigma_beta_j)
-        ent += .5 * (
-                self.M * log(2.*np.pi*np.e) +
-                dot(var_gamma, np.log(var_sigma_beta), self.threads) +
-                dot(1. - var_gamma, np.log(sigma_beta), self.threads)
-        )
-
-        #
-        # (2.2) The Bernoulli entropy term
-        #
-
-        # .5 \sum_j -\gamma_j log(gamma_j) - (1 - \gamma_j)log(1 - \gamma_j)
-        ent -= dot(var_gamma, np.log(var_gamma), self.threads)
-        ent -= dot(1. - var_gamma, np.log(1. - var_gamma), self.threads)
-
-        # -----------------------------------------------
-
-        # Sum both elements to get the final ELBO:
-
-        elbo = loglik + ent
+        elbo += .5 * (var_gamma * (1. + np.log(var_sigma_beta / sigma_beta) -
+                                   (var_mu_beta ** 2 + var_sigma_beta) / sigma_beta)).sum()
 
         return elbo
 

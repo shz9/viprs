@@ -13,3 +13,4 @@ ldpred_test
 *.so
 *.log
 *.html
+notebooks
