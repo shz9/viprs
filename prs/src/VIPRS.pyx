@@ -417,11 +417,13 @@ cdef class VIPRS(PRSModel):
         except Exception as e:
             raise e
 
-    cpdef fit(self, max_iter=1000, theta_0=None, continued=False, ftol=1e-5, xtol=1e-5, max_elbo_drops=10):
+    cpdef fit(self, max_iter=1000, min_iter=5, theta_0=None,
+              continued=False, ftol=1e-5, xtol=1e-5, max_elbo_drops=10):
         """
         Fit the model parameters to data.
         
         :param max_iter: Maximum number of iterations. 
+        :param min_iter: Minimum number of iterations.
         :param theta_0: A dictionary of values to initialize the hyperparameters
         :param continued: If true, continue the model fitting for more iterations.
         :param ftol: The tolerance threshold for the objective (ELBO)
@@ -458,26 +460,28 @@ cdef class VIPRS(PRSModel):
                     warnings.warn(f"Iteration {i}: ELBO dropped from {prev_elbo:.6f} "
                                   f"to {curr_elbo:.6f}.")
 
-                if abs(curr_elbo - prev_elbo) <= ftol:
-                    print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
-                    break
-                elif max([np.abs(v - self.inf_beta[c]).max() for c, v in self.mean_beta.items()]) <= xtol:
-                    print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
-                    break
-                elif elbo_dropped_count > max_elbo_drops:
-                    warnings.warn("The optimization is halted due to numerical instabilities!")
-                    break
 
-                if i > 2:
-                    if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 1e3:
-                        raise OptimizationDivergence(f"Stopping at iteration {i}: "
-                                                     f"The optimization algorithm is not converging!\n"
-                                                     f"Previous ELBO: {prev_elbo:.6f} | "
-                                                     f"Current ELBO: {curr_elbo:.6f}")
-                    elif self.get_heritability() >= 1.:
-                        raise OptimizationDivergence(f"Stopping at iteration {i}: "
-                                                     f"The optimization algorithm is not converging!\n"
-                                                     f"Value of estimated heritability exceeded 1.")
+                if i > min_iter:
+
+                    if abs(curr_elbo - prev_elbo) <= ftol:
+                        print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
+                        break
+                    elif max([np.abs(v - self.inf_beta[c]).max() for c, v in self.mean_beta.items()]) <= xtol:
+                        print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
+                        break
+                    elif elbo_dropped_count > max_elbo_drops:
+                        warnings.warn("The optimization is halted due to numerical instabilities!")
+                        break
+
+                if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 1e3:
+                    raise OptimizationDivergence(f"Stopping at iteration {i}: "
+                                                 f"The optimization algorithm is not converging!\n"
+                                                 f"Previous ELBO: {prev_elbo:.6f} | "
+                                                 f"Current ELBO: {curr_elbo:.6f}")
+                elif self.get_heritability() >= 1.:
+                    raise OptimizationDivergence(f"Stopping at iteration {i}: "
+                                                 f"The optimization algorithm is not converging!\n"
+                                                 f"Value of estimated heritability exceeded 1.")
 
             self.pip = {c: v.copy() for c, v in self.var_gamma.items()}
             self.inf_beta = {c: v.copy() for c, v in self.mean_beta.items()}
