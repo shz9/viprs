@@ -8,9 +8,25 @@
 # cython: language_level=3
 # cython: infer_types=True
 
+from scipy.optimize import minimize
 from .VIPRS cimport VIPRS
 from .c_utils cimport clip
 from .utils import dict_elementwise_dot, dict_sum, dict_set
+
+
+def alpha_objective(a, valpha):
+
+    valpha.update_alpha_factor(a)
+    valpha.update_sigma_beta()
+
+    # Regularized objective:
+    # Roughly equivalent to assuming that
+    # alpha is drawn from a unit Gaussian
+    # See:
+    # Signatures of negative selection in the genetic architecture of human complex traits
+    # Zeng et al. 2018
+
+    return -valpha.objective() + a**2
 
 
 cdef class VIPRSAlpha(VIPRS):
@@ -19,14 +35,27 @@ cdef class VIPRSAlpha(VIPRS):
         double alpha
         dict alpha_factor, reciprocal_alpha_factor
 
-    def __init__(self, gdl, alpha=-.25, fix_params=None, load_ld=True, verbose=True, threads=1):
+    def __init__(self, gdl, fix_params=None, load_ld=True, verbose=True, threads=1):
 
         super().__init__(gdl, fix_params=fix_params, load_ld=load_ld, verbose=verbose, threads=threads)
-        self.alpha = alpha
-        self.update_alpha_factor(alpha)
 
     cpdef initialize_theta(self, theta_0=None):
+
+        if theta_0 is not None and self.fix_params is not None:
+            theta_0.update(self.fix_params)
+        elif self.fix_params is not None:
+            theta_0 = self.fix_params
+        elif theta_0 is None:
+            theta_0 = {}
+
         super(VIPRSAlpha, self).initialize_theta(theta_0=theta_0)
+
+        if 'alpha' in theta_0:
+            self.alpha = theta_0['alpha']
+        else:
+            self.alpha = -.25  # Empirical estimate based on analysis of a large number of quantitative traits
+
+        self.update_alpha_factor(self.alpha)
         self.sigma_beta = dict_elementwise_dot(self.sigma_beta, self.alpha_factor)
 
     cpdef update_alpha_factor(self, alpha):
@@ -45,17 +74,23 @@ cdef class VIPRSAlpha(VIPRS):
         theta_table = super(VIPRSAlpha, self).to_theta_table()
         return theta_table.append({'Parameter': 'alpha', 'Value': self.alpha}, ignore_index=True)
 
+    cpdef update_alpha(self):
+
+        if 'alpha' not in self.fix_params:
+            res = minimize(alpha_objective, (self.alpha,), args=(self,))
+            self.alpha = res.x
+            self.update_alpha_factor(self.alpha)
+        else:
+            if self.fix_params['alpha'] != self.alpha:
+                self.alpha = self.fix_params['alpha']
+                self.update_alpha_factor(self.alpha)
+
     cpdef update_sigma_beta(self):
         """
         Update the prior variance on the effect size, sigma_beta
         """
 
         if 'sigma_beta' not in self.fix_params:
-
-            if 'alpha' in self.fix_params:
-                if self.fix_params['alpha'] != self.alpha:
-                    self.alpha = self.fix_params['alpha']
-                    self.update_alpha_factor(self.alpha)
 
             # Sigma_beta estimate:
             sigma_beta_estimate = dict_sum(
@@ -67,3 +102,13 @@ cdef class VIPRSAlpha(VIPRS):
             self.sigma_beta = dict_set(self.sigma_beta, sigma_beta_estimate)
             # Set the new sigma_beta per SNP:
             self.sigma_beta = dict_elementwise_dot(self.sigma_beta, self.alpha_factor)
+
+    cpdef m_step(self):
+        """
+        In the M-step, update the global hyperparameters of the model.
+        """
+
+        self.update_pi()
+        self.update_alpha()
+        self.update_sigma_beta()
+        self.update_sigma_epsilon()
