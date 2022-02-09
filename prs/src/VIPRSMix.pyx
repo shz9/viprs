@@ -530,24 +530,30 @@ cdef class VIPRSMix(PRSModel):
             raise e
 
     cpdef fit(self, max_iter=1000, min_iter=5, theta_0=None,
-              continued=False, f_tol=1e-5, x_abs_tol=1e-8, x_rel_tol=1e-4, max_elbo_drops=10):
+              continued=False, f_abs_tol=1e-4, x_rel_tol=1e-3, max_elbo_drops=10):
         """
         Fit the model parameters to data.
 
-        :param max_iter: Maximum number of iterations.
+        :param max_iter: Maximum number of iterations. 
         :param min_iter: Minimum number of iterations.
         :param theta_0: A dictionary of values to initialize the hyperparameters
         :param continued: If true, continue the model fitting for more iterations.
-        :param f_tol: The absolute tolerance threshold for the objective (ELBO)
-        :param x_abs_tol: The absolute tolerance threshold for the parameters (mean beta)
+        :param f_abs_tol: The absolute tolerance threshold for the objective (ELBO)
         :param x_rel_tol: The relative tolerance threshold for the parameters (mean beta)
-        :param max_elbo_drops: The maximum number of times the objective is allowed to drop.
+        :param max_elbo_drops: The maximum number of times the objective is allowed to drop before termination.
         """
 
         if not continued:
             self.initialize(theta_0)
+            start_idx = 1
+        else:
+            start_idx = len(self.history['ELBO']) + 1
 
         if self.load_ld:
+
+            if self.verbose:
+                print("> Loading LD matrices into memory...")
+
             self.gdl.load_ld()
 
         elbo_dropped_count = 0
@@ -557,7 +563,7 @@ cdef class VIPRSMix(PRSModel):
             print("> Performing model fit...")
             print(f"> Using up to {self.threads} threads.")
 
-        for i in tqdm(range(1, max_iter + 1), disable=not self.verbose):
+        for i in tqdm(range(start_idx, start_idx + max_iter), disable=not self.verbose):
             self.e_step()
             self.m_step()
 
@@ -572,19 +578,18 @@ cdef class VIPRSMix(PRSModel):
                     elbo_dropped_count += 1
                     warnings.warn(f"Iteration {i}: ELBO dropped from {prev_elbo:.6f} "
                                   f"to {curr_elbo:.6f}.")
+                    continue
 
                 if i > min_iter:
 
-                    if abs(curr_elbo - prev_elbo) <= f_tol:
-                        print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
+                    if np.isclose(prev_elbo, curr_elbo, atol=f_abs_tol, rtol=0.):
+                        print(f"Converged at iteration {i} || ELBO: {curr_elbo:.6f}")
+                        converged = True
                         break
-                    elif max([np.abs(v - self.inf_beta[c]).max()
-                                  for c, v in self.mean_beta.items()]) <= x_abs_tol:
+                    elif all([np.allclose(self.inf_beta[c], v, atol=0., rtol=x_rel_tol)
+                              for c, v in self.mean_beta.items()]):
                         print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
-                        break
-                    elif max([np.abs((v - self.inf_beta[c]) / self.inf_beta[c]).max()
-                              for c, v in self.mean_beta.items()]) <= x_rel_tol:
-                        print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
+                        converged = True
                         break
                     elif elbo_dropped_count > max_elbo_drops:
                         warnings.warn("The optimization is halted due to numerical instabilities!")
@@ -603,15 +608,15 @@ cdef class VIPRSMix(PRSModel):
             self.pip = {c: v.sum(axis=1) for c, v in self.var_gamma.items()}
             self.inf_beta = {c: v.copy() for c, v in self.mean_beta.items()}
 
-        self.pip = {c: v.sum(axis=1) for c, v in self.var_gamma.items()}
-        self.inf_beta = {c: v.copy() for c, v in self.mean_beta.items()}
-
-        if i == max_iter:
+        if converged:
+            self.pip = {c: v.sum(axis=1) for c, v in self.var_gamma.items()}
+            self.inf_beta = {c: v.copy() for c, v in self.mean_beta.items()}
+        elif i - start_idx == max_iter - 1:
             warnings.warn("Max iterations reached without convergence. "
                           "You may need to run the model for more iterations.")
 
         if self.verbose:
-            print(f"> Final ELBO: {self.history['ELBO'][i-1]:.6f}")
+            print(f"> Final ELBO: {self.history['ELBO'][len(self.history['ELBO'])-1]:.6f}")
             print(f"> Estimated heritability: {self.get_heritability():.6f}")
             print(f"> Estimated proportion of causal variants: {self.get_proportion_causal():.6f}")
 
