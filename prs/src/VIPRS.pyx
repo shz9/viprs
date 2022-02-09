@@ -418,7 +418,7 @@ cdef class VIPRS(PRSModel):
             raise e
 
     cpdef fit(self, max_iter=1000, min_iter=5, theta_0=None,
-              continued=False, ftol=1e-5, xtol=1e-5, max_elbo_drops=10):
+              continued=False, f_tol=1e-5, x_abs_tol=1e-8, x_rel_tol=1e-4, max_elbo_drops=10):
         """
         Fit the model parameters to data.
         
@@ -426,8 +426,9 @@ cdef class VIPRS(PRSModel):
         :param min_iter: Minimum number of iterations.
         :param theta_0: A dictionary of values to initialize the hyperparameters
         :param continued: If true, continue the model fitting for more iterations.
-        :param ftol: The tolerance threshold for the objective (ELBO)
-        :param xtol: The tolerance threshold for the parameters (mean beta)
+        :param f_tol: The absolute tolerance threshold for the objective (ELBO)
+        :param x_abs_tol: The absolute tolerance threshold for the parameters (mean beta)
+        :param x_rel_tol: The relative tolerance threshold for the parameters (mean beta)
         :param max_elbo_drops: The maximum number of times the objective is allowed to drop.
         """
 
@@ -463,10 +464,15 @@ cdef class VIPRS(PRSModel):
 
                 if i > min_iter:
 
-                    if abs(curr_elbo - prev_elbo) <= ftol:
+                    if abs(curr_elbo - prev_elbo) <= f_tol:
                         print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
                         break
-                    elif max([np.abs(v - self.inf_beta[c]).max() for c, v in self.mean_beta.items()]) <= xtol:
+                    elif max([np.abs(v - self.inf_beta[c]).max()
+                              for c, v in self.mean_beta.items()]) <= x_abs_tol:
+                        print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
+                        break
+                    elif max([np.abs((v - self.inf_beta[c]) / self.inf_beta[c]).max()
+                              for c, v in self.mean_beta.items()]) <= x_rel_tol:
                         print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
                         break
                     elif elbo_dropped_count > max_elbo_drops:
@@ -485,6 +491,9 @@ cdef class VIPRS(PRSModel):
 
             self.pip = {c: v.copy() for c, v in self.var_gamma.items()}
             self.inf_beta = {c: v.copy() for c, v in self.mean_beta.items()}
+
+        self.pip = {c: v.copy() for c, v in self.var_gamma.items()}
+        self.inf_beta = {c: v.copy() for c, v in self.mean_beta.items()}
 
         if i == max_iter:
             warnings.warn("Max iterations reached without convergence. "
