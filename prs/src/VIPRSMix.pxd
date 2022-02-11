@@ -18,10 +18,10 @@ cdef class VIPRSMix(PRSModel):
         list tracked_theta
         int threads
 
-    cpdef initialize(self, theta_0=*)
+    cpdef initialize(self, theta_0=*, param_0=*)
     cpdef init_history(self)
     cpdef initialize_theta(self, theta_0=*)
-    cpdef initialize_variational_params(self)
+    cpdef initialize_variational_params(self, param_0=*)
     cpdef e_step(self)
     cpdef update_pi(self)
     cpdef update_sigma_beta(self)

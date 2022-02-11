@@ -95,17 +95,18 @@ cdef class VIPRSMix(PRSModel):
 
         self.tracked_theta = tracked_theta or []
 
-    cpdef initialize(self, theta_0=None):
+    cpdef initialize(self, theta_0=None, param_0=None):
         """
         A convenience method to initialize all the objects associated with the model.
         :param theta_0: A dictionary of initial values for the hyperparameters theta
+        :param param_0: A dictionary of initial values for the variational parameters
         """
 
         if self.verbose:
             print("> Initializing model parameters")
 
         self.initialize_theta(theta_0)
-        self.initialize_variational_params()
+        self.initialize_variational_params(param_0)
         self.init_history()
 
     cpdef init_history(self):
@@ -244,10 +245,13 @@ cdef class VIPRSMix(PRSModel):
             else:
                 self.sigma_beta = init_sigma_beta
 
-    cpdef initialize_variational_params(self):
+    cpdef initialize_variational_params(self, param_0=None):
         """
         Initialize the variational parameters.
+        :param param_0: A dictionary of initial values for the variational parameters
         """
+
+        param_0 = param_0 or {}
 
         self.var_mu_beta = {}
         self.var_sigma_beta = {}
@@ -256,14 +260,21 @@ cdef class VIPRSMix(PRSModel):
         for c, c_size in self.shapes.items():
 
             n_j = self.Nj[c].reshape(-1, 1)
-            std_beta = self.std_beta[c].reshape(-1, 1)
 
-            self.var_sigma_beta[c] = self.sigma_epsilon / (n_j + self.sigma_epsilon / self.sigma_beta[c])
-            self.var_mu_beta[c] = n_j * self.var_sigma_beta[c] * std_beta / self.sigma_epsilon
-            u_j = (np.log(self.pi[c] / (1. - self.pi[c])) +
-                   .5 * np.log(self.var_sigma_beta[c] / self.sigma_beta[c]) +
-                   .5 * (1 / self.var_sigma_beta[c]) * self.var_mu_beta[c] ** 2)
-            self.var_gamma[c] = 1. / (1 + np.exp(-u_j))
+            if 'sigma' in param_0:
+                self.var_sigma_beta[c] = param_0['sigma'][c]
+            else:
+                self.var_sigma_beta[c] = self.sigma_epsilon / (n_j + self.sigma_epsilon / self.sigma_beta[c])
+
+            if 'mu' in param_0:
+                self.var_mu_beta[c] = param_0['mu'][c]
+            else:
+                self.var_mu_beta[c] = np.zeros(c_size)
+
+            if 'gamma' in param_0:
+                self.var_gamma[c] = param_0['gamma'][c]
+            else:
+                self.var_gamma[c] = self.pi[c].copy()
 
             self.mean_beta[c] = (self.var_gamma[c]*self.var_mu_beta[c]).sum(axis=1)
             self.mean_beta_sq[c] = (self.var_gamma[c]*(self.var_mu_beta[c]**2 + self.var_sigma_beta[c])).sum(axis=1)
@@ -557,13 +568,14 @@ cdef class VIPRSMix(PRSModel):
             if tt == 'sigma_epsilon':
                 self.history['sigma_epsilon'].append(self.sigma_epsilon)
 
-    cpdef fit(self, max_iter=1000, theta_0=None,
-              continued=False, f_abs_tol=1e-4, x_rel_tol=1e-3, max_elbo_drops=10):
+    cpdef fit(self, max_iter=1000, theta_0=None, param_0=None,
+              continued=False, f_abs_tol=1e-3, x_rel_tol=1e-3, max_elbo_drops=10):
         """
         Fit the model parameters to data.
 
         :param max_iter: Maximum number of iterations. 
         :param theta_0: A dictionary of values to initialize the hyperparameters
+        :param param_0: A dictionary of initial values for the variational parameters
         :param continued: If true, continue the model fitting for more iterations.
         :param f_abs_tol: The absolute tolerance threshold for the objective (ELBO)
         :param x_rel_tol: The relative tolerance threshold for the parameters (mean beta)
