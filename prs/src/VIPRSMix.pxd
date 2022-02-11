@@ -15,6 +15,7 @@ cdef class VIPRSMix(PRSModel):
         dict q, mean_beta, mean_beta_sq  # Properties of the variational distribution
         dict std_beta, ld, ld_bounds  # Inputs to the algorithm
         dict history, fix_params  # Helpers
+        list tracked_theta
         int threads
 
     cpdef initialize(self, theta_0=*)
@@ -28,4 +29,5 @@ cdef class VIPRSMix(PRSModel):
     cpdef m_step(self)
     cpdef objective(self)
     cpdef to_theta_table(self)
+    cpdef update_theta_history(self)
     cpdef write_inferred_theta(self, f_name)

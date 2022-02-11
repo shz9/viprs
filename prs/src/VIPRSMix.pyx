@@ -23,13 +23,19 @@ from .utils import dict_mean, dict_sum, dict_concat, dict_repeat, dict_elementwi
 
 cdef class VIPRSMix(PRSModel):
 
-    def __init__(self, gdl, K=1, prior_multipliers=None, fix_params=None, load_ld='auto', verbose=True, threads=1):
+    def __init__(self, gdl, K=1, prior_multipliers=None,
+                 fix_params=None, load_ld='auto', tracked_theta=None, verbose=True, threads=1):
         """
         :param gdl: An instance of GWAS data loader
         :param K: The number of components in the mixture prior
         :param prior_multipliers: Multiplier for the prior on the effect size (vector of size K)
         :param fix_params: A dictionary of parameters with their fixed values.
         :param load_ld: A flag that specifies whether to load the LD matrix to memory.
+        :param tracked_theta: A list of hyperparameters to track throughout the optimization procedure. Useful
+        for debugging/model checking. Currently, we allow the user to track the following:
+            - The proportion of causal variants (`pi`).
+            - The heritability ('heritability').
+            - The residual variance (`sigma_epsilon`).
         :param verbose: Verbosity of the information printed to standard output
         :param threads: The number of threads to use (experimental)
         """
@@ -87,6 +93,8 @@ cdef class VIPRSMix(PRSModel):
         self.verbose = verbose
         self.history = {}
 
+        self.tracked_theta = tracked_theta or []
+
     cpdef initialize(self, theta_0=None):
         """
         A convenience method to initialize all the objects associated with the model.
@@ -103,12 +111,14 @@ cdef class VIPRSMix(PRSModel):
     cpdef init_history(self):
         """
         Initialize the history object to track various quantities.
-        (For now, we track the ELBO only).
         """
 
         self.history = {
             'ELBO': []
         }
+
+        for tt in self.tracked_theta:
+            self.history[tt] = []
 
     cpdef initialize_theta(self, theta_0=None):
         """
@@ -131,7 +141,7 @@ cdef class VIPRSMix(PRSModel):
             if 'pi' in theta_0:
                 overall_pi = theta_0['pi']
             else:
-                overall_pi = np.random.uniform(low=max(0.005, 1. / self.M), high=min(.1, 1. - 1. / self.M))
+                overall_pi = np.random.uniform(low=max(0.005, 1. / self.M), high=.1)
 
             init_pi = overall_pi*np.random.dirichlet(np.ones(self.K))
 
@@ -170,7 +180,8 @@ cdef class VIPRSMix(PRSModel):
                     mean_sigma_beta = dict_mean(init_sigma_beta)
                     self.sigma_beta = init_sigma_beta
 
-                self.sigma_epsilon = clip(1. - dict_sum(dict_elementwise_dot(self.sigma_beta, self.pi)), 1e-6, 1. - 1e-6)
+                self.sigma_epsilon = clip(1. - dict_sum(dict_elementwise_dot(self.sigma_beta, self.pi)),
+                                          1e-6, 1. - 1e-6)
 
             elif 'sigma_beta' in theta_0:
                 # NOTE: Here, we assume the provided `sigma_beta` is a scalar.
@@ -244,9 +255,15 @@ cdef class VIPRSMix(PRSModel):
 
         for c, c_size in self.shapes.items():
 
-            self.var_gamma[c] = self.pi[c].copy()
-            self.var_mu_beta[c] = np.random.normal(scale=np.sqrt(self.sigma_beta[c]), size=c_size)
-            self.var_sigma_beta[c] = self.sigma_beta[c].copy()
+            n_j = self.Nj[c].reshape(-1, 1)
+            std_beta = self.std_beta[c].reshape(-1, 1)
+
+            self.var_sigma_beta[c] = self.sigma_epsilon / (n_j + self.sigma_epsilon / self.sigma_beta[c])
+            self.var_mu_beta[c] = n_j * self.var_sigma_beta[c] * std_beta / self.sigma_epsilon
+            u_j = (np.log(self.pi[c] / (1. - self.pi[c])) +
+                   .5 * np.log(self.var_sigma_beta[c] / self.sigma_beta[c]) +
+                   .5 * (1 / self.var_sigma_beta[c]) * self.var_mu_beta[c] ** 2)
+            self.var_gamma[c] = 1. / (1 + np.exp(-u_j))
 
             self.mean_beta[c] = (self.var_gamma[c]*self.var_mu_beta[c]).sum(axis=1)
             self.mean_beta_sq[c] = (self.var_gamma[c]*(self.var_mu_beta[c]**2 + self.var_sigma_beta[c])).sum(axis=1)
@@ -272,7 +289,8 @@ cdef class VIPRSMix(PRSModel):
         for c, c_size in self.shapes.items():
 
             # Updates for sigma_beta variational parameters:
-            self.var_sigma_beta[c] = self.sigma_epsilon / (self.Nj[c][:, None] + self.sigma_epsilon / self.sigma_beta[c])
+            self.var_sigma_beta[c] = self.sigma_epsilon / (self.Nj[c][:, None] +
+                                                           self.sigma_epsilon / self.sigma_beta[c])
 
             # Set the numpy vectors into memoryviews for fast access:
             log_pi = np.log(self.pi[c])
@@ -529,13 +547,22 @@ cdef class VIPRSMix(PRSModel):
         except Exception as e:
             raise e
 
-    cpdef fit(self, max_iter=1000, min_iter=5, theta_0=None,
+    cpdef update_theta_history(self):
+
+        for tt in self.tracked_theta:
+            if tt == 'pi':
+                self.history['pi'].append(self.get_proportion_causal())
+            if tt == 'heritability':
+                self.history['heritability'].append(self.get_heritability())
+            if tt == 'sigma_epsilon':
+                self.history['sigma_epsilon'].append(self.sigma_epsilon)
+
+    cpdef fit(self, max_iter=1000, theta_0=None,
               continued=False, f_abs_tol=1e-4, x_rel_tol=1e-3, max_elbo_drops=10):
         """
         Fit the model parameters to data.
 
         :param max_iter: Maximum number of iterations. 
-        :param min_iter: Minimum number of iterations.
         :param theta_0: A dictionary of values to initialize the hyperparameters
         :param continued: If true, continue the model fitting for more iterations.
         :param f_abs_tol: The absolute tolerance threshold for the objective (ELBO)
@@ -564,6 +591,9 @@ cdef class VIPRSMix(PRSModel):
             print(f"> Using up to {self.threads} threads.")
 
         for i in tqdm(range(start_idx, start_idx + max_iter), disable=not self.verbose):
+
+            self.update_theta_history()
+
             self.e_step()
             self.m_step()
 
@@ -580,20 +610,18 @@ cdef class VIPRSMix(PRSModel):
                                   f"to {curr_elbo:.6f}.")
                     continue
 
-                if i > min_iter:
-
-                    if np.isclose(prev_elbo, curr_elbo, atol=f_abs_tol, rtol=0.):
-                        print(f"Converged at iteration {i} || ELBO: {curr_elbo:.6f}")
-                        converged = True
-                        break
-                    elif all([np.allclose(self.inf_beta[c], v, atol=0., rtol=x_rel_tol)
-                              for c, v in self.mean_beta.items()]):
-                        print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
-                        converged = True
-                        break
-                    elif elbo_dropped_count > max_elbo_drops:
-                        warnings.warn("The optimization is halted due to numerical instabilities!")
-                        break
+                if np.isclose(prev_elbo, curr_elbo, atol=f_abs_tol, rtol=0.):
+                    print(f"Converged at iteration {i} || ELBO: {curr_elbo:.6f}")
+                    converged = True
+                    break
+                elif all([np.allclose(v, self.inf_beta[c], atol=0., rtol=x_rel_tol)
+                          for c, v in self.mean_beta.items()]):
+                    print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
+                    converged = True
+                    break
+                elif elbo_dropped_count > max_elbo_drops:
+                    warnings.warn("The optimization is halted due to numerical instabilities!")
+                    break
 
                 if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 1e3:
                     raise OptimizationDivergence(f"Stopping at iteration {i}: "
