@@ -499,6 +499,11 @@ cdef class VIPRS(PRSModel):
                     elbo_dropped_count += 1
                     warnings.warn(f"Iteration {i}: ELBO dropped from {prev_elbo:.6f} "
                                   f"to {curr_elbo:.6f}.")
+
+                    if elbo_dropped_count > max_elbo_drops:
+                        warnings.warn("The optimization is halted due to numerical instabilities!")
+                        break
+
                     continue
 
                 if np.isclose(prev_elbo, curr_elbo, atol=f_abs_tol, rtol=0.):
@@ -509,9 +514,6 @@ cdef class VIPRS(PRSModel):
                           for c, v in self.mean_beta.items()]):
                     print(f"Converged at iteration {i} | ELBO: {curr_elbo:.6f}")
                     converged = True
-                    break
-                elif elbo_dropped_count > max_elbo_drops:
-                    warnings.warn("The optimization is halted due to numerical instabilities!")
                     break
 
                 if abs((curr_elbo - prev_elbo) / prev_elbo) > 1. and abs(curr_elbo - prev_elbo) > 1e3:
