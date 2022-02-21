@@ -78,7 +78,7 @@ def fit_model_fixed_params(params):
     try:
         vi_model.fit(**fit_kwargs)
     except Exception as e:
-        return None, None, None, None
+        return None, None, None, None, None
 
     return vi_model.objective(), vi_model.var_gamma, vi_model.var_mu_beta, vi_model.var_sigma_beta, vi_model.inf_beta
 
