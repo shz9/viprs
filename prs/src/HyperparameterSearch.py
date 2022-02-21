@@ -152,7 +152,6 @@ class HyperparameterSearch(object):
         """
         This method evaluates multiple models simultaneously
         :param fit_results:
-        :return:
         """
 
         if self._opt_objective == 'ELBO':
@@ -238,16 +237,15 @@ class BayesOpt(HyperparameterSearch):
                          opt_params=opt_params,
                          n_jobs=n_jobs)
 
-    def fit(self, n_calls=20, n_random_starts=5, acq_func="LCB",
-            max_iter=100, tol=1e-4):
-
+    def fit(self, max_iter=50, f_abs_tol=1e-3, x_rel_tol=1e-3,
+            n_calls=20, n_random_starts=5, acq_func="gp_hedge"):
         """
-        :param n_calls:
-        :param n_random_starts:
-        :param acq_func:
-        :param max_iter:
-        :param tol:
-        :return:
+        :param n_calls: The number of model runs with different hyperparameter settings.
+        :param n_random_starts: The number of random starts to initialize the optimizer.
+        :param acq_func: The acquisition function (default: `gp_hedge`)
+        :param max_iter: The maximum number of iterations within the search (default: 50).
+        :param f_abs_tol: The absolute tolerance for the objective (ELBO) within the search
+        :param x_rel_tol: The relative tolerance for the parameters within the search
         """
 
         from skopt import gp_minimize
@@ -259,7 +257,9 @@ class BayesOpt(HyperparameterSearch):
                 fix_params['pi'] = 10**fix_params['pi']
 
             fit_result = fit_model_fixed_params((self.viprs, fix_params,
-                                                 {'max_iter': max_iter, 'ftol': tol, 'xtol': tol}))
+                                                 {'max_iter': max_iter,
+                                                  'f_abs_tol': f_abs_tol,
+                                                  'x_rel_tol': x_rel_tol}))
 
             if fit_result[0] is None:
                 return 1e12
@@ -268,7 +268,6 @@ class BayesOpt(HyperparameterSearch):
 
         param_bounds = {
             'sigma_epsilon': (1e-6, 1. - 1e-6),
-            'alpha': (-1., 0.),
             'sigma_beta': (1e-12, 1.),
             'pi': (-np.floor(np.log10(self.gdl.M)), -.001)
         }
@@ -297,81 +296,13 @@ class BayesOpt(HyperparameterSearch):
         final_best_params = dict(zip(self.opt_params, res.x))
         if 'pi' in final_best_params:
             final_best_params['pi'] = 10 ** final_best_params['pi']
+
         print("> Bayesian Optimization identified the best hyperparameters as:")
         pprint(final_best_params)
 
         print("> Refitting the model with the best hyperparameters...")
 
         self.viprs.fix_params = final_best_params
-        return self.viprs.fit()
-
-
-class GridSearchSlow(HyperparameterSearch):
-
-    def __init__(self,
-                 gdl,
-                 viprs=None,
-                 objective='ELBO',
-                 validation_gdl=None,
-                 localized_grid=True,
-                 verbose=False,
-                 opt_params=('sigma_epsilon', 'pi'),
-                 n_jobs=1):
-
-        super().__init__(gdl, viprs=viprs, objective=objective,
-                         validation_gdl=validation_gdl,
-                         verbose=verbose,
-                         opt_params=opt_params,
-                         n_jobs=n_jobs)
-
-        self.localized_grid = localized_grid
-        self.viprs.threads = 1
-
-    def fit(self, max_iter=100, tol=1e-4, **grid_kwargs):
-
-        if self.localized_grid:
-            h2g = np.clip(self.gdl.estimate_snp_heritability(), a_min=1e-3, a_max=1. - 1e-3)
-            steps = generate_grid(self.gdl.M, h2g_estimate=h2g, **grid_kwargs)
-        else:
-            steps = generate_grid(self.gdl.M, **grid_kwargs)
-
-        print("> Performing Grid Search over the following grid:")
-        pprint({k: v for k, v in steps.items() if k in self.opt_params})
-
-        opts = [(self.viprs, dict(zip(self.opt_params, p)), {'max_iter': max_iter, 'ftol': tol, 'xtol': tol})
-                for p in itertools.product(*[steps[k] for k in self.opt_params])]
-
-        max_objective = -1e12
-        best_params = None
-        self.validation_result = []
-
-        ctx = multiprocessing.get_context("spawn")
-
-        with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
-
-            for idx, fit_result in tqdm(enumerate(pool.imap(fit_model_fixed_params, opts)), total=len(opts)):
-
-                if fit_result[0] is None:
-                    continue
-
-                objective = self.objective(fit_result)
-                if objective > max_objective:
-                    max_objective = objective
-                    best_params = opts[idx][1]
-
-                self.validation_result.append(copy.copy(opts[idx][1]))
-                if self._opt_objective == 'ELBO':
-                    self.validation_result[-1]['ELBO'] = objective
-                else:
-                    self.validation_result[-1]['Validation R2'] = objective
-                    self.validation_result[-1]['ELBO'] = fit_result[0]
-
-        print("> Grid search identified the best hyperparameters as:")
-        pprint(best_params)
-
-        print("> Refitting the model with the best hyperparameters...")
-
-        self.viprs.fix_params = best_params
         return self.viprs.fit()
 
 
@@ -396,7 +327,7 @@ class GridSearch(HyperparameterSearch):
         self.localized_grid = localized_grid
         self.viprs.threads = 1
 
-    def fit(self, max_iter=100, tol=1e-4, **grid_kwargs):
+    def fit(self, max_iter=50, f_abs_tol=1e-3, x_rel_tol=1e-3, **grid_kwargs):
 
         if self.localized_grid:
             h2g = np.clip(self.gdl.estimate_snp_heritability(), a_min=1e-3, a_max=1. - 1e-3)
@@ -407,7 +338,9 @@ class GridSearch(HyperparameterSearch):
         print("> Performing Grid Search over the following grid:")
         pprint({k: v for k, v in steps.items() if k in self.opt_params})
 
-        opts = [(self.viprs, dict(zip(self.opt_params, p)), {'max_iter': max_iter, 'ftol': tol, 'xtol': tol})
+        opts = [(self.viprs, dict(zip(self.opt_params, p)), {'max_iter': max_iter,
+                                                             'f_abs_tol': f_abs_tol,
+                                                             'x_rel_tol': x_rel_tol})
                 for p in itertools.product(*[steps[k] for k in self.opt_params])]
 
         self.validation_result = []
@@ -497,7 +430,7 @@ class BMA(PRSModel):
         self.var_mu_beta = {c: np.zeros(c_size) for c, c_size in self.shapes.items()}
         self.var_sigma_beta = {c: np.zeros(c_size) for c, c_size in self.shapes.items()}
 
-    def fit(self, max_iter=100, tol=1e-4, **grid_kwargs):
+    def fit(self, max_iter=100, f_abs_tol=1e-3, x_rel_tol=1e-3, **grid_kwargs):
 
         self.initialize()
 
@@ -510,7 +443,9 @@ class BMA(PRSModel):
         print("> Performing Bayesian Model Averaging with the following grid:")
         pprint({k: v for k, v in steps.items() if k in self.opt_params})
 
-        opts = [(self.viprs, dict(zip(self.opt_params, p)), {'max_iter': max_iter, 'ftol': tol, 'xtol': tol})
+        opts = [(self.viprs, dict(zip(self.opt_params, p)), {'max_iter': max_iter,
+                                                             'f_abs_tol': f_abs_tol,
+                                                             'x_rel_tol': x_rel_tol})
                 for p in itertools.product(*[steps[k] for k in self.opt_params])]
 
         elbos = []
@@ -543,7 +478,16 @@ class BMA(PRSModel):
                 self.var_mu_beta[c] += var_mu_betas[idx][c]*elbos[idx]
                 self.var_sigma_beta[c] += var_sigma_betas[idx][c]*elbos[idx]
 
-        self.pip = self.var_gamma
-        self.inf_beta = {c: self.var_gamma[c]*mu for c, mu in self.var_mu_beta.items()}
+        self.pip = {}
+        self.inf_beta = {}
+
+        for c, v_gamma in self.var_gamma.items():
+
+            if len(v_gamma.shape) > 1:
+                self.pip[c] = v_gamma.sum(axis=1)
+                self.inf_beta[c] = (v_gamma*self.var_mu_beta[c]).sum(axis=1)
+            else:
+                self.pip[c] = v_gamma
+                self.inf_beta[c] = v_gamma * self.var_mu_beta[c]
 
         return self
