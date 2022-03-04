@@ -154,6 +154,9 @@ class HyperparameterSearch(object):
         :param fit_results:
         """
 
+        if len(fit_results) == 1:
+            return self.objective(fit_results[0])
+
         if self._opt_objective == 'ELBO':
             return [fr[0] for fr in fit_results]
         else:
@@ -177,7 +180,6 @@ class HyperparameterSearch(object):
             ctx = multiprocessing.get_context("spawn")
 
             with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
-                # TODO: Update this to account for flattened PRS arrays.
                 r2_results = pool.starmap(eval_func,
                                           [(prs[:, i].flatten(), self._validation_gdl.phenotypes)
                                            for i in range(len(fit_results))])
@@ -343,6 +345,8 @@ class GridSearch(HyperparameterSearch):
                                                              'x_rel_tol': x_rel_tol})
                 for p in itertools.product(*[steps[k] for k in self.opt_params])]
 
+        assert len(opts) > 1
+
         self.validation_result = []
         fit_results = []
         params = []
@@ -361,7 +365,10 @@ class GridSearch(HyperparameterSearch):
                 self.validation_result.append(copy.copy(opts[idx][1]))
                 self.validation_result[-1]['ELBO'] = fit_result[0]
 
-        res_objectives = self.multi_objective(fit_results)
+        if len(fit_results) > 1:
+            res_objectives = self.multi_objective(fit_results)
+        else:
+            raise Exception("Error: Convergence was achieved for less than 2 models.")
 
         if self._opt_objective == 'validation':
             for i in range(len(self.validation_result)):
