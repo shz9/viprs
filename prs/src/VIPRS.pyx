@@ -151,7 +151,7 @@ cdef class VIPRS(PRSModel):
                 # then initialize using the SNP heritability estimate
 
                 try:
-                    naive_h2g = clip(self.gdl.estimate_snp_heritability(), 1e-6, 1. - 1e-6)
+                    naive_h2g = clip(self.gdl.estimate_snp_heritability(), 1e-3, 1. - 1e-3)
                 except Exception as e:
                     naive_h2g = np.random.uniform(low=.001, high=.999)
 
