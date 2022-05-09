@@ -1,3 +1,3 @@
-[submodule "prs/gwasimulator"]
-	path = prs/gwasimulator
-	url = https://github.com/shz9/gwasimulator.git
+[submodule "prs/magenpy"]
+	path = prs/magenpy
+	url = https://github.com/shz9/magenpy.git
