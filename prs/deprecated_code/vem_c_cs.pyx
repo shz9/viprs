@@ -11,7 +11,7 @@ import numpy as np
 from libc.math cimport exp, log
 from ..src.PRSModel cimport PRSModel
 from ..src.c_utils cimport dot
-from prs.gwasimulator.c_utils import zarr_islice
+from prs.magenpy.c_utils import zarr_islice
 
 cdef class vem_prs_cs(PRSModel):
     """

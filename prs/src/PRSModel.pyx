@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import os.path as osp
 
-from ..gwasimulator.model_utils import merge_snp_tables
+from ..magenpy.model_utils import merge_snp_tables
 
 cdef class PRSModel:
 

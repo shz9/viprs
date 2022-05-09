@@ -1,6 +1,6 @@
 import sys
 sys.path.append('../')
-from prs.gwasimulator.GWASSimulator import GWASSimulator
+from prs.magenpy.GWASSimulator import GWASSimulator
 from prs.src.GibbsPRSSBayes import GibbsPRSSBayes
 
 gs = GWASSimulator("../../data/1000G_EUR_Phase3_plink/1000G.EUR.QC.22.bed",
@@ -23,7 +23,7 @@ print(vc.get_heritability(), vc.rs_pi.mean())
 print("Done!")
 
 """
-from prs.gwasimulator.c_utils import zarr_islice
+from prs.magenpy.c_utils import zarr_islice
 
 for i, Di in enumerate(zarr_islice(gs.ld[22])):
     print(Di.shape, Di)
