@@ -1,2 +1,0 @@
-class OptimizationDivergence(Exception):
-    pass

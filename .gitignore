@@ -1,16 +1,41 @@
-*.ipynb_checkpoints
-*/dask-worker-space/*
-data
-*temp*
-build
-output
-*.DS_Store
-.idea
-__pycache__
-external/
-ldpred_test
+**/__pycache__
+*.py[cod]
+**/.ipynb_checkpoints
+
+# C extensions
 *.c
 *.so
-*.log
+
+# Distribution / packaging
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+.eggs
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# custom
+.idea/
 *.html
-notebooks
+*.zarr
+*.npz
+*.log
+**/temp
