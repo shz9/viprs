@@ -89,7 +89,7 @@ with open("requirements-optional.txt") as fp:
 
 setup(
     name="viprs",
-    version="0.0.1",
+    version="0.0.2",
     author="Shadi Zabad",
     author_email="shadi.zabad@mail.mcgill.ca",
     description="Variational Inference of Polygenic Risk Scores (VIPRS)",
@@ -104,7 +104,6 @@ setup(
         'Topic :: Scientific/Engineering',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
     ],

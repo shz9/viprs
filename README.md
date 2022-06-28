@@ -26,6 +26,7 @@ replaced or modified in future releases.
   - [(2) Grid search and validation](#2-grid-search-and-validation)
 - [Commandline scripts](#commandline-scripts)
 - [Download LD matrices](#download-ld-matrices)
+- [Frequently Asked Questions (FAQs)](#frequently-asked-questions-faqs)
 - [Citations](#citations) 
 
 
@@ -35,14 +36,14 @@ replaced or modified in future releases.
 can be minimally installed using the package installer `pip`:
 
 ```shell
-pip install viprs==0.0.1
+pip install viprs==0.0.2
 ```
 
 To access the full functionalities of `viprs`, however, it is recommended that 
 you install the full list of dependencies:
 
 ```shell
-pip install viprs[full]==0.0.1
+pip install viprs[full]==0.0.2
 ```
 
 If you wish to install the package from source, 
@@ -568,6 +569,16 @@ the following:
 
 This will download the LD matrix to a sub-folder in the working directory called `data/ld`. We will add more utilities 
 like this in the future to streamline PRS model training and testing.
+
+## Frequently Asked Questions (FAQs)
+
+- **How do I create my own LD matrices and store them in formats compatible with `viprs`?**
+
+You can use the software package [magenpy](https://github.com/shz9/magenpy) to compute LD matrices 
+from any reference genotype dataset. `magenpy` provides interfaces for computing LD matrices 
+using 3 commonly used LD estimators: `shrinkage`, `windowed` (or banded), and `block
+`-based LD matrices. Check the relevant documentation [here](https://github.com/shz9/magenpy#3-calculating-ld-matrices).
+
 
 ## Citations
 
