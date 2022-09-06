@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import os.path as osp
 
+from viprs.utils.compute_utils import expand_column_names
 from magenpy.utils.model_utils import merge_snp_tables
 
 
@@ -29,13 +30,27 @@ cdef class PRSModel:
             self.Nj = {c: np.repeat(self.N, c_size).astype(float) for c, c_size in gdl.shapes.items()}
 
         self.gdl = gdl  # An instance of GWADataLoader
-        self.M = gdl.m
-        self.shapes = self.gdl.shapes
+        self.shapes = self.gdl.shapes.copy()
 
         # Inferred model parameters:
         self.pip = None  # Posterior inclusion probability
         self.post_mean_beta = None  # The posterior mean for the effect sizes
         self.post_var_beta = None  # The posterior variance for the effect sizes
+
+    @property
+    def chromosomes(self):
+        """
+        Return the list of chromosomes that are part of PRSModel
+        """
+        return sorted(list(self.shapes.keys()))
+
+    @property
+    def m(self) -> int:
+        return self.gdl.m
+
+    @property
+    def n_snps(self) -> int:
+        return self.m
 
     cpdef fit(self):
         raise NotImplementedError
@@ -83,59 +98,87 @@ cdef class PRSModel:
 
         return gdl.predict(post_mean_beta)
 
-    cpdef harmonize_data(self, gdl=None, eff_table=None):
+    cpdef harmonize_data(self, gdl=None, parameter_table=None):
         """
         Harmonize the inferred effect sizes with a GWAS Data Loader object
         The user must provide at least one object to harmonize with existing information.
-        :param gdl: The GWAS Data Loader object
-        :param eff_table: The table of effect sizes
+        :param gdl: A `GWADataLoader` object
+        :param parameter_table: The table of effect sizes
         """
 
-        if gdl is None and eff_table is None:
+        if gdl is None and parameter_table is None:
             return
 
         if gdl is None:
             gdl = self.gdl
 
-        if eff_table is None:
-            eff_table = self.to_table(per_chromosome=True)
+        if parameter_table is None:
+            parameter_table = self.to_table(per_chromosome=True)
         else:
-            eff_table = {c: eff_table.loc[eff_table['CHR'] == c, ]
-                         for c in eff_table['CHR'].unique()}
+            parameter_table = {c: parameter_table.loc[parameter_table['CHR'] == c, ]
+                               for c in parameter_table['CHR'].unique()}
 
-        snp_tables = gdl.to_snp_table(col_subset=['SNP', 'A1'],
+        snp_tables = gdl.to_snp_table(col_subset=['SNP', 'A1', 'A2'],
                                       per_chromosome=True)
 
         pip = {}
         post_mean_beta = {}
         post_var_beta = {}
 
-        for c, snp_table in snp_tables.items():
+        common_chroms = sorted(list(set(snp_tables.keys()).intersection(set(parameter_table.keys()))))
+
+        for c in common_chroms:
+
+            try:
+                post_mean_cols = expand_column_names('BETA', self.post_mean_beta[c].shape)
+                if isinstance(post_mean_cols, str):
+                    post_mean_cols = [post_mean_cols]
+
+                pip_cols = expand_column_names('PIP', self.post_mean_beta[c].shape)
+                if isinstance(pip_cols, str):
+                    pip_cols = [pip_cols]
+
+                post_var_cols = expand_column_names('VAR_BETA', self.post_mean_beta[c].shape)
+                if isinstance(post_var_cols, str):
+                    post_var_cols = [post_var_cols]
+
+            except (TypeError, KeyError):
+                pip_cols = [col for col in parameter_table[c].columns if 'PIP' in col]
+                post_var_cols = [col for col in parameter_table[c].columns if 'VAR_BETA' in col]
+                post_mean_cols = [col for col in parameter_table[c].columns
+                                  if 'BETA' in col and col not in post_var_cols]
 
             # Merge the effect table with the GDL SNP table:
-            c_df = merge_snp_tables(snp_table, eff_table[c], how='left')
+            c_df = merge_snp_tables(snp_tables[c], parameter_table[c], how='left',
+                                    signed_statistics=post_mean_cols)
 
             # Obtain the values for the posterior mean:
-            c_df['BETA'] = c_df['BETA'].fillna(0.)
-            post_mean_beta[c] = c_df['BETA'].values
+            c_df[post_mean_cols] = c_df[post_mean_cols].fillna(0.)
+            post_mean_beta[c] = c_df[post_mean_cols].values
 
             # Obtain the values for the posterior inclusion probability:
-            if 'PIP' in c_df.columns:
-                c_df['PIP'] = c_df['PIP'].fillna(0.)
-                pip[c] = c_df['PIP'].values
+            if len(set(pip_cols).intersection(set(c_df.columns))) > 0:
+                c_df[pip_cols] = c_df[pip_cols].fillna(0.)
+                pip[c] = c_df[pip_cols].values
 
             # Obtain the values for the posterior variance:
-            if 'VAR_BETA' in c_df.columns:
-                post_var_beta[c] = c_df['VAR_BETA'].values
+            if len(set(post_var_cols).intersection(set(c_df.columns))) > 0:
+                c_df[post_var_cols] = c_df[post_var_cols].fillna(0.)
+                post_var_beta[c] = c_df[post_var_cols].values
 
+        if len(pip) < 1:
+            pip = None
+
+        if len(post_var_beta) < 1:
+            post_var_beta = None
 
         return pip, post_mean_beta, post_var_beta
 
-    cpdef to_table(self, per_chromosome=False, col_subset=('CHR', 'SNP', 'A1', 'A2')):
+    cpdef to_table(self, col_subset=('CHR', 'SNP', 'A1', 'A2'), per_chromosome=False):
         """
-        Output the posterior estimates for the effect sizes to a pandas table.
-        :param per_chromosome: If True, return a separate table for each chromosome.
+        Output the posterior estimates for the effect sizes to a pandas dataframe.
         :param col_subset: The subset of columns to include in the tables (in addition to the effect sizes).
+        :param per_chromosome: If True, return a separate table for each chromosome.
         """
 
         if self.post_mean_beta is None:
@@ -143,17 +186,36 @@ cdef class PRSModel:
 
         tables = self.gdl.to_snp_table(col_subset=col_subset, per_chromosome=True)
 
-        for c in self.shapes:
-            tables[c]['PIP'] = self.pip[c]
-            tables[c]['BETA'] = self.post_mean_beta[c]
-            tables[c]['VAR_BETA'] = self.post_var_beta[c]
+        for c in self.chromosomes:
+
+            tables[c][expand_column_names('BETA', self.post_mean_beta[c].shape)] = self.post_mean_beta[c]
+
+            if self.pip is not None:
+                tables[c][expand_column_names('PIP', self.pip[c].shape)] = self.pip[c]
+
+            if self.post_var_beta is not None:
+                tables[c][expand_column_names('VAR_BETA', self.post_var_beta[c].shape)] = self.post_var_beta[c]
 
         if per_chromosome:
             return tables
         else:
-            return pd.concat(tables.values())
+            return pd.concat([tables[c] for c in self.chromosomes])
 
-    cpdef read_inferred_params(self, f_names, sep="\t"):
+    cpdef set_model_parameters(self, parameter_table):
+        """
+        Parses a pandas dataframe with model parameters and assigns them 
+        to the corresponding class attributes. 
+        
+        For example: 
+            - Columns with `BETA`, will be assigned to `self.post_mean_beta`.
+            - Columns with `PIP` will be assigned to `self.pip`.
+            - Columns with `VAR_BETA`, will be assigned to `self.post_var_beta`.
+        
+        :param parameter_table: A pandas table or dataframe.
+        """
+
+        self.pip, self.post_mean_beta, self.post_var_beta = self.harmonize_data(parameter_table=parameter_table)
+    cpdef read_inferred_parameters(self, f_names, sep="\t"):
         """
         Read a file with the inferred parameters.
         :param f_names: A path (or list of paths) to the file with the effect sizes.
@@ -163,16 +225,18 @@ cdef class PRSModel:
         if isinstance(f_names, str):
             f_names = [f_names]
 
-        eff_table = []
+        param_table = []
 
         for f_name in f_names:
-            eff_table.append(pd.read_csv(f_name, sep=sep))
+            param_table.append(pd.read_csv(f_name, sep=sep))
 
-        eff_table = pd.concat(eff_table)
+        if len(param_table) > 0:
+            param_table = pd.concat(param_table)
+            self.set_model_parameters(param_table)
+        else:
+            raise FileNotFoundError
 
-        self.pip, self.post_mean_beta, self.post_var_beta = self.harmonize_data(eff_table=eff_table)
-
-    cpdef write_inferred_params(self, f_name, per_chromosome=False, sep="\t"):
+    cpdef write_inferred_parameters(self, f_name, per_chromosome=False, sep="\t"):
         """
         Write the inferred posterior for the effect sizes to file.
         :param f_name: The filename (or directory) where to write the effect sizes

@@ -10,7 +10,7 @@
 
 from scipy.optimize import minimize
 from .VIPRS cimport VIPRS
-from viprs.utils.c_utils cimport clip
+from viprs.utils.math_utils cimport clip
 from viprs.utils.compute_utils import dict_elementwise_dot, dict_sum, dict_set, dict_repeat
 
 

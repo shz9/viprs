@@ -85,7 +85,7 @@ fit_files = get_filenames(args.fit_files, extension='.fit')
 if len(fit_files) < 1:
     raise FileNotFoundError("Did not find any parameter fit files at:", args.fit_files)
 
-prs_m.read_inferred_params(fit_files)
+prs_m.read_inferred_parameters(fit_files)
 
 # ----------------------------------------------------------
 print('\n{:-^62}\n'.format('-'))

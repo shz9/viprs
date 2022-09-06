@@ -4,6 +4,7 @@ requires = [
     "setuptools",
     "wheel",
     "Cython",
-    "oldest-supported-numpy"
+    "oldest-supported-numpy",
+    #"extension-helpers"
 ]
 build-backend = "setuptools.build_meta"

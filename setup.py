@@ -1,4 +1,5 @@
 from setuptools import setup, Extension, find_packages
+# from extension_helpers import add_openmp_flags_if_available
 import numpy as np
 import os
 
@@ -29,8 +30,8 @@ def no_cythonize(extensions, **_ignore):
 
 
 extensions = [
-    Extension("viprs.utils.c_utils",
-              ["viprs/utils/c_utils.pyx"],
+    Extension("viprs.utils.math_utils",
+              ["viprs/utils/math_utils.pyx"],
               extra_compile_args=["-ffast-math"],
               libraries=["m"],
               include_dirs=[np.get_include()]),
@@ -46,6 +47,18 @@ extensions = [
               ["viprs/model/VIPRS.pyx"],
               extra_compile_args=["-ffast-math"],
               include_dirs=[np.get_include()]),
+    Extension("viprs.model.VIPRSGrid",
+              ["viprs/model/VIPRSGrid.pyx"],
+              extra_compile_args=["-ffast-math"],
+              include_dirs=[np.get_include()]),
+    Extension("viprs.model.VIPRSGridSearch",
+              ["viprs/model/VIPRSGridSearch.pyx"],
+              extra_compile_args=["-ffast-math"],
+              include_dirs=[np.get_include()]),
+    Extension("viprs.model.VIPRSBMA",
+              ["viprs/model/VIPRSBMA.pyx"],
+              extra_compile_args=["-ffast-math"],
+              include_dirs=[np.get_include()]),
     Extension("viprs.model.VIPRSMix",
               ["viprs/model/VIPRSMix.pyx"],
               extra_compile_args=["-ffast-math"],
@@ -59,6 +72,16 @@ extensions = [
               extra_compile_args=["-ffast-math"],
               include_dirs=[np.get_include()])
 ]
+
+"""
+# Uncomment here in case you add openMP support:
+# Add any extension that requires openMP here:
+openmp_extensions = []  # ['viprs.model.VIPRSGrid']
+
+for ext in extensions:
+    if ext.name in openmp_extensions:
+        add_openmp_flags_if_available(ext)
+"""
 
 if cythonize is not None:
     compiler_directives = {
@@ -89,7 +112,7 @@ with open("requirements-optional.txt") as fp:
 
 setup(
     name="viprs",
-    version="0.0.2",
+    version="0.0.3",
     author="Shadi Zabad",
     author_email="shadi.zabad@mail.mcgill.ca",
     description="Variational Inference of Polygenic Risk Scores (VIPRS)",

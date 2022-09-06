@@ -3,7 +3,7 @@ import pandas as pd
 import itertools
 
 
-class VIPRSGrid(object):
+class HyperparameterGrid(object):
     """
     A utility class to generate grids for the hyperparameters of VIPRS models.
     """
@@ -103,7 +103,7 @@ class VIPRSGrid(object):
             return pd.DataFrame(combined_grids)
 
 
-class VIPRSAlphaGrid(VIPRSGrid):
+class AlphaGrid(HyperparameterGrid):
 
     def __init__(self, sigma_epsilon=None, sigma_beta=None, pi=None, alpha=None,
                  search_params=('pi', 'sigma_epsilon', 'sigma_beta', 'alpha')):

@@ -23,7 +23,7 @@ def mse(pred_val, true_val):
     :param true_val: The response value (a numpy vector)
     """
 
-    return np.sum((pred_val - true_val)**2)
+    return np.mean((pred_val - true_val)**2)
 
 
 def roc_auc(pred_val, true_val):

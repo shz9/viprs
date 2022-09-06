@@ -18,12 +18,12 @@ def fits_in_memory(alloc_size, max_prop=.9):
         return True
 
 
-def dict_concat(d):
+def dict_concat(d, axis=0):
     """
     Concatenate the values of a dictionary into a single vector
     :param d: A dictionary where values are numeric scalars or vectors
     """
-    return np.concatenate([d[c] for c in sorted(d.keys())])
+    return np.concatenate([d[c] for c in sorted(d.keys())], axis=axis)
 
 
 def dict_mean(d, axis=None):
@@ -95,3 +95,30 @@ def dict_repeat(value, shapes):
     :param value:  The value to repeat
     """
     return {c: value*np.ones(shp) for c, shp in shapes.items()}
+
+
+def expand_column_names(c_name, shape, sep='_'):
+    """
+    Given a desired column name `c_name` and a matrix `shape`
+    that we'd like to apply the column name to, return a list of
+    column names for every column in the matrix. The column names will be
+    in the form of `c_name` followed by an index, separated by `sep`.
+
+    For example, if the column name is `BETA`, the
+    shape is (100, 3) and the separator is `_`, we return a list with:
+    [`BETA_0`, `BETA_1`, `BETA_2`]
+
+    If the matrix in question is a vector, we just return the column name
+    without any indices appended to it.
+
+    :param c_name: A string object
+    :param shape: The shape of a numpy matrix or vector
+    :param sep: The separator
+    """
+
+    if len(shape) < 2:
+        return c_name
+    elif shape[1] == 1:
+        return c_name
+    else:
+        return [c_name + f'{sep}{i}' for i in range(shape[1])]

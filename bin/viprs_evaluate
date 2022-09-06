@@ -81,6 +81,7 @@ if args.pheno_lik == 'gaussian':
 
     metric_dict = {
         'R2': r2(merged_df['PRS'].values, merged_df['phenotype'].values),
+        'MSE': mse(merged_df['PRS'].values, merged_df['phenotype'].values),
         'Pearson_correlation': pearson_r(merged_df['PRS'].values, merged_df['phenotype'].values)
     }
 

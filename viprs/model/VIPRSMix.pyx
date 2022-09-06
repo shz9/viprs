@@ -14,7 +14,7 @@ cimport numpy as np
 
 from magenpy.stats.h2.ldsc import simple_ldsc
 from .VIPRS cimport VIPRS
-from viprs.utils.c_utils cimport dot, elementwise_add_mult, clip, softmax
+from viprs.utils.math_utils cimport elementwise_add_mult, clip, softmax
 from viprs.utils.compute_utils import dict_sum, dict_mean
 
 
@@ -22,9 +22,9 @@ cdef class VIPRSMix(VIPRS):
 
     cdef public:
         int K  # The number of mixture components
-        object d  # Multiplier for the prior on the effect size
+        object d  # Multipliers for the prior on the effect size
 
-    def __init__(self, gdl,  K=1, prior_multipliers=None, fix_params=None,
+    def __init__(self, gdl, K=1, prior_multipliers=None, fix_params=None,
                  load_ld='auto', tracked_theta=None, verbose=True, threads=1):
 
         """
@@ -78,7 +78,7 @@ cdef class VIPRSMix(VIPRS):
             if 'pi' in theta_0:
                 overall_pi = theta_0['pi']
             else:
-                overall_pi = np.random.uniform(low=max(0.005, 1. / self.M), high=.1)
+                overall_pi = np.random.uniform(low=max(0.005, 1. / self.n_snps), high=.1)
 
             self.pi = overall_pi*np.random.dirichlet(np.ones(self.K))
 
@@ -100,7 +100,7 @@ cdef class VIPRSMix(VIPRS):
                 self.sigma_beta = theta_0['sigma_betas']
 
                 self.sigma_epsilon = clip(1. - np.dot(self.sigma_beta, self.pi),
-                                          1e-6, 1. - 1e-6)
+                                          1e-12, 1. - 1e-12)
 
             elif 'sigma_beta' in theta_0:
                 # NOTE: Here, we assume the provided `sigma_beta` is a scalar.
@@ -116,9 +116,9 @@ cdef class VIPRSMix(VIPRS):
 
                 # Step (1): Given the provided sigma and associated multipliers,
                 # obtain a naive estimate of the heritability:
-                h2g_estimate = (self.sigma_beta*self.M*self.pi).sum()
+                h2g_estimate = (self.sigma_beta*self.n_snps*self.pi).sum()
                 # Step (2): Set sigma_epsilon to 1 - h2g_estimate:
-                self.sigma_epsilon = clip(1. - h2g_estimate, 1e-6, 1. - 1e-6)
+                self.sigma_epsilon = clip(1. - h2g_estimate, 1e-12, 1. - 1e-12)
 
             else:
                 # If neither sigma_beta nor sigma_epsilon are given,
@@ -136,7 +136,7 @@ cdef class VIPRSMix(VIPRS):
                 else:
                     mult = self.d
 
-                self.sigma_beta = mult*naive_h2g / (self.M * (self.pi * mult).sum())
+                self.sigma_beta = mult*naive_h2g / (self.n_snps * (self.pi * mult).sum())
         else:
 
             # If sigma_epsilon is given, use it in the initialization
@@ -155,7 +155,7 @@ cdef class VIPRSMix(VIPRS):
                 else:
                     mult = self.d
 
-                self.sigma_beta = mult*(1. - self.sigma_epsilon) / (self.M * (self.pi * mult).sum())
+                self.sigma_beta = mult*(1. - self.sigma_epsilon) / (self.n_snps * (self.pi * mult).sum())
 
     cpdef e_step(self):
         """
@@ -165,8 +165,8 @@ cdef class VIPRSMix(VIPRS):
 
         # Initialize memoryviews objects for fast access
         cdef:
-            unsigned int j, k, start, end, j_idx
-            double mu_beta_j
+            unsigned int j, k, start, end
+            double mu_beta_j, eta_diff
             double[::1] u_j, log_null_pi
             double[::1] std_beta, Dj  # Inputs
             double[:, ::1] var_gamma, var_mu, var_sigma  # Variational parameters
@@ -174,7 +174,7 @@ cdef class VIPRSMix(VIPRS):
             double[::1] eta, q  # Properties of proposed distribution
             long[:, ::1] ld_bound
 
-        for c, c_size in self.shapes.items():
+        for c, shapes in self.shapes.items():
 
             # Get the priors:
             sigma_beta = self.get_sigma_beta(c)
@@ -183,14 +183,15 @@ cdef class VIPRSMix(VIPRS):
             if isinstance(self.pi, dict):
                 log_null_pi = np.log(1. - self.pi[c].sum(axis=1))
             else:
-                log_null_pi = np.repeat(np.log(1. - self.pi.sum()), c_size[0])
+                log_null_pi = np.repeat(np.log(1. - self.pi.sum()), shapes[0])
 
             # Updates for sigma_beta variational parameters:
-            self.var_sigma[c] = self.sigma_epsilon / (self.Nj[c] +
-                                                      self.sigma_epsilon / sigma_beta)
+            self.var_sigma[c] = self.sigma_epsilon / (
+                    self.inv_temperature*(self.Nj[c] + self.sigma_epsilon / sigma_beta)
+            )
 
             # Compute some quantities that are needed for the per-SNP updates:
-            mu_mult = self.Nj[c] * self.var_sigma[c] / self.sigma_epsilon
+            mu_mult = self.inv_temperature*self.Nj[c] * self.var_sigma[c] / self.sigma_epsilon
             u_logs = np.log(pi) + .5 * np.log(self.var_sigma[c] / sigma_beta)
             recip_sigma = .5 / self.var_sigma[c]
 
@@ -201,44 +202,45 @@ cdef class VIPRSMix(VIPRS):
             var_sigma = self.var_sigma[c]
             eta = self.eta[c]
             ld_bound = self.ld_bounds[c]
-            q = np.zeros(shape=c_size[0])
+            q = self.q[c]
             u_j = np.zeros(shape=self.K + 1)
 
             for j, Dj in enumerate(self.ld[c]):
 
                 start, end = ld_bound[:, j]
-                j_idx = j - start
 
-                # The numerator for all the mu_beta updates:
-                mu_beta_j = (std_beta[j] - dot(Dj, eta[start: end]) + Dj[j_idx]*eta[j])
+                # Compute the variational mu betas and gammas:
+
+                # This is the shared component across all mixtures
+                mu_beta_j = std_beta[j] - q[j]
 
                 for k in range(self.K):
                     # Compute the mu beta for component `k`
                     var_mu[j, k] = mu_beta_j * mu_mult[j, k]
                     # Compute the unnormalized gamma for component `k`
-                    u_j[k] = u_logs[j, k] + recip_sigma[j, k]*var_mu[j, k]*var_mu[j, k]
+                    u_j[k] = self.inv_temperature*(u_logs[j, k] + recip_sigma[j, k]*var_mu[j, k]*var_mu[j, k])
 
-                u_j[k+1] = log_null_pi[j]
+                # Normalize the variational gammas:
+                u_j[k+1] = self.inv_temperature*log_null_pi[j]
                 u_j = softmax(u_j)
 
-                # Normalize the gammas and update the beta statistics:
-                eta[j] = 0.
+                # Compute the difference between the new and old values for the posterior mean:
+                eta_diff = -eta[j]
 
                 for k in range(self.K):
-                    var_gamma[j, k] = clip(u_j[k], 1e-6, 1. - 1e-6)
+                    var_gamma[j, k] = clip(u_j[k], 1e-8, 1. - 1e-8)
+                    eta_diff += var_gamma[j, k]*var_mu[j, k]
 
-                    eta[j] += var_gamma[j, k]*var_mu[j, k]
+                # Update the q factors for all neighboring SNPs that are in LD with SNP j
+                elementwise_add_mult(q[start: end], Dj, eta_diff)
+                # Operation above updates the q factor for SNP j, so we correct that here:
+                q[j] = q[j] - eta_diff
 
-                # Update the q factor:
-                if j_idx > 0:
-                    # Update the q factor for snp j by adding the contribution of previous SNPs.
-                    q[j] = dot(Dj[:j_idx], eta[start: j])
-                    # Update the q factors for all previously updated SNPs that are in LD with SNP j
-                    q[start: j] = elementwise_add_mult(q[start: j], Dj[:j_idx], eta[j])
+                # Update the posterior mean:
+                eta[j] = eta[j] + eta_diff
 
             self.var_gamma[c] = np.asarray(var_gamma)
             self.var_mu[c] = np.asarray(var_mu)
-
             self.eta[c] = np.asarray(eta)
             self.q[c] = np.array(q)
 
@@ -263,15 +265,14 @@ cdef class VIPRSMix(VIPRS):
                 # update the pis such that the proportion of SNPs in the null component becomes 1. - pi.
                 pi_estimate = self.fix_params['pi']*pi_estimate / pi_estimate.sum()
             else:
-                pi_estimate /= self.M
+                pi_estimate /= self.n_snps
 
             # Clip and normalize:
-            all_pis = np.concatenate([pi_estimate, [1. - pi_estimate.sum()]])
-            pi_estimate = np.clip(all_pis, 1./self.M, 1. - 1./self.M)
+            pi_estimate = np.concatenate([pi_estimate, [1. - pi_estimate.sum()]])
             pi_estimate /= np.sum(pi_estimate)
 
             # Set pi to the new estimate:
-            self.pi = pi_estimate[:-1]
+            self.pi = pi_estimate[:len(pi_estimate)-1]
 
     cpdef update_sigma_beta(self):
         """
@@ -309,6 +310,15 @@ cdef class VIPRSMix(VIPRS):
             # Clip values and set sigma_beta to the new estimate:
             self.sigma_beta = np.clip(sigma_beta_estimate, 1e-12, 1. - 1e-12)
 
+    cpdef get_null_pi(self, chrom=None):
+
+        pi = self.get_pi(chrom=chrom)
+
+        if isinstance(pi, dict):
+            return {c: 1. - c_pi.sum(axis=1) for c, c_pi in pi.items()}
+        else:
+            return 1. - np.sum(pi)
+
     cpdef get_proportion_causal(self):
         """
         Get the proportion of causal variants for the trait.
@@ -322,10 +332,32 @@ cdef class VIPRSMix(VIPRS):
         """
         Get the average per-SNP variance for the prior mixture components
         """
-        if isinstance(self.sigma_beta, dict):
-            return dict_mean(self.sigma_beta, axis=0)
-        else:
-            return self.sigma_beta
+
+        avg_sigma = super(VIPRSMix, self).get_average_effect_size_variance()
+
+        try:
+            return avg_sigma.sum()
+        except Exception:
+            return avg_sigma
+
+    cpdef compute_pip(self):
+        """
+        Compute the posterior inclusion probability
+        """
+        return {c: np.clip(gamma.sum(axis=1), a_min=1e-8, a_max=1. - 1e-8) for c, gamma in self.var_gamma.items()}
+
+    cpdef compute_eta(self):
+        """
+        Compute the mean for the effect size under the variational posterior.
+        """
+        return {c: (v * self.var_mu[c]).sum(axis=1) for c, v in self.var_gamma.items()}
+
+    cpdef compute_zeta(self):
+        """
+        Compute the expectation of the squared effect size under the variational posterior.
+        """
+        return {c: (v * (self.var_mu[c] ** 2 + self.var_sigma[c])).sum(axis=1)
+                for c, v in self.var_gamma.items()}
 
     cpdef to_theta_table(self):
 

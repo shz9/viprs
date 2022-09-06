@@ -18,7 +18,6 @@ def fit_model_fixed_params(params):
     :param params: A tuple of (PRSModel, fixed parameters dictionary, and kwargs for the .fit() method).
     """
 
-    # TODO: Figure out how to streamline this for VIPRSMix implementations
     # vi_model, fixed_params, **fit_kwargs
     vi_model, fixed_params, fit_kwargs = params
     vi_model.fix_params = fixed_params
@@ -26,15 +25,9 @@ def fit_model_fixed_params(params):
     try:
         vi_model.fit(**fit_kwargs)
     except Exception as e:
-        return None, None, None, None, None
+        return None
 
-    return (
-        vi_model.objective(),
-        vi_model.var_gamma,
-        vi_model.var_mu,
-        vi_model.var_sigma,
-        vi_model.get_posterior_mean_beta()
-    )
+    return vi_model
 
 
 class HyperparameterSearch(object):
@@ -42,7 +35,7 @@ class HyperparameterSearch(object):
     def __init__(self,
                  gdl,
                  model=None,
-                 objective='ELBO',
+                 criterion='ELBO',
                  validation_gdl=None,
                  verbose=False,
                  n_jobs=1):
@@ -51,12 +44,16 @@ class HyperparameterSearch(object):
         that may be required by hyperparameter search strategies.
         :param gdl: A GWADataLoader object
         :param model: A `PRSModel`-derived object (e.g. VIPRS).
-        :param objective: The objective function for the hyperparameter search (ELBO or validation).
+        :param criterion: The objective function for the hyperparameter search.
+        Optinos are: `ELBO`, `pseudo_validation` or `validation`.
         :param validation_gdl: If the objective is validation, provide the GWADataLoader object for the validation
         dataset.
         :param verbose: Detailed messages and print statements.
         :param n_jobs: The number of processes to use for the hyperparameters search.
         """
+
+        # Sanity checking:
+        assert criterion in ('ELBO', 'validation', 'pseudo_validation')
 
         self.gdl = gdl
         self.n_jobs = n_jobs
@@ -68,9 +65,8 @@ class HyperparameterSearch(object):
 
         self.validation_result = None
 
-        self._opt_objective = objective
+        self.criterion = criterion
         self._validation_gdl = validation_gdl
-        self._validation_to_train_map = None
 
         self.verbose = verbose
         self.model.verbose = verbose
@@ -78,27 +74,14 @@ class HyperparameterSearch(object):
         if self._validation_gdl is not None:
             self._validation_gdl.verbose = verbose
 
-            # Match the index of SNPs in the training dataset
-            # and SNPs in the validation dataset:
-            self._validation_to_train_map = {}
-
-            for c in self.gdl.chromosomes:
-                valid_snps = self._validation_gdl.genotype[c].snps
-
-                train_df = pd.DataFrame({'SNP': self.gdl.sumstats_table[c].snps}).reset_index()
-                train_df.columns = ['train_index', 'SNP']
-
-                valid_df = pd.DataFrame({'SNP': valid_snps}).reset_index()
-                valid_df.columns = ['validation_index', 'SNP']
-
-                self._validation_to_train_map[c] = train_df.merge(valid_df)[['train_index', 'validation_index']]
-
-        assert self._opt_objective in ['ELBO', 'validation']
-
-        if self._opt_objective == 'ELBO':
-            assert hasattr(self.model, 'objective')
-        if self._opt_objective == 'validation':
+        if self.criterion == 'ELBO':
+            assert hasattr(self.model, 'elbo')
+        elif self.criterion == 'pseudo_validation':
             assert self._validation_gdl is not None
+            assert self._validation_gdl.sumstats_table is not None
+        if self.criterion == 'validation':
+            assert self._validation_gdl is not None
+            assert self._validation_gdl.genotype is not None
             assert self._validation_gdl.sample_table.phenotype is not None
 
     def to_validation_table(self):
@@ -124,30 +107,38 @@ class HyperparameterSearch(object):
         v_df = self.to_validation_table()
         v_df.to_csv(v_filename, index=False, sep=sep)
 
-    def multi_objective(self, fit_results):
+    def multi_objective(self, models):
         """
-        This method evaluates multiple models simultaneously. This is generally
-        faster than evaluating each model separately. See also `.objective()`.
-        :param fit_results: A list of fit results (output from `fit_model_fixed_params`).
+        This method evaluates multiple PRS models simultaneously. This can be faster for
+        some evaluation criteria, such as the validation R^2, because we only need to
+        multiply the inferred effect sizes with the genotype matrix only once.
+
+        :param models: A list of PRS models that we wish to evaluate.
         """
 
-        if len(fit_results) == 1:
-            return self.objective(fit_results[0])
+        if len(models) == 1:
+            return self.objective(models[0])
 
-        if self._opt_objective == 'ELBO':
-            return [fr[0] for fr in fit_results]
+        if self.criterion == 'ELBO':
+            return [m.elbo() for m in models]
+
+        elif self.criterion == 'pseudo_validation':
+            return [m.pseudo_validate(validation_gdl=self._validation_gdl) for m in models]
         else:
 
-            v_post_beta = {}
-            for c, val_map in self._validation_to_train_map.items():
-                valid_beta = np.zeros(shape=(self._validation_gdl.shapes[c], len(fit_results)))
-                valid_beta[val_map['validation_index'].values, :] = np.array(
-                    [post_beta[c] for _, _, _, _, post_beta in fit_results]).T[
-                    val_map['train_index'].values, :
-                ]
-                v_post_beta[c] = valid_beta
+            prs_m = PRSModel(self._validation_gdl)
 
-            prs = self._validation_gdl.predict(v_post_beta)
+            eff_table = models[0].to_table(per_chromosome=False)
+            eff_table = eff_table[['CHR', 'SNP', 'A1', 'A2', 'BETA']]
+            eff_table.rename(columns={'BETA': 'BETA_0'}, inplace=True)
+
+            eff_table[[f'BETA_{i}' for i in range(1, len(models))]] = np.array(
+                [models[i].to_table(per_chromosome=False)['BETA'].values for i in range(1, len(models))]
+            ).T
+
+            prs_m.set_model_parameters(eff_table)
+
+            prs = prs_m.predict(gdl=self._validation_gdl)
 
             if self._validation_gdl.phenotype_likelihood == 'binomial':
                 eval_func = auc
@@ -155,34 +146,25 @@ class HyperparameterSearch(object):
                 eval_func = r2
 
             metrics = [eval_func(prs[:, i].flatten(), self._validation_gdl.sample_table.phenotype)
-                       for i in range(len(fit_results))]
+                       for i in range(len(models))]
 
             return metrics
 
-    def objective(self, fit_result):
+    def objective(self, model):
         """
         A method that takes the result of fitting the model
-        and returns the desired objective (either ELBO, e.g. or the validation R^2).
-        :param fit_result: fit result (output from `fit_model_fixed_params`)
+        and returns the desired objective (either `ELBO`, `pseudo_validation`, or `validation`).
+        :param model: The PRS model to evaluate
         """
 
-        if self._opt_objective == 'ELBO':
-            return fit_result[0]
+        if self.criterion == 'ELBO':
+            return model.elbo()
+        elif self.criterion == 'pseudo_validation':
+            return model.pseudo_validate(validation_gdl=self._validation_gdl)
         else:
-            _, _, _, _, post_beta = fit_result
-
-            # Match inferred betas with the SNPs in the validation GDL:
-            v_post_beta = {}
-
-            for c, val_map in self._validation_to_train_map.items():
-                valid_beta = np.zeros(self._validation_gdl.shapes[c])
-                valid_beta[val_map['validation_index'].values] = (post_beta[c])[
-                    val_map['train_index'].values
-                ]
-                v_post_beta[c] = valid_beta
 
             # Predict:
-            prs = self._validation_gdl.predict(v_post_beta)
+            prs = model.predict(gdl=self._validation_gdl)
 
             if self._validation_gdl.phenotype_likelihood == 'binomial':
                 eval_func = auc
@@ -205,7 +187,7 @@ class BayesOpt(HyperparameterSearch):
                  opt_params,
                  param_bounds=None,
                  model=None,
-                 objective='ELBO',
+                 criterion='ELBO',
                  validation_gdl=None,
                  verbose=False,
                  n_jobs=1):
@@ -216,7 +198,7 @@ class BayesOpt(HyperparameterSearch):
         :param param_bounds: The bounds for each hyperparameter included in the optimization. A list of tuples,
         where each tuples records the (min, max) values for each hyperparameter.
         :param model: A `PRSModel`-derived object (e.g. VIPRS).
-        :param objective: The objective function for the hyperparameter search (ELBO or validation).
+        :param criterion: The objective function for the hyperparameter search (ELBO or validation).
         :param validation_gdl: If the objective is validation, provide the GWADataLoader object for the validation
         dataset.
         :param verbose: Detailed messages and print statements.
@@ -225,7 +207,7 @@ class BayesOpt(HyperparameterSearch):
         
         super().__init__(gdl,
                          model=model,
-                         objective=objective,
+                         criterion=criterion,
                          validation_gdl=validation_gdl,
                          verbose=verbose,
                          n_jobs=n_jobs)
@@ -243,7 +225,7 @@ class BayesOpt(HyperparameterSearch):
 
         assert all([opp in self._param_bounds for opp in self._opt_params])
 
-    def fit(self, max_iter=50, f_abs_tol=1e-3, x_rel_tol=1e-3,
+    def fit(self, max_iter=50, f_abs_tol=1e-3, x_abs_tol=1e-8,
             n_calls=20, n_random_starts=5, acq_func="gp_hedge"):
         """
         Perform model fitting and hyperparameter search using Bayesian optimization.
@@ -253,7 +235,7 @@ class BayesOpt(HyperparameterSearch):
         :param acq_func: The acquisition function (default: `gp_hedge`)
         :param max_iter: The maximum number of iterations within the search (default: 50).
         :param f_abs_tol: The absolute tolerance for the objective (ELBO) within the search
-        :param x_rel_tol: The relative tolerance for the parameters within the search
+        :param x_abs_tol: The absolute tolerance for the parameters within the search
         """
 
         from skopt import gp_minimize
@@ -264,15 +246,15 @@ class BayesOpt(HyperparameterSearch):
             if 'pi' in fix_params:
                 fix_params['pi'] = 10**fix_params['pi']
 
-            fit_result = fit_model_fixed_params((self.model, fix_params,
-                                                 {'max_iter': max_iter,
-                                                  'f_abs_tol': f_abs_tol,
-                                                  'x_rel_tol': x_rel_tol}))
+            fitted_model = fit_model_fixed_params((self.model, fix_params,
+                                                   {'max_iter': max_iter,
+                                                    'f_abs_tol': f_abs_tol,
+                                                    'x_abs_tol': x_abs_tol}))
 
-            if fit_result[0] is None:
+            if fitted_model is None:
                 return 1e12
             else:
-                return -self.objective(fit_result)
+                return -self.objective(fitted_model)
 
         res = gp_minimize(opt_func,  # the function to minimize
                           [self._param_bounds[op] for op in self._opt_params],  # the bounds on each dimension of x
@@ -287,8 +269,10 @@ class BayesOpt(HyperparameterSearch):
             if 'pi' in v_res:
                 v_res['pi'] = 10**v_res['pi']
 
-            if self._opt_objective == 'ELBO':
+            if self.criterion == 'ELBO':
                 v_res['ELBO'] = -obj
+            elif self.criterion == 'pseudo_validation':
+                v_res['Pseudo_Validation_Corr'] = -obj
             else:
                 v_res['Validation_R2'] = -obj
 
@@ -317,7 +301,7 @@ class GridSearch(HyperparameterSearch):
                  gdl,
                  grid,
                  model=None,
-                 objective='ELBO',
+                 criterion='ELBO',
                  validation_gdl=None,
                  verbose=False,
                  n_jobs=1):
@@ -325,16 +309,16 @@ class GridSearch(HyperparameterSearch):
         """
         Perform hyperparameter search using grid search
         :param gdl: A GWADataLoader object
-        :param grid: A HyperParameterGrid object (e.g. VIPRSGrid).
+        :param grid: A HyperParameterGrid object
         :param model: A `PRSModel`-derived object (e.g. VIPRS).
-        :param objective: The objective function for the grid search (ELBO or validation).
+        :param criterion: The objective function for the grid search (ELBO or validation).
         :param validation_gdl: If the objective is validation, provide the GWADataLoader object for the validation
         dataset.
         :param verbose: Detailed messages and print statements.
         :param n_jobs: The number of processes to use for the grid search
         """
 
-        super().__init__(gdl, model=model, objective=objective,
+        super().__init__(gdl, model=model, criterion=criterion,
                          validation_gdl=validation_gdl,
                          verbose=verbose,
                          n_jobs=n_jobs)
@@ -342,14 +326,14 @@ class GridSearch(HyperparameterSearch):
         self.grid = grid
         self.model.threads = 1
 
-    def fit(self, max_iter=50, f_abs_tol=1e-3, x_rel_tol=1e-3):
+    def fit(self, max_iter=50, f_abs_tol=1e-3, x_abs_tol=1e-8):
 
         print("> Performing Grid Search over the following grid:")
         print(self.grid.to_table())
 
         opts = [(self.model, g, {'max_iter': max_iter,
                                  'f_abs_tol': f_abs_tol,
-                                 'x_rel_tol': x_rel_tol})
+                                 'x_abs_tol': x_abs_tol})
                 for g in self.grid.combine_grids()]
 
         assert len(opts) > 1
@@ -362,24 +346,27 @@ class GridSearch(HyperparameterSearch):
 
         with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
 
-            for idx, fit_result in tqdm(enumerate(pool.imap(fit_model_fixed_params, opts)), total=len(opts)):
+            for idx, fitted_model in tqdm(enumerate(pool.imap(fit_model_fixed_params, opts)), total=len(opts)):
 
-                if fit_result[0] is None:
+                if fitted_model is None:
                     continue
 
-                fit_results.append(fit_result)
+                fit_results.append(fitted_model)
                 params.append(copy.copy(opts[idx][1]))
                 self.validation_result.append(copy.copy(opts[idx][1]))
-                self.validation_result[-1]['ELBO'] = fit_result[0]
+                self.validation_result[-1]['ELBO'] = fitted_model.elbo()
 
         if len(fit_results) > 1:
             res_objectives = self.multi_objective(fit_results)
         else:
             raise Exception("Error: Convergence was achieved for less than 2 models.")
 
-        if self._opt_objective == 'validation':
+        if self.criterion == 'validation':
             for i in range(len(self.validation_result)):
                 self.validation_result[i]['Validation_R2'] = res_objectives[i]
+        elif self.criterion == 'pseudo_validation':
+            for i in range(len(self.validation_result)):
+                self.validation_result[i]['Pseudo_Validation_Corr'] = res_objectives[i]
 
         best_idx = np.argmax(res_objectives)
         best_params = params[best_idx]
@@ -402,18 +389,22 @@ class BMA(PRSModel):
                  gdl,
                  grid,
                  model=None,
+                 normalization='softmax',
                  verbose=False,
                  n_jobs=1):
         """
         Integrate out hyperparameters using Bayesian Model Averaging
         :param gdl: A GWADataLoader object
-        :param grid: A HyperParameterGrid object (e.g. VIPRSGrid).
+        :param grid: A HyperParameterGrid object
         :param model: A `PRSModel`-derived object (e.g. VIPRS).
+        :param normalization: The normalization scheme for the final ELBOs. Options are (`softmax`, `sum`).
         :param verbose: Detailed messages and print statements.
         :param n_jobs: The number of processes to use for the BMA
         """
 
         super().__init__(gdl)
+
+        assert normalization in ('softmax', 'sum')
 
         self.grid = grid
         self.n_jobs = n_jobs
@@ -427,6 +418,8 @@ class BMA(PRSModel):
         self.model.verbose = verbose
         self.model.threads = 1
 
+        self.normalization = normalization
+
         self.var_gamma = None
         self.var_mu = None
         self.var_sigma = None
@@ -437,7 +430,7 @@ class BMA(PRSModel):
         self.var_mu = {c: np.zeros(c_size) for c, c_size in self.shapes.items()}
         self.var_sigma = {c: np.zeros(c_size) for c, c_size in self.shapes.items()}
 
-    def fit(self, max_iter=100, f_abs_tol=1e-3, x_rel_tol=1e-3, **grid_kwargs):
+    def fit(self, max_iter=100, f_abs_tol=1e-3, x_abs_tol=1e-8, **grid_kwargs):
 
         self.initialize()
 
@@ -446,7 +439,7 @@ class BMA(PRSModel):
 
         opts = [(self.model, g, {'max_iter': max_iter,
                                  'f_abs_tol': f_abs_tol,
-                                 'x_rel_tol': x_rel_tol})
+                                 'x_abs_tol': x_abs_tol})
                 for g in self.grid.combine_grids()]
 
         elbos = []
@@ -457,21 +450,25 @@ class BMA(PRSModel):
         ctx = multiprocessing.get_context("spawn")
 
         with ctx.Pool(self.n_jobs, maxtasksperchild=1) as pool:
-            for elbo, n_var_gamma, n_var_mu, n_var_sigma, _ in \
-                    tqdm(pool.imap_unordered(fit_model_fixed_params, opts), total=len(opts)):
+            for fitted_model in tqdm(pool.imap_unordered(fit_model_fixed_params, opts), total=len(opts)):
 
-                if elbo is None:
+                if fitted_model is None:
                     continue
 
-                elbos.append(elbo)
-                var_gammas.append(n_var_gamma)
-                var_mus.append(n_var_mu)
-                var_sigmas.append(n_var_sigma)
+                elbos.append(fitted_model.elbo())
+                var_gammas.append(fitted_model.var_gamma)
+                var_mus.append(fitted_model.var_mu)
+                var_sigmas.append(fitted_model.var_sigma)
 
         elbos = np.array(elbos)
-        # Correction for negative ELBOs:
-        elbos = elbos - elbos.min() + 1.
-        elbos /= elbos.sum()
+
+        if self.normalization == 'softmax':
+            from scipy.special import softmax
+            elbos = softmax(elbos)
+        elif self.normalization == 'sum':
+            # Correction for negative ELBOs:
+            elbos = elbos - elbos.min() + 1.
+            elbos /= elbos.sum()
 
         for idx in range(len(elbos)):
             for c in self.shapes:

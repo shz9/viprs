@@ -40,14 +40,14 @@ cdef class VIPRSLDPred(VIPRS):
         self.h2g = 1. - self.sigma_epsilon
 
     cpdef update_sigma_beta(self):
-        self.sigma_beta = self.h2g / (self.M*self.get_proportion_causal())
+        self.sigma_beta = self.h2g / (self.n_snps*self.get_proportion_causal())
 
     cpdef update_sigma_epsilon(self):
         self.sigma_epsilon = 1. - self.h2g
 
     cpdef m_step(self):
 
-        bnds = ((1e-4, 1. - 1e-4), (1./self.M, 1. - 1./self.M))
+        bnds = ((1e-4, 1. - 1e-4), (1./self.n_snps, 1. - 1./self.n_snps))
 
         res = minimize(m_objective, (self.h2g, self.get_proportion_causal()), bounds=bnds, args=(self,))
         self.h2g, self.pi = res.x

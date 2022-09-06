@@ -2,7 +2,6 @@
 
 """
 Author: Shadi Zabad
-Date: May 2022
 
 This is a commandline script that enables users to perform
 posterior inference for polygenic risk score models using
@@ -82,8 +81,15 @@ def main():
     parser.add_argument('-m', '--model', dest='model', type=str, default='VIPRS',
                         help='The PRS model to fit',
                         choices={'VIPRS', 'VIPRSMix', 'VIPRSAlpha'})
+    parser.add_argument('--annealing-schedule', dest='annealing_schedule', type=str, default='linear',
+                        help='The type of schedule for updating the temperature parameter in deterministic annealing.',
+                        choices={'linear', 'harmonic', 'geometric'})
+    parser.add_argument('--annealing-steps', dest='annealing_steps', type=int, default=0,
+                        help="The number of deterministic annealing steps to perform.")
+    parser.add_argument('--initial-temperature', dest='initial_temperature', type=float, default=5.,
+                        help="The initial temperature for the deterministic annealing procedure.")
     parser.add_argument('--n-components', dest='n_components', type=int, default=3,
-                        help='The number of non-null Gussian mixture components to use with the VIPRSMix model '
+                        help='The number of non-null Gaussian mixture components to use with the VIPRSMix model '
                              '(i.e. excluding the spike component).')
     parser.add_argument('--prior-mult', dest='prior_mult', type=str, default='0.01,0.1,1.',
                         help='Prior multipliers on the variance of the non-null Gaussian mixture component.')
@@ -96,7 +102,7 @@ def main():
                              'BO (Bayesian Optimization), and BMA (Bayesian Model Averaging).')
     parser.add_argument('--grid-metric', dest='grid_metric', type=str, default='validation',
                         help='The metric for selecting best performing model in grid search.',
-                        choices={'ELBO', 'validation'})
+                        choices={'ELBO', 'validation', 'pseudo_validation'})
     parser.add_argument('--opt-params', dest='opt_params', type=str, default='pi',
                         help='The hyperparameters to tune using GridSearch/BMA/Bayesian optimization (comma-separated).'
                              'Possible values are pi, sigma_beta, and sigma_epsilon. Or a combination of them.')
@@ -135,6 +141,9 @@ def main():
                         help='The backend software used for computations on the genotype matrix.')
     parser.add_argument('--max-attempts', dest='max_attempts', type=int, default=3,
                         help='The maximum number of model restarts (in case of optimization divergence issues).')
+    parser.add_argument('--use-multiprocessing', dest='use_multiprocessing', action='store_true', default=False,
+                        help='Use multiprocessing where applicable. For now, this mainly affects the '
+                             'GridSearch/Bayesian Model Averaging implementations.')
     parser.add_argument('--n-jobs', dest='n_jobs', type=int, default=1,
                         help='The number of processes/threads to launch for the hyperparameter search (default is '
                              '1, but we recommend increasing this depending on system capacity).')
@@ -151,18 +160,28 @@ def main():
     from magenpy.utils.model_utils import identify_mismatched_snps
     from magenpy.GWADataLoader import GWADataLoader
 
-    from viprs.utils.HyperparameterGrid import VIPRSGrid
+    from viprs.utils.HyperparameterGrid import HyperparameterGrid
 
     from viprs.model.VIPRS import VIPRS
     from viprs.model.VIPRSMix import VIPRSMix
     from viprs.model.VIPRSAlpha import VIPRSAlpha
-    from viprs.model.HyperparameterSearch import BMA, GridSearch, BayesOpt
+    from viprs.model.VIPRSGridSearch import VIPRSGridSearch
+    from viprs.model.VIPRSBMA import VIPRSBMA
+    from viprs.model.HyperparameterSearch import BayesOpt, GridSearch, BMA
 
     # ----------------------------------------------------------
+    print('{:-^62}\n'.format('  Parsed arguments  '))
+
+    for key, val in vars(args).items():
+        if val is not None and val != parser.get_default(key):
+            print("--", key, ":", val)
+
+    # ----------------------------------------------------------
+    print('\n{:-^62}\n'.format('  Sanity checking and data preparation  '))
     # Sanity checking and data preparation:
 
     # Check the validation dataset:
-    if args.hyp_search in ('BO', 'GS') and args.grid_metric == 'validation':
+    if args.hyp_search in ('BO', 'GS') and args.grid_metric in ('validation', 'pseudo_validation'):
 
         if args.validation_bed is None or args.validation_pheno is None:
             raise ValueError("To perform cross-validation, you need to provide BED files and a phenotype file "
@@ -177,13 +196,17 @@ def main():
             if not osp.isfile(args.validation_pheno):
                 raise FileNotFoundError(f"No phenotype file found at {args.validation_pheno}")
 
+        print("> Reading the validation dataset...")
         validation_gdl = GWADataLoader(bed_files=valid_bed_files,
                                        keep_file=args.validation_keep,
                                        phenotype_file=args.validation_pheno,
                                        backend=args.backend,
                                        temp_dir=args.temp_dir,
-                                       n_threads=args.n_jobs,
-                                       verbose=False)
+                                       n_threads=args.n_jobs)
+
+        if args.grid_metric == 'pseudo_validation':
+            print("> Performing GWAS to obtain validation summary statistics...")
+            validation_gdl.perform_gwas()
 
     else:
         validation_gdl = None
@@ -219,10 +242,11 @@ def main():
         else:
             sigma_beta_grid = None
 
-        grid = VIPRSGrid(pi=pi_grid,
-                         sigma_epsilon=sigma_epsilon_grid,
-                         sigma_beta=sigma_beta_grid,
-                         search_params=args.opt_params.split(','))
+        print("> Constructing the hyperparameter grid...")
+        grid = HyperparameterGrid(pi=pi_grid,
+                                  sigma_epsilon=sigma_epsilon_grid,
+                                  sigma_beta=sigma_beta_grid,
+                                  search_params=args.opt_params.split(','))
 
     # Prepare the summary statistics parsers:
     if args.sumstats_format == 'custom':
@@ -243,13 +267,6 @@ def main():
 
     # ----------------------------------------------------------
 
-    print('{:-^62}\n'.format('  Parsed arguments  '))
-
-    for key, val in vars(args).items():
-        if val is not None and val != parser.get_default(key):
-            print("--", key, ":", val)
-
-    # ----------------------------------------------------------
     print('\n{:-^62}\n'.format('  Reading input data  '))
 
     # Construct a GWADataLoader object using LD + summary statistics:
@@ -265,6 +282,7 @@ def main():
         # If we are not performing inference genome-wide,
         # then split the GWADataLoader object into multiple loaders,
         # one per chromosome.
+        print("> Splitting the data by chromosome...")
         data_loaders = gdl.split_by_chromosome().values()
 
     # ----------------------------------------------------------
@@ -272,7 +290,11 @@ def main():
     print('\n{:-^62}\n'.format('  Model details  '))
 
     print("- Model:", args.model)
-    print("- Hyperparameter tuning strategy:", args.hyp_search)
+    hyp_map = {'GS': 'Grid search', 'BO': 'Bayesian optimization',
+               'BMA': 'Bayesian model averaging', 'EM': 'Expectation maximization'}
+    print("- Hyperparameter tuning strategy:", hyp_map[args.hyp_search])
+    if args.hyp_search in ('BO', 'GS'):
+        print("- Model selection criterion:", args.grid_metric)
 
     # ----------------------------------------------------------
     print('\n{:-^62}\n'.format('  Model fitting  '))
@@ -310,42 +332,68 @@ def main():
 
         while n_attempts < args.max_attempts and not converged:
 
-            if args.model == 'VIPRS':
-                prs_m = VIPRS(dl)
-            elif args.model == 'VIPRSMix':
-                prs_m = VIPRSMix(dl, K=args.n_components, prior_multipliers=prior_mult)
-            elif args.model == 'VIPRSAlpha':
-                prs_m = VIPRSAlpha(dl)
-
             # Fit the model to the data:
             if args.genomewide:
                 print("> Performing model fit on all chromosomes jointly...")
             else:
-                print("> Performing model fit on chromosomes:", gdl.chromosomes)
+                print("> Performing model fit on chromosomes:", dl.chromosomes)
 
             try:
-                if args.hyp_search == 'BO':
-                    hs_m = BayesOpt(dl,
-                                    opt_params,
-                                    model=prs_m,
-                                    validation_gdl=validation_gdl,
-                                    objective=args.grid_metric)
-                elif args.hyp_search == 'GS':
-                    hs_m = GridSearch(dl,
-                                      grid,
-                                      model=prs_m,
-                                      validation_gdl=validation_gdl,
-                                      objective=args.grid_metric,
-                                      n_jobs=args.n_jobs)
-                elif args.hyp_search == 'BMA':
-                    hs_m = BMA(dl,
-                               grid,
-                               model=prs_m,
-                               n_jobs=args.n_jobs)
-                else:
-                    hs_m = prs_m
 
-                final_m = hs_m.fit()
+                if args.model == 'VIPRS':
+                    prs_m = VIPRS(dl)
+                elif args.model == 'VIPRSMix':
+                    prs_m = VIPRSMix(dl, K=args.n_components, prior_multipliers=prior_mult)
+                elif args.model == 'VIPRSAlpha':
+                    prs_m = VIPRSAlpha(dl)
+
+                if args.hyp_search == 'EM':
+
+                    final_m = prs_m.fit(annealing_schedule=args.annealing_schedule,
+                                        annealing_steps=args.annealing_steps,
+                                        init_temperature=args.initial_temperature)
+
+                elif args.hyp_search == 'BO':
+
+                    prs_m = BayesOpt(dl,
+                                     opt_params,
+                                     model=prs_m,
+                                     validation_gdl=validation_gdl,
+                                     criterion=args.grid_metric)
+                    final_m = prs_m.fit()
+
+                elif args.hyp_search == 'GS':
+
+                    if args.use_multiprocessing:
+                        prs_m = GridSearch(dl,
+                                           grid,
+                                           model=prs_m,
+                                           criterion=args.grid_metric,
+                                           validation_gdl=validation_gdl,
+                                           n_jobs=args.n_jobs)
+
+                        final_m = prs_m.fit()
+
+                    else:
+
+                        prs_m = VIPRSGridSearch(dl, grid)
+                        prs_m.fit()
+                        final_m = prs_m.select_best_model(validation_gdl=validation_gdl, criterion=args.grid_metric)
+
+                elif args.hyp_search == 'BMA':
+
+                    if args.use_multiprocessing:
+                        prs_m = BMA(dl,
+                                    grid,
+                                    model=prs_m,
+                                    n_jobs=args.n_jobs)
+
+                        final_m = prs_m.fit()
+                    else:
+                        prs_m = VIPRSBMA(dl, grid)
+                        prs_m.fit()
+                        final_m = prs_m.average_models()
+
                 converged = True
             except Exception as e:
                 print(e)
@@ -357,12 +405,12 @@ def main():
                     while filtered_snps < 1 and current_p_val_cutoff <= .05:
                         # -----------------------------------------------------------
                         # Identify mismatched SNPs and remove them from analysis:
-                        mismatched_snps = identify_mismatched_snps(gdl, p_dentist_threshold=current_p_val_cutoff)
+                        mismatched_snps = identify_mismatched_snps(dl, p_dentist_threshold=current_p_val_cutoff)
                         for c, mis_mask in mismatched_snps.items():
                             n_filt_snps = mis_mask.sum()
                             if n_filt_snps > 0:
                                 filtered_snps += n_filt_snps
-                                gdl.filter_snps(gdl.snps[c][~mis_mask], chrom=c)
+                                dl.filter_snps(dl.snps[c][~mis_mask], chrom=c)
 
                         if filtered_snps < 1:
                             current_p_val_cutoff *= 10.
@@ -370,7 +418,7 @@ def main():
                     if filtered_snps > 0:
                         print(f"> Filtered {filtered_snps} SNPs due to mismatch between "
                               f"summary statistics and LD reference panel.")
-                        gdl.harmonize_data()
+                        dl.harmonize_data()
                     else:
                         raise Exception("> Re-attempting model fit without filtering any new variants. Exiting...")
                     # -----------------------------------------------------------
@@ -390,18 +438,29 @@ def main():
             m_h2g = final_m.get_heritability()
             m_p = final_m.get_proportion_causal()
 
-            hyp_tables.append(final_m.to_theta_table())
+            theta_table = final_m.to_theta_table()
+            if not args.genomewide:
+                theta_table['CHR'] = dl.chromosomes[0]
+
+            hyp_tables.append(theta_table)
             h2g.append(m_h2g)
             prop_causal.append(m_p)
 
         # Extract validation tables:
         if args.hyp_search in ('GS', 'BO'):
-            valid_tables.append(hs_m.to_validation_table())
+            valid_table = prs_m.to_validation_table()
+            if not args.genomewide:
+                valid_table['CHR'] = dl.chromosomes[0]
+            valid_tables.append(valid_table)
 
         # Cleanup:
-        gdl.cleanup()
+        dl.cleanup()
         if validation_gdl is not None:
             validation_gdl.cleanup()
+
+        del dl
+
+        print("* * * * * * * * * *")
 
     print("\n>>> Writing the inference results to:\n", osp.dirname(args.output_file))
 
@@ -421,4 +480,17 @@ def main():
 
 
 if __name__ == '__main__':
+
+    import time
+    from datetime import timedelta
+
+    # Record start time:
+    start_time = time.time()
+
+    # Run VIPRS:
     main()
+
+    print("Done!")
+    # Record the end time:
+    end_time = time.time()
+    print('Total runtime:', timedelta(seconds=end_time - start_time))
