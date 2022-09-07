@@ -8,4 +8,4 @@ from viprs.utils.data_utils import *
 from viprs.utils.HyperparameterGrid import HyperparameterGrid
 from viprs.model.HyperparameterSearch import BayesOpt
 
-__version__ = '0.0.3'
+__version__ = '0.0.4'
