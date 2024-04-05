@@ -58,7 +58,8 @@ def get_blas_include_dirs():
     if cblas_lib_path is None:
         cblas_lib_path = os.getenv('BLAS_INCLUDE_DIR')
 
-    if cblas_lib_path is None:
+    # If the header file is not found, issue a warning:
+    if (cblas_lib_path is None) or (not os.path.isfile(os.path.join(cblas_lib_path[0], 'cblas.h'))):
         # Ok, we give up...
         warnings.warn("""
             ******************** WARNING ********************
@@ -120,6 +121,7 @@ extensions = [
               ["viprs/model/vi/e_step_cpp.pyx"],
               language="c++",
               include_dirs=[np.get_include()] + blas_include,
+              extra_link_args=[[], ['-lcblas']][len(blas_include) > 0],
               define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")] + blas_macros,
               extra_compile_args=["-O3"])
 ]
