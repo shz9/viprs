@@ -24,7 +24,7 @@ jobs:
         shell: "bash -l {0}"
         run: >
           conda create --name "viprs_ci" -c conda-forge -c anaconda 
-          python=${{matrix.python-version}} pip wheel compilers openblas -y
+          python=${{matrix.python-version}} pip wheel compilers openblas libcblas -y
 
       - name: Show info about `viprs_ci` environment
         shell: "bash -l {0}"
