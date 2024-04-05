@@ -108,7 +108,7 @@ def no_cythonize(cy_extensions, **_ignore):
 extensions = [
     Extension("viprs.utils.math_utils",
               ["viprs/utils/math_utils.pyx"],
-              libraries=["m"],
+              libraries=[[], ["m"]][os.name != 'nt'],  # Only include for non-Windows systems
               include_dirs=[np.get_include()],
               extra_compile_args=["-O3"]),
     Extension("viprs.model.vi.e_step",
