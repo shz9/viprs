@@ -121,7 +121,6 @@ extensions = [
               ["viprs/model/vi/e_step_cpp.pyx"],
               language="c++",
               include_dirs=[np.get_include()] + blas_include,
-              extra_link_args=[[], ['-lcblas']][len(blas_include) > 0],
               define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")] + blas_macros,
               extra_compile_args=["-O3"])
 ]

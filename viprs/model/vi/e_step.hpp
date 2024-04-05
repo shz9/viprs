@@ -92,7 +92,9 @@ dot(T* x, U* y, int size) {
     T s = 0.;
 
     #ifdef _OPENMP
-        #pragma omp simd
+        #ifndef _WIN32
+            #pragma omp simd
+        #endif
     #endif
     for (int i = 0; i < size; ++i) {
         s += x[i]*static_cast<T>(y[i]);
@@ -162,7 +164,9 @@ axpy(T* x, U* y, T alpha, int size) {
     */
 
     #ifdef _OPENMP
-        #pragma omp simd
+        #ifndef _WIN32
+            #pragma omp simd
+        #endif
     #endif
     for (int i = 0; i < size; ++i) {
         x[i] += static_cast<T>(y[i]) * alpha;
