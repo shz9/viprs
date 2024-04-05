@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
 
 """
-Author: Shadi Zabad
-Date: May 2022
+Compute Polygenic Scores for Test Samples
+----------------------------
 
-This is a commandline script that enables users to generate
-polygenic scores for test samples given effect size estimates from VIPRS
+This is a commandline script that computes polygenic scores for test samples
+given effect size estimates from VIPRS. The script can work with effect sizes from
+other software, as long as they're formatted in the same way as VIPRS `.fit` files.
+
+Usage:
+
+    python -m viprs_score -f <fit_files> --bed-files <bed_files> --output-file <output_file>
+
+    - `fit_files` is the path to the file(s) with the output parameter estimates from VIPRS.
+    - `bed_files` is the BED files containing the genotype data.
+    - `output_file` is the output file where to store the polygenic scores (with no extension).
+
 """
 
 import os.path as osp
@@ -13,9 +23,9 @@ import argparse
 import viprs as vp
 from magenpy.utils.system_utils import makedir, get_filenames
 from magenpy.GWADataLoader import GWADataLoader
-from viprs.model.PRSModel import PRSModel
+from viprs.model.BayesPRSModel import BayesPRSModel
 
-print(f"""
+print(fr"""
         **********************************************
                     _____
             ___   _____(_)________ ________________
@@ -24,20 +34,20 @@ print(f"""
             _____/  /_/   _  .___/ /_/     /____/
                           /_/
         Variational Inference of Polygenic Risk Scores
-        Version: {vp.__version__} | Release date: June 2022
+        Version: {vp.__version__} | Release date: {vp.__release_date__}
         Author: Shadi Zabad, McGill University
         **********************************************
-        < Compute polygenic scores for test samples >
+        < Compute Polygenic Scores for Test Samples >
 """)
 
 parser = argparse.ArgumentParser(description="""
-Commandline arguments for generating polygenic scores
+    Commandline arguments for computing polygenic scores
 """)
 
 parser.add_argument('-f', '--fit-files', dest='fit_files', type=str, required=True,
                     help='The path to the file(s) with the output parameter estimates from VIPRS. '
-                         'You may use a wildcard here (e.g. "prs/chr_*.fit")')
-parser.add_argument('--bed-files', dest='bed_files', type=str, required=True,
+                         'You may use a wildcard here if fit files are stored per-chromosome (e.g. "prs/chr_*.fit")')
+parser.add_argument('--bfile', dest='bed_files', type=str, required=True,
                     help='The BED files containing the genotype data. '
                          'You may use a wildcard here (e.g. "data/chr_*.bed")')
 parser.add_argument('--output-file', dest='output_file', type=str, required=True,
@@ -53,7 +63,7 @@ parser.add_argument('--extract', dest='extract', type=str,
 parser.add_argument('--backend', dest='backend', type=str, default='xarray',
                     choices={'xarray', 'plink'},
                     help='The backend software used for computations with the genotype matrix.')
-parser.add_argument('--n-threads', dest='n_threads', type=int, default=1,
+parser.add_argument('--threads', dest='threads', type=int, default=1,
                     help='The number of threads to use for computations.')
 parser.add_argument('--compress', dest='compress', action='store_true', default=False,
                     help='Compress the output file')
@@ -77,8 +87,8 @@ test_data = GWADataLoader(args.bed_files,
                           min_maf=None,
                           backend=args.backend,
                           temp_dir=args.temp_dir,
-                          n_threads=args.n_threads)
-prs_m = PRSModel(test_data)
+                          threads=args.threads)
+prs_m = BayesPRSModel(test_data)
 
 fit_files = get_filenames(args.fit_files, extension='.fit')
 

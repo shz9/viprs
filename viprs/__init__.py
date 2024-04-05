@@ -1,11 +1,9 @@
 
-from viprs.model.VIPRS import VIPRS
-from viprs.model.VIPRSMix import VIPRSMix
-from viprs.model.VIPRSGridSearch import VIPRSGridSearch
-from viprs.model.VIPRSBMA import VIPRSBMA
-from viprs.utils.data_utils import *
+from .model.VIPRS import VIPRS
+from .model.VIPRSMix import VIPRSMix
+from .model.gridsearch.VIPRSGridSearch import VIPRSGridSearch
+from .model.gridsearch.HyperparameterGrid import HyperparameterGrid
+from .utils.data_utils import *
 
-from viprs.utils.HyperparameterGrid import HyperparameterGrid
-from viprs.model.HyperparameterSearch import BayesOpt
-
-__version__ = '0.0.4'
+__version__ = '0.1.0'
+__release_date__ = 'April 2024'

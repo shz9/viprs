@@ -2,7 +2,7 @@ numpy
 scipy
 pandas
 tqdm
-magenpy>=0.0.5
+magenpy>=0.1
 statsmodels
 scikit-learn
 psutil

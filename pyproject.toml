@@ -3,8 +3,16 @@
 requires = [
     "setuptools",
     "wheel",
-    "Cython",
+    "cython",
+    "extension-helpers",
+    "scipy",
     "oldest-supported-numpy",
-    #"extension-helpers"
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.cibuildwheel]
+test-extras = "test"
+test-command = "pytest {project}/tests"
+# Optional
+build-verbosity = 1
+

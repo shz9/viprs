@@ -1,0 +1,1 @@
+::: viprs.model.BayesPRSModel

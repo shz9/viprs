@@ -1,0 +1,103 @@
+site_name: Variational Inference of Polygenic Risk Scores (VIPRS)
+
+repo_name: viprs
+repo_url: https://github.com/shz9/viprs
+
+theme:
+  name: "material"
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    # - content.code.select
+    # - content.footnote.tooltips
+    # - content.tabs.link
+    - content.tooltips
+    # - header.autohide
+    - navigation.expand
+    - navigation.footer
+    - navigation.indexes
+    # - navigation.instant
+    # - navigation.instant.prefetch
+    # - navigation.instant.progress
+    # - navigation.prune
+    #- navigation.sections
+    #- navigation.tabs
+    # - navigation.tabs.sticky
+    #- navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+    # - toc.integrate
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/link
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/toggle-switch-off
+        name: Switch to system preference
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+plugins:
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [viprs]  # search packages in the src folder
+          options:
+            docstring_style: sphinx
+  - search
+  - autorefs
+
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - toc:
+      permalink: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.magiclink:
+      normalize_issue_symbols: true
+      repo_url_shorthand: true
+      user: shz9
+      repo: viprs
+
+nav:
+  - "Home": index.md
+  - "Installation": installation.md
+  - "Getting Started": getting_started.md
+  - "Download LD Reference": download_ld.md
+  - "Tutorials": tutorials/overview.md
+  - "Command Line Scripts":
+    - "Overview": commandline/overview.md
+    - "viprs_fit": commandline/viprs_fit.md
+    - "viprs_score": commandline/viprs_score.md
+    - "viprs_evaluate": commandline/viprs_evaluate.md
+  - "Report issues/bugs": "https://github.com/shz9/viprs/issues"
+  - "FAQ": faq.md
+  - "Citation": citation.md
+  - "API Reference": api/overview.md

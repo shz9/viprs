@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2024-04-05
+
+A large scale restructuring of the code base to improve efficiency and usability.
+
+### Changed
+
+- Moved plotting script to its own separate module.
+- Updated some method names / commandline flags to be consistent throughout.
+- Updated the `VIPRS` class to allow for more flexibility in the optimization process.
+- Removed the `VIPRSAlpha` model for now. This will be re-implemented in the future, 
+using better interfaces / data structures.
+- Moved all hyperparameter search classes/models to their own directory.
+- Restructured the `viprs_fit` commandline script to make the code cleaner, 
+do better sanity checking, and introduce process parallelism over chromosomes.
+
+### Added
+
+- Basic integration testing with `pytest` and GitHub workflows.
+- Documentation for the entire package using `mkdocs`.
+- Integration testing / automating building with GitHub workflows.
+- New self-contained implementation of E-Step in `Cython` and `C++`.
+  - Uses `OpenMP` for parallelism across chunks of variants.
+  - Allows for de-quantization on the fly of the LD matrix.
+  - Uses BLAS linear algebra operations where possible.
+  - Allows model fitting with only 
+- Benchmarking scripts (`benchmark_e_step.py`) to compare computational performance of different implementations.
+- Added functionality to allow the user to track time / memory utilization in `viprs_fit`.
+- Added `OptimizeResult` class to keep track of the info/parameters of EM optimization.
+- New evaluation metrics
+  - `pseudo_metrics` has been moved to its own module to allow for more flexibility in evaluation.
+  - New evaluation metrics for binary traits: `nagelkerke_r2`, `mcfadden_r2`, 
+  `cox_snell_r2` `liability_r2`, `liability_probit_r2`, `liability_logit_r2`.
+  - New function to compute standard errors / test statistics for all R-Squared metrics.
+
 ## [0.0.4] - 2022-09-07
 
 ### Changed

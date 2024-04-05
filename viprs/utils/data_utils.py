@@ -1,6 +1,3 @@
-import os
-from tqdm import tqdm
-
 
 def download_ukb_wb_ld_matrix(target_dir='.', chromosome=None):
     """
@@ -13,6 +10,8 @@ def download_ukb_wb_ld_matrix(target_dir='.', chromosome=None):
     import urllib.request
     from magenpy.utils.system_utils import makedir
     from magenpy.utils.compute_utils import iterable
+    import os
+    from tqdm import tqdm
 
     if chromosome is None:
         chromosome = list(range(1, 23))

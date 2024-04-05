@@ -1,0 +1,1 @@
+::: viprs.plot.diagnostics

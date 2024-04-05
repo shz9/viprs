@@ -4,6 +4,7 @@
 
 # C extensions
 *.c
+*.cpp
 *.so
 
 # Distribution / packaging
@@ -18,6 +19,7 @@ lib/
 lib64/
 parts/
 sdist/
+site/
 var/
 *.egg-info/
 .installed.cfg
@@ -34,6 +36,9 @@ pip-delete-this-directory.txt
 
 # custom
 .idea/
+.vscode/
+.tox/
+.pytest_cache/
 *.html
 *.zarr
 *.npz

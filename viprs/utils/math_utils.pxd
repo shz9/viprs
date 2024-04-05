@@ -1,9 +1,14 @@
-cdef double[::1] softmax(double[::1] x) nogil
-cdef double sigmoid(double x) nogil
-cdef double logit(double x) nogil
-cdef double dot(double[::1] v1, double[::1] v2) nogil
-cdef double vec_sum(double[::1] v1) nogil
-cdef void elementwise_add_mult(double[::1] v1, double[::1] v2, double s) nogil
-cdef double[::1] clip_list(double[::1] a, double min_value, double max_value) nogil
-cdef double c_max(double[::1] x) nogil
-cdef double clip(double a, double min_value, double max_value) nogil
+from cython cimport floating
+
+cdef floating[::1] softmax(floating[::1] x) noexcept nogil
+cdef floating sigmoid(floating x) noexcept nogil
+cdef floating logit(floating x) noexcept nogil
+cdef floating dot(floating[::1] v1, floating[::1] v2) noexcept nogil
+cdef floating vec_sum(floating[::1] v1) noexcept nogil
+cdef void axpy(floating[::1] v1, floating[::1] v2, floating s) noexcept nogil
+cdef void scipy_blas_axpy(floating[::1] v1, floating[::1] v2, floating alpha) noexcept nogil
+cdef floating scipy_blas_dot(floating[::1] v1, floating[::1] v2) noexcept nogil
+
+cdef floating[::1] clip_list(floating[::1] a, floating min_value, floating max_value) noexcept nogil
+cdef floating c_max(floating[::1] x) noexcept nogil
+cdef floating clip(floating a, floating min_value, floating max_value) noexcept nogil
