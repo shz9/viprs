@@ -26,6 +26,11 @@ jobs:
           conda create --name "viprs_ci" -c conda-forge -c anaconda 
           python=${{matrix.python-version}} pip wheel compilers openblas -y
 
+      - name: Show info about `viprs_ci` environment
+        shell: "bash -l {0}"
+        run: |
+          conda list --show-channel-urls -n viprs_ci
+
       - name: Install viprs
         shell: "bash -l {0}"
         run: |
