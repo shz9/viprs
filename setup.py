@@ -75,10 +75,10 @@ def get_blas_include_dirs():
     # Define macros based on whether CBLAS header exists
     macros = [('HAVE_CBLAS', None)] if len(cblas_lib_path) > 0 else []
 
-    return cblas_lib_path, macros
+    return len(cblas_lib_path) > 0, cblas_lib_path, macros
 
 
-blas_include, blas_macros = get_blas_include_dirs()
+blas_found, blas_include, blas_macros = get_blas_include_dirs()
 
 # ------------------------------------------------------
 # Build cython extensions:
@@ -120,6 +120,7 @@ extensions = [
     Extension("viprs.model.vi.e_step_cpp",
               ["viprs/model/vi/e_step_cpp.pyx"],
               language="c++",
+              libraries=[[], ["cblas"]][blas_found],
               include_dirs=[np.get_include()] + blas_include,
               define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")] + blas_macros,
               extra_compile_args=["-O3"])
