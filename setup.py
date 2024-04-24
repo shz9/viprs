@@ -1,6 +1,7 @@
 from setuptools import setup, Extension, find_packages
 from extension_helpers import add_openmp_flags_if_available
 from extension_helpers._openmp_helpers import check_openmp_support
+import pkgconfig
 import numpy as np
 import warnings
 import os
@@ -16,69 +17,127 @@ except ImportError:
 # Find and set BLAS-related flags and paths:
 
 
-def get_blas_include_dirs():
+def find_blas_libraries():
     """
-    Get the include directories for the BLAS library from numpy build configuration.
+    Find BLAS libraries on the system using pkg-config.
+    This function will return the include directories (compiler flags)
+    and the linker flags to enable building the C/C++/Cython extensions
+    that require BLAS (or whose performance would be enhanced with BLAS).
 
-    NOTE: np.distutils will be deprecated in future versions of numpy. Find alternative solutions
-    to linking to BLAS libraries. Alternative solutions:
+    We use pkg-config (as encapsulated in the `pkgconfig` Python package)
+    to perform this search. Note that we augment the pkg-config
+    search path with the conda library path (if available) to
+    enable linking against BLAS libraries installed via Conda.
 
-    * Use the `blas_opt` key in the `numpy.__config__.show()` output to get the include directories.
-    * meson builder
-    * ...
+    :return: A dictionary with the following keys:
+        * 'found': A boolean indicating whether BLAS libraries were found.
+        * 'include_dirs': A list of include directories (compiler flags).
+        * 'extra_link_args': A list of linker flags.
+        * 'define_macros': A list of macros to define.
+        * 'libraries': A list of libraries to link against.
     """
 
-    cblas_lib_path = None
+    # STEP 0: Get the current pkg-config search path:
+    current_pkg_config_path = os.getenv("PKG_CONFIG_PATH", "")
 
-    # Attempt (1): Getting the information from numpy distutils:
-    try:
-        from numpy.distutils.system_info import get_info
-        cblas_lib_path = get_info('blas_opt')['include_dirs']
-    except (AttributeError, KeyError, ImportError, ModuleNotFoundError):
-        pass
+    # STEP 1: Augment the pkg-config search path with
+    # the path of the current Conda environment (if exists).
+    # This can leverage BLAS libraries installed via Conda.
 
-    # Attempt (2): For newer versions of numpy, obtain information from np.show_config:
-    if cblas_lib_path is None:
+    conda_path = os.getenv("CONDA_PREFIX")
+
+    if conda_path is not None:
+        conda_pkgconfig_path = os.path.join(conda_path, 'lib/pkgconfig')
+        if os.path.isdir(conda_pkgconfig_path):
+            current_pkg_config_path += ":" + conda_pkgconfig_path
+
+    # STEP 2: Add the updated path to the environment variable:
+    os.environ["PKG_CONFIG_PATH"] = current_pkg_config_path
+
+    # STEP 3: Get all pkg-config packages and filter to
+    # those that have "blas" in the name.
+    blas_packages = [pkg for pkg in pkgconfig.list_all()
+                     if "blas" in pkg]
+
+    # First check: Make sure that compiler flags are defined and a
+    # valid cblas.h header file exists in the include directory:
+    if len(blas_packages) >= 1:
+
+        blas_packages = [pkg for pkg in blas_packages
+                         if pkgconfig.cflags(pkg) and
+                         os.path.isfile(os.path.join(pkgconfig.variables(pkg)['includedir'], 'cblas.h'))]
+
+    # If there remains more than one library after the previous
+    # search and filtering steps, then apply some heuristics
+    # to select the most relevant one:
+    if len(blas_packages) > 1:
+        # Check if the information about the most relevant library
+        # can be inferred from numpy. Note that this interface from
+        # numpy changes quite often between versions, so it's not
+        # a reliable check. But in case it works on some systems,
+        # we use it to link to the same library as numpy:
         try:
-            cblas_lib_path = [np.show_config(mode='dicts')['Build Dependencies']['blas']['include directory']]
-        except Exception:
+            for pkg in blas_packages:
+                if pkg in np.__config__.get_info('blas_opt')['libraries']:
+                    blas_packages = [pkg]
+                    break
+        except (KeyError, AttributeError):
             pass
 
-    # Attempt (3): Obtain information from conda environment:
-    if cblas_lib_path is None:
-        # If not found, check if the library is present in the
-        # conda environment:
-        conda_path = os.getenv("CONDA_PREFIX")
-        if conda_path is not None:
-            # If the header file exists in the conda environment, use it:
-            if os.path.isfile(os.path.join(conda_path, 'include', 'cblas.h')):
-                cblas_lib_path = [os.path.join(conda_path, 'include')]
+    # If there are still multiple libraries, then apply some
+    # additional heuristics (based on name matching) to select
+    # the most relevant one. Some libraries (e.g. flexiblas) are published with support for 64bit
+    # and they expose libraries for non-BLAS API (with the _api suffix).
+    # Ignore these here if that is the case?
+    if len(blas_packages) > 1:
+        # Some libraries (e.g. flexiblas) are published with support for 64bit
+        # and they expose libraries for non-BLAS API (with the _api suffix).
+        # Ignore these here if that is the case?
 
-    # Attempt (4): Obtain information from environment variable:
-    if cblas_lib_path is None:
-        cblas_lib_path = os.getenv('BLAS_INCLUDE_DIR')
+        idx_to_remove = set()
 
-    # If the header file is not found, issue a warning:
-    if (cblas_lib_path is None) or (not os.path.isfile(os.path.join(cblas_lib_path[0], 'cblas.h'))):
-        # Ok, we give up...
+        for pkg1 in blas_packages:
+            if pkg1 != 'blas':
+                for i, pkg2 in enumerate(blas_packages):
+                    if pkg1 != pkg2 and pkg1 in pkg2:
+                        idx_to_remove.add(i)
+
+        blas_packages = [pkg for i, pkg in enumerate(blas_packages) if i not in idx_to_remove]
+
+    # After applying all the heuristics, out of all the remaining libraries,
+    # select the first one in the list. Not the greatest solution, maybe
+    # down the line we can use the same BLAS order as numpy.
+    if len(blas_packages) >= 1:
+        final_blas_pkg = blas_packages[0]
+    else:
+        final_blas_pkg = None
+
+    # STEP 4: If a relevant BLAS package was found, extract the flags
+    # needed for building the Cython/C/C++ extensions:
+
+    if final_blas_pkg is not None:
+        blas_info = pkgconfig.parse(final_blas_pkg)
+        blas_info['define_macros'] = [('HAVE_CBLAS', None)]
+    else:
+        blas_info = {
+            'include_dirs': [],
+            'library_dirs': [],
+            'libraries': [],
+            'define_macros': [],
+        }
         warnings.warn("""
-            ******************** WARNING ********************
+            ********************* WARNING *********************
             BLAS library header files not found on your system. 
-            This may slow down some computations. If the
-            library is present on your system, please link to 
-            it explicitly by setting the BLAS_INCLUDE_DIR 
-            environment variable prior to installation.
-        """)
+            This may slow down some computations. If you are 
+            using conda, we recommend installing BLAS libraries 
+            beforehand.
+            ********************* WARNING *********************
+        """, stacklevel=2)
 
-        cblas_lib_path = []
-
-    # Define macros based on whether CBLAS header exists
-    macros = [('HAVE_CBLAS', None)] if len(cblas_lib_path) > 0 else []
-
-    return len(cblas_lib_path) > 0, cblas_lib_path, macros
+    return blas_info
 
 
-blas_found, blas_include, blas_macros = get_blas_include_dirs()
+blas_flags = find_blas_libraries()
 
 # ------------------------------------------------------
 # Build cython extensions:
@@ -120,10 +179,11 @@ extensions = [
     Extension("viprs.model.vi.e_step_cpp",
               ["viprs/model/vi/e_step_cpp.pyx"],
               language="c++",
-              libraries=[[], ["cblas"]][blas_found],
-              include_dirs=[np.get_include()] + blas_include,
-              define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")] + blas_macros,
-              extra_compile_args=["-O3"])
+              libraries=blas_flags['libraries'],
+              include_dirs=[np.get_include()] + blas_flags['include_dirs'],
+              library_dirs=blas_flags['library_dirs'],
+              define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")] + blas_flags['define_macros'],
+              extra_compile_args=["-O3", "-std=c++17"])
 ]
 
 if check_openmp_support():
@@ -140,6 +200,7 @@ else:
         means that some computations may be slower than 
         expected. It will preclude using multithreading 
         in the coordinate ascent optimization algorithm.
+        ******************** WARNING ********************
     """)
 
 
@@ -178,7 +239,7 @@ with open("requirements-docs.txt") as fp:
 
 setup(
     name="viprs",
-    version="0.1.0",
+    version="0.1.1",
     author="Shadi Zabad",
     author_email="shadi.zabad@mail.mcgill.ca",
     description="Variational Inference of Polygenic Risk Scores (VIPRS)",

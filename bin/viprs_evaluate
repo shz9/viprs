@@ -103,7 +103,7 @@ if args.covariates_file is not None:
 # Make sure that samples remain after reading both:
 assert sample_table.n > 0, "No samples found after merging the covariates and phenotype files."
 
-prs_df = pd.read_csv(args.prs_file, sep='\t')
+prs_df = pd.read_csv(args.prs_file, sep=r'\s+')
 
 # Merge the PRS data with the phenotype data:
 prs_df = prs_df.merge(sample_table.get_individual_table(), on=['FID', 'IID'])

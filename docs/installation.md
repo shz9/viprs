@@ -26,7 +26,7 @@ a new environment with the required dependencies as follows:
 
 ```bash
 python_version=3.11  # Change python version here if needed
-conda create --name "viprs_env" -c anaconda -c conda-forge python=$python_version compilers openblas -y
+conda create --name "viprs_env" -c anaconda -c conda-forge python=$python_version compilers pkg-config openblas -y
 conda activate viprs_env
 ```
 
@@ -68,3 +68,21 @@ source viprs_env/bin/activate
 python -m pip install --upgrade pip
 python -m pip install viprs>=0.1
 ```
+
+### Using `Docker` containers
+
+If you are using `Docker` containers, you can build a container with the `viprs` package 
+and all its dependencies by downloading the relevant `Dockerfile` from the 
+[repository](https://github.com/shz9/viprs/tree/master/containers) and building it 
+as follows:
+
+```bash
+# Build the docker image:
+docker build -f cli.Dockerfile -t viprs-cli .
+# Run the container in interactive mode:
+docker run -it viprs-cli /bin/bash
+# Test that the package installed successfully:
+viprs_fit -h
+```
+
+We plan to publish pre-built `Docker` images on `DockerHub` in the future.

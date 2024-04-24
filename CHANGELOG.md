@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2024-04-24
+
+### Changed
+
+- Fixed bugs in the E-Step benchmarking script.
+- Re-wrote the logic for finding BLAS libraries in the `setup.py` script. :crossed_fingers:
+
+### Added
+
+- `Dockerfile`s for both `cli` and `jupyter` modes.
+
 ## [0.1.0] - 2024-04-05
 
 A large scale restructuring of the code base to improve efficiency and usability.

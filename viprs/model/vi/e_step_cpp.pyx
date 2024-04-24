@@ -65,7 +65,7 @@ cdef extern from "e_step.hpp" nogil:
                            T* u_logs,
                            T* half_var_tau,
                            T* mu_mult,
-                              T dq_scale,
+                           T dq_scale,
                            int threads,
                            bint use_blas,
                            bint low_memory) noexcept nogil

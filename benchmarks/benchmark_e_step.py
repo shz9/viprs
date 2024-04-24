@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Benchmark the speed of the E-Step in VIPRS
 ----------------------------
@@ -214,9 +216,9 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------
 
     # Create a grid:
-    grid = HyperparameterGrid()
+    grid = HyperparameterGrid(n_snps=gdl.n_snps)
     # Generate a grid for pi using 5 equidistant grid points:
-    grid.generate_pi_grid(steps=args.grid_size, n_snps=gdl.n_snps)
+    grid.generate_pi_grid(steps=args.grid_size)
     # Generate a grid for sigma epsilon using 5 equidistant grid points:
     grid.generate_sigma_epsilon_grid(steps=args.grid_size)
 

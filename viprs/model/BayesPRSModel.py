@@ -305,7 +305,7 @@ class BayesPRSModel:
 
         self.pip, self.post_mean_beta, self.post_var_beta = self.harmonize_data(parameter_table=parameter_table)
 
-    def read_inferred_parameters(self, f_names, sep="\t"):
+    def read_inferred_parameters(self, f_names, sep=r"\s+"):
         """
         Read a file with the inferred parameters.
         :param f_names: A path (or list of paths) to the file with the effect sizes.

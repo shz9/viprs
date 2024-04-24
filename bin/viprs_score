@@ -25,6 +25,7 @@ from magenpy.utils.system_utils import makedir, get_filenames
 from magenpy.GWADataLoader import GWADataLoader
 from viprs.model.BayesPRSModel import BayesPRSModel
 
+
 print(fr"""
         **********************************************
                     _____

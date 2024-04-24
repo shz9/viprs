@@ -30,7 +30,7 @@ summary statistics from `fastGWA`:
 ```python linenums="1"
 # Load genotype and GWAS summary statistics data (chromosome 22):
 gdl = mgp.GWADataLoader(bed_files=mgp.tgp_eur_data_path(),  # Path of the genotype data
-                        sumstats_files=mgp.ukb_height_fastGWA_path(),  # Path of the summary statistics
+                        sumstats_files=mgp.ukb_height_sumstats_path(),  # Path of the summary statistics
                         sumstats_format="fastGWA")  # Specify the format of the summary statistics
 ```
 

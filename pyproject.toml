@@ -7,6 +7,7 @@ requires = [
     "extension-helpers",
     "scipy",
     "oldest-supported-numpy",
+    "pkgconfig"
 ]
 build-backend = "setuptools.build_meta"
 

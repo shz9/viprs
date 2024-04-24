@@ -30,6 +30,7 @@ Usage:
 
 import os.path as osp
 
+
 def check_args(args):
     """
     Check the validity, consistency, and completeness of the commandline arguments.
