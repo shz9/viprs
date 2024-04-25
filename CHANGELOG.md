@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed bugs in the E-Step benchmarking script.
 - Re-wrote the logic for finding BLAS libraries in the `setup.py` script. :crossed_fingers:
+- Fixed bugs in CI / GitHub Actions scripts.
 
 ### Added
 
