@@ -11,6 +11,7 @@ Building the `viprs` package requires the following dependencies:
 * `C/C++` Compilers
 * `cython`
 * `numPy` 
+* `pkg-config`
 * `sciPy` (>=1.5.4)
 
 To take full advantage of the **parallel processing** capabilities of the package, you will also need to make sure that 
@@ -21,7 +22,7 @@ the following packages/libraries are available:
 
 ### Setting up the environment with `conda`
 
-If you can use `Anaconda` or `miniconda` to manage your Python environment, we recommend using them to create 
+If you can use `Anaconda` or `miniconda` to manage your Python environment, we **recommend** using them to create 
 a new environment with the required dependencies as follows:
 
 ```bash
