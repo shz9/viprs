@@ -528,7 +528,7 @@ if __name__ == '__main__':
             dfs[d] = di
 
         output_fname = (f"{args.file_prefix}timing_results_imp{args.implementation}_model{args.model}_"
-                        f"lm{args.low_memory}_pr{args.float_precision}_threads{t}.csv")
+                        f"lm{args.low_memory}_dq{args.dequantize_on_the_fly}_pr{args.float_precision}_threads{t}.csv")
 
         # Calculate time per-iteration:
         dfs['TimePerIteration'] = dfs['Time'] / dfs['Repeats']

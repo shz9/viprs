@@ -1,6 +1,6 @@
 numpy
 scipy
-pandas
+pandas<=2.2.1  # Seen installation issues with newer versions
 tqdm
 magenpy>=0.1
 statsmodels

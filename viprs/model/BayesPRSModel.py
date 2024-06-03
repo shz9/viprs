@@ -237,7 +237,7 @@ class BayesPRSModel:
 
         return pip, post_mean_beta, post_var_beta
 
-    def to_table(self, col_subset=('CHR', 'SNP', 'A1', 'A2'), per_chromosome=False):
+    def to_table(self, col_subset=('CHR', 'SNP', 'POS', 'A1', 'A2'), per_chromosome=False):
         """
         Output the posterior estimates for the effect sizes to a pandas dataframe.
         :param col_subset: The subset of columns to include in the tables (in addition to the effect sizes).
@@ -329,6 +329,11 @@ class BayesPRSModel:
     def write_inferred_parameters(self, f_name, per_chromosome=False, sep="\t"):
         """
         A convenience method to write the inferred posterior for the effect sizes to file.
+
+        TODO:
+            * Support outputting scoring files compatible with PGS catalog format:
+            https://www.pgscatalog.org/downloads/#dl_scoring_files
+
         :param f_name: The filename (or directory) where to write the effect sizes
         :param per_chromosome: If True, write a file for each chromosome separately.
         :param sep: The delimiter for the file (tab by default).

@@ -24,7 +24,10 @@ def dict_concat(d, axis=0):
     :param d: A dictionary where values are numeric scalars or vectors
     :param axis: Concatenate along given axis.
     """
-    return np.concatenate([d[c] for c in sorted(d.keys())], axis=axis)
+    if len(d) == 1:
+        return d[next(iter(d))]
+    else:
+        return np.concatenate([d[c] for c in sorted(d.keys())], axis=axis)
 
 
 def dict_mean(d, axis=None):

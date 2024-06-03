@@ -1,4 +1,5 @@
 import numpy as np
+import logging
 from .VIPRSGrid import VIPRSGrid
 
 
@@ -51,8 +52,13 @@ class VIPRSGridSearch(VIPRSGrid):
 
         assert criterion in ('ELBO', 'validation', 'pseudo_validation')
 
+        # Extract the models that converged successfully:
+        models_converged = self.models_to_keep
+
         if criterion == 'ELBO':
-            best_model_idx = np.argmax(self.history['ELBO'][len(self.history['ELBO']) - 1])
+            elbo = self.history['ELBO'][-1]
+            elbo[~models_converged] = -np.inf
+            best_model_idx = np.argmax(self.history['ELBO'][-1])
         elif criterion == 'validation':
 
             assert validation_gdl is not None
@@ -62,19 +68,21 @@ class VIPRSGridSearch(VIPRSGrid):
             from viprs.eval.continuous_metrics import r2
 
             prs = self.predict(test_gdl=validation_gdl)
-            prs_r2 = [r2(prs[:, i], validation_gdl.sample_table.phenotype) for i in range(self.n_models)]
+            prs_r2 = np.array([r2(prs[:, i], validation_gdl.sample_table.phenotype) for i in range(self.n_models)])
+            prs_r2[~models_converged] = -np.inf
             self.validation_result['Validation_R2'] = prs_r2
             best_model_idx = np.argmax(prs_r2)
         elif criterion == 'pseudo_validation':
 
             pseudo_corr = self.pseudo_validate(validation_gdl, metric='r2')
+            pseudo_corr[~models_converged] = -np.inf
             self.validation_result['Pseudo_Validation_Corr'] = pseudo_corr
             best_model_idx = np.argmax(np.nan_to_num(pseudo_corr, nan=-1., neginf=-1., posinf=-1.))
 
         if int(self.verbose) > 1:
-            print(f"> Based on the {criterion} criterion, selected model: {best_model_idx}")
-            print("> Model details:\n")
-            print(self.validation_result.iloc[best_model_idx, :])
+            logging.info(f"> Based on the {criterion} criterion, selected model: {best_model_idx}")
+            logging.info("> Model details:\n")
+            logging.info(self.validation_result.iloc[best_model_idx, :])
 
         # Update the variational parameters and their dependencies:
         for param in (self.pip, self.post_mean_beta, self.post_var_beta,

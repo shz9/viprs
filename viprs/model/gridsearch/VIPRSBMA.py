@@ -1,7 +1,7 @@
 
 from .VIPRSGrid import VIPRSGrid
 import numpy as np
-from scipy.special import softmax
+import logging
 
 
 class VIPRSBMA(VIPRSGrid):
@@ -38,16 +38,24 @@ class VIPRSBMA(VIPRSGrid):
 
     def average_models(self, normalization='softmax'):
         """
-        Use Bayesian model averaging (BMA` to obtain final weights for each parameter.
+        Use Bayesian model averaging (BMA) to obtain final weights for each parameter.
         We average the weights by using the final ELBO for each model.
         
-        :param normalization: The normalization scheme for the final ELBOs. Options are (`softmax`, `sum`). 
+        :param normalization: The normalization scheme for the final ELBOs.
+        Options are (`softmax`, `sum`).
         :raises KeyError: If the normalization scheme is not recognized.
         """
 
-        elbos = self.history['ELBO'][-1]
+        if self.n_models < 2:
+            return self
+
+        # Extract the models that converged successfully:
+        models_to_keep = np.where(self.models_to_keep)[0]
+
+        elbos = self.history['ELBO'][-1][models_to_keep]
 
         if normalization == 'softmax':
+            from scipy.special import softmax
             weights = np.array(softmax(elbos))
         elif normalization == 'sum':
             weights = np.array(elbos)
@@ -56,17 +64,22 @@ class VIPRSBMA(VIPRSGrid):
             weights = weights - weights.min() + 1.
             weights /= weights.sum()
         else:
-            raise KeyError("Normalization scheme not recognized. Valid options are: `softmax`, `sum`. "
+            raise KeyError("Normalization scheme not recognized. "
+                           "Valid options are: `softmax`, `sum`. "
                            "Got: {}".format(normalization))
 
         if int(self.verbose) > 1:
-            print("Averaging PRS models with weights:", weights)
+            logging.info("Averaging PRS models with weights:", weights)
 
+        # Average the model parameters:
         for param in (self.pip, self.post_mean_beta, self.post_var_beta,
                       self.var_gamma, self.var_mu, self.var_tau,
                       self.eta, self.zeta, self.q):
 
             for c in param:
-                param[c] = (param[c]*weights).sum(axis=1)
+                param[c] = (param[c][:, models_to_keep]*weights).sum(axis=1)
+
+        # Set the number of models to 1:
+        self.n_models = 1
 
         return self

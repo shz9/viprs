@@ -40,13 +40,14 @@ class OptimizeResult(object):
         self.fun = None
         self.nit = 0
 
-    def update(self, fun, stop_iteration=False, success=False, message=None):
+    def update(self, fun, stop_iteration=False, success=False, message=None, increment=True):
         """
         Update the stored values with new values.
         :param fun: The new objective function value
         :param stop_iteration: A flag to indicate whether the optimization algorithm has stopped iterating
         :param success: A flag to indicate whether the optimization algorithm has succeeded
         :param message: A detailed message about the optimization result.
+        :param increment: A flag to indicate whether to increment the number of iterations.
         """
 
         self.fun = fun
@@ -54,7 +55,7 @@ class OptimizeResult(object):
         self.success = success
         self.message = message
 
-        self.nit += 1
+        self.nit += int(increment)
 
     def __str__(self):
         return str(self.__dict__)

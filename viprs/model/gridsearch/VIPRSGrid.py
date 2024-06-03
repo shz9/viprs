@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import logging
 from tqdm import tqdm
 
 from viprs.model.VIPRS import VIPRS
@@ -39,7 +40,7 @@ class VIPRSGrid(VIPRS):
 
         :param gdl: An instance of `GWADataLoader`
         :param grid: An instance of `HyperparameterGrid`
-        :param kwargs: Additional keyword arguments for the `VIPRS` model
+        :param kwargs: Additional keyword arguments to pass to the parent `VIPRS` class.
         """
 
         self.grid_table = grid.to_table()
@@ -69,7 +70,11 @@ class VIPRSGrid(VIPRS):
         """
         :return: A boolean array indicating which models have converged successfully.
         """
-        return np.logical_or(self.active_models, [optr.success for optr in self.optim_results])
+        return np.logical_or(self.active_models, self.converged_models)
+
+    @property
+    def converged_models(self):
+        return np.array([optr.success for optr in self.optim_results])
 
     def initialize_theta(self, theta_0=None):
         """
@@ -78,8 +83,6 @@ class VIPRSGrid(VIPRS):
         """
 
         self.active_models = np.array([True for _ in range(self.n_models)])
-        for optr in self.optim_results:
-            optr.reset()
 
         super().initialize_theta(theta_0=theta_0)
 
@@ -100,6 +103,24 @@ class VIPRSGrid(VIPRS):
                 self.sigma_epsilon *= np.ones(shape=(self.n_models, ), dtype=self.float_precision)
         except AttributeError:
             self.sigma_epsilon *= np.ones(shape=(self.n_models,), dtype=self.float_precision)
+
+        try:
+            if self._sigma_g.shape != (self.n_models, ):
+                self._sigma_g *= np.ones(shape=(self.n_models, ), dtype=self.float_precision)
+        except AttributeError:
+            self._sigma_g *= np.ones(shape=(self.n_models,), dtype=self.float_precision)
+
+    def init_optim_meta(self):
+        """
+        Initialize the various quantities/objects to keep track of the optimization process.
+         This method initializes the "history" object (which keeps track of the objective + other
+         hyperparameters requested by the user), in addition to the OptimizeResult objects.
+        """
+        super().init_optim_meta()
+
+        # Reset the OptimizeResult objects:
+        for optr in self.optim_results:
+            optr.reset()
 
     def e_step(self):
         """
@@ -125,11 +146,13 @@ class VIPRSGrid(VIPRS):
             # Updates for tau variational parameters:
             # NOTE: Here, we compute the variational sigma in-place to avoid the need
             # to change the order of the resulting matrix or its float precision:
-            np.add(self.Nj[c] / self.sigma_epsilon, tau_beta, out=self.var_tau[c])
+            np.add(self.Nj[c] / self.sigma_epsilon, tau_beta,
+                   out=self.var_tau[c])
+            np.log(self.var_tau[c], out=self._log_var_tau[c])
 
             # Compute some quantities that are needed for the per-SNP updates:
             mu_mult = self.Nj[c] / (self.var_tau[c] * self.sigma_epsilon)
-            u_logs = np.log(pi) - np.log(1. - pi) + .5 * (np.log(tau_beta) - np.log(self.var_tau[c]))
+            u_logs = np.log(pi) - np.log(1. - pi) + .5 * (np.log(tau_beta) - self._log_var_tau[c])
 
             if self.use_cpp:
                 cpp_e_step_grid(self.ld_left_bound[c],
@@ -229,8 +252,9 @@ class VIPRSGrid(VIPRS):
             theta_0=None,
             param_0=None,
             continued=False,
+            min_iter=3,
             f_abs_tol=1e-6,
-            x_abs_tol=1e-6,
+            x_abs_tol=1e-7,
             drop_r_tol=1e-6,
             patience=5):
         """
@@ -240,6 +264,7 @@ class VIPRSGrid(VIPRS):
         :param theta_0: A dictionary of values to initialize the hyperparameters
         :param param_0: A dictionary of values to initialize the variational parameters
         :param continued: If true, continue the model fitting for more iterations.
+        :param min_iter: The minimum number of iterations to run before checking for convergence.
         :param f_abs_tol: The absolute tolerance threshold for the objective (ELBO).
         :param x_abs_tol: The absolute tolerance threshold for the variational parameters.
         :param drop_r_tol: The relative tolerance for the drop in the ELBO to be considered as a red flag. It usually
@@ -253,25 +278,38 @@ class VIPRSGrid(VIPRS):
             start_idx = 1
         else:
             start_idx = len(self.history['ELBO']) + 1
+            for i, optr in enumerate(self.optim_results):
+                self.active_models[i] = True
+                optr.update(self.history['ELBO'][i], increment=False)
 
         patience = patience*np.ones(self.n_models)
 
-        if int(self.verbose) > 1:
-            print("> Performing model fit...")
-            if self.threads > 1:
-                print(f"> Using up to {self.threads} threads.")
+        logging.debug("> Performing model fit...")
+        if self.threads > 1:
+            logging.debug(f"> Using up to {self.threads} threads.")
+
+        # If the model is fit over a single chromosome, append this information to the
+        # tqdm progress bar:
+        if len(self.shapes) == 1:
+            chrom, shape = list(self.shapes.items())[0]
+            desc = f"Chromosome {chrom} ({shape[0]} variants)"
+        else:
+            desc = None
 
         # Progress bar:
         pbar = tqdm(range(start_idx, start_idx + max_iter),
-                    disable=not self.verbose)
+                    disable=not self.verbose,
+                    desc=desc)
 
         for i in pbar:
 
             if all([optr.stop_iteration for optr in self.optim_results]):
 
                 # If converged, update the progress bar before exiting:
-                pbar.set_postfix({'Best ELBO': f"{self.history['ELBO'][-1][self.models_to_keep].max():.4f}",
-                                  'Models converged': f"{self.n_models - np.sum(self.active_models)}/{self.n_models}"})
+                pbar.set_postfix({
+                    'Best ELBO': f"{self.history['ELBO'][-1][self.models_to_keep].max():.4f}",
+                    'Models converged': f"{self.n_models - np.sum(self.active_models)}/{self.n_models}"
+                })
                 pbar.n = i - 1
                 pbar.total = i - 1
                 pbar.refresh()
@@ -294,64 +332,73 @@ class VIPRSGrid(VIPRS):
                 curr_elbo = self.history['ELBO'][-1]
                 prev_elbo = self.history['ELBO'][-2]
 
-                for m, active in enumerate(self.active_models):
-                    if active:
+                for m in np.where(self.active_models)[0]:
 
+                    if i > min_iter:
                         if np.isclose(prev_elbo[m], curr_elbo[m], atol=f_abs_tol, rtol=0.):
                             self.active_models[m] = False
                             self.optim_results[m].update(curr_elbo[m],
                                                          stop_iteration=True,
                                                          success=True,
                                                          message='Objective (ELBO) converged successfully.')
+                        elif max([np.max(np.abs(diff[:, m])) for diff in self.eta_diff.values()]) < x_abs_tol:
+                            self.active_models[m] = False
+                            self.optim_results[m].update(curr_elbo[m],
+                                                         stop_iteration=True,
+                                                         success=True,
+                                                         message='Variational parameters converged successfully.')
 
-                        # Check to see if the objective drops due to numerical instabilities:
-                        elif curr_elbo[m] < prev_elbo[m] and not np.isclose(curr_elbo[m],
-                                                                            prev_elbo[m],
-                                                                            atol=0.,
-                                                                            rtol=drop_r_tol):
-                            patience[m] -= 1
+                    # Check to see if the objective drops due to numerical instabilities:
+                    elif curr_elbo[m] < prev_elbo[m] and not np.isclose(curr_elbo[m],
+                                                                        prev_elbo[m],
+                                                                        atol=0.,
+                                                                        rtol=drop_r_tol):
+                        patience[m] -= 1
 
-                            if patience[m] == 0:
-                                self.active_models[m] = False
-                                self.optim_results[m].update(curr_elbo[m],
-                                                             stop_iteration=True,
-                                                             success=False,
-                                                             message='Optimization is halted '
-                                                                     'due to numerical instabilities.')
-                            else:
-                                self.optim_results[m].update(curr_elbo)
-
-                        # Check if the model parameters behave in unexpected/pathological ways:
-                        elif np.isnan(curr_elbo[m]):
+                        if patience[m] == 0:
                             self.active_models[m] = False
                             self.optim_results[m].update(curr_elbo[m],
                                                          stop_iteration=True,
                                                          success=False,
-                                                         message='The objective (ELBO) is NaN.')
-                        elif self.sigma_epsilon[m] <= 0.:
-                            self.active_models[m] = False
-                            self.optim_results[m].update(curr_elbo[m],
-                                                         stop_iteration=True,
-                                                         success=False,
-                                                         message='Optimization is halted (sigma_epsilon <= 0).')
-                        elif h2[m] >= 1.:
-                            self.active_models[m] = False
-                            self.optim_results[m].update(curr_elbo[m],
-                                                         stop_iteration=True,
-                                                         success=False,
-                                                         message='Optimization is halted (h2 >= 1).')
+                                                         message='Optimization is halted '
+                                                                 'due to numerical instabilities.')
                         else:
                             self.optim_results[m].update(curr_elbo)
+
+                    # Check if the model parameters behave in unexpected/pathological ways:
+                    elif np.isnan(curr_elbo[m]):
+                        self.active_models[m] = False
+                        self.optim_results[m].update(curr_elbo[m],
+                                                     stop_iteration=True,
+                                                     success=False,
+                                                     message='The objective (ELBO) is NaN.')
+                    elif self.sigma_epsilon[m] <= 0.:
+                        self.active_models[m] = False
+                        self.optim_results[m].update(curr_elbo[m],
+                                                     stop_iteration=True,
+                                                     success=False,
+                                                     message='Optimization is halted (sigma_epsilon <= 0).')
+                    elif h2[m] >= 1.:
+                        self.active_models[m] = False
+                        self.optim_results[m].update(curr_elbo[m],
+                                                     stop_iteration=True,
+                                                     success=False,
+                                                     message='Optimization is halted (h2 >= 1).')
+                    else:
+                        self.optim_results[m].update(curr_elbo)
 
                 # -----------------------------------------------------------------------
 
             if self.models_to_keep.sum() > 0:
-                pbar.set_postfix({'Best ELBO': f"{self.history['ELBO'][-1][self.models_to_keep].max():.4f}",
-                                  'Models converged': f"{self.n_models - np.sum(self.active_models)}/{self.n_models}"})
+                pbar.set_postfix({
+                    'Best ELBO': f"{self.history['ELBO'][-1][self.models_to_keep].max():.4f}",
+                    'Models converged': f"{self.n_models - np.sum(self.active_models)}/{self.n_models}"
+                })
 
-                # TODO: Figure out how to update only models that improved.
-                self.update_posterior_moments()
+        # Update posterior moments:
+        self.update_posterior_moments()
 
+        # Inspect the optimization results:
         for m, optr in enumerate(self.optim_results):
             if not optr.stop_iteration:
                 self.active_models[m] = False
@@ -361,13 +408,14 @@ class VIPRSGrid(VIPRS):
                             message="Maximum iterations reached without convergence.\n"
                                     "You may need to run the model for more iterations.")
 
+        # Inform the user about potential issues:
         if int(self.verbose) > 1:
 
             if self.models_to_keep.sum() > 0:
-                print(f"> Optimization is complete for all {self.n_models} models.")
-                print(f"> {np.sum(self.models_to_keep)} model(s) converged successfully.")
+                logging.info(f"> Optimization is complete for all {self.n_models} models.")
+                logging.info(f"> {np.sum(self.models_to_keep)} model(s) converged successfully.")
             else:
-                print("> All models failed to converge. Please check the optimization results.")
+                logging.error("> All models failed to converge. Please check the optimization results.")
 
         self.validation_result = self.grid_table.copy()
         self.validation_result['ELBO'] = [optr.fun for optr in self.optim_results]

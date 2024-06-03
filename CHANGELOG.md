@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2024-06-03
+
+### Changed
+
+- Fixed bug in implementation of `.fit` method of VIPRS models. Specifically, 
+there was an issue with the `continued=True` flag not working because the `OptimizeResult`
+object wasn't refreshed.
+- Replaced `print` statements with `logging` where appropriate (still needs some more work).
+- Updated way we measure peak memory in `viprs_fit`
+- Updated `dict_concat` to just return the element if there's a single entry.
+- Refactored pars of `VIPRS` to cache some recurring computations.
+- Updated `VIPRSBMA` & `VIPRSGridSearch` to only consider models that
+successfully converged.
+
+### Added
+
+- Added SNP position to output table from VIPRS objects.
+- Added measure of time taken to prepare data in `viprs_fit`.
+- Added option to keep long-range LD regions in `viprs_fit`.
+- Added convergence check based on parameter values.
+- Added separate method for initializing optimization-related objects.
+
 ## [0.1.1] - 2024-04-24
 
 ### Changed

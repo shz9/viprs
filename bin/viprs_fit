@@ -139,7 +139,7 @@ def init_data(args, verbose=True):
     from magenpy.parsers.sumstats_parsers import SumstatsParser
 
     if verbose:
-        print('\n{:-^62}\n'.format('  Reading input data  '))
+        print('\n{:-^62}\n'.format('  Reading & harmonizing input data  '))
 
     # Prepare the summary statistics parsers:
     if args.sumstats_format == 'custom':
@@ -159,6 +159,13 @@ def init_data(args, verbose=True):
                         temp_dir=args.temp_dir,
                         verbose=verbose,
                         threads=args.threads)
+
+    # Unless the user explicitly decides to keep them, filter long-range LD regions:
+    if not args.keep_lrld:
+        print("> Filtering long-range LD regions...")
+        for ld in gdl.ld.values():
+            ld.filter_long_range_ld_regions()
+
     # Read the summary statistics file(s):
     gdl.read_summary_statistics(args.sumstats_path,
                                 sumstats_format=ss_format,
@@ -277,12 +284,14 @@ def prepare_model(args, verbose=True):
              p_model = partial(VIPRS,
                                float_precision=args.float_precision,
                                low_memory=not args.use_symmetric_ld,
+                               dequantize_on_the_fly=args.dequantize_on_the_fly,
                                threads=args.threads)
         elif args.model == 'VIPRSMix':
             p_model = partial(VIPRSMix,
                               K=args.n_components,
                               float_precision=args.float_precision,
                               low_memory=not args.use_symmetric_ld,
+                              dequantize_on_the_fly=args.dequantize_on_the_fly,
                               threads=args.threads)
 
     elif args.hyp_search in ('BMA', 'GS'):
@@ -302,6 +311,7 @@ def prepare_model(args, verbose=True):
                           grid=grid,
                           float_precision=args.float_precision,
                           low_memory=not args.use_symmetric_ld,
+                          dequantize_on_the_fly=args.dequantize_on_the_fly,
                           threads=args.threads)
 
     else:
@@ -309,6 +319,7 @@ def prepare_model(args, verbose=True):
         base_model = partial(VIPRS,
                              float_precision=args.float_precision,
                              low_memory=not args.use_symmetric_ld,
+                             dequantize_on_the_fly=args.dequantize_on_the_fly,
                              threads=args.threads)
 
         p_model = partial(BayesOpt,
@@ -332,7 +343,6 @@ def fit_model(model, data_dict, args):
 
     import time
     import numpy as np
-    from magenpy.utils.system_utils import get_memory_usage
 
     # Set the random seed:
     np.random.seed(args.seed)
@@ -351,9 +361,6 @@ def fit_model(model, data_dict, args):
 
     # ----------------------------------------------------------
 
-    # Get the memory usage before loading the model:
-    start_mem = get_memory_usage()
-
     # Initialize the model:
     load_start_time = time.time()
     m = model(data_dict['train'])
@@ -365,17 +372,13 @@ def fit_model(model, data_dict, args):
 
     # Fit the model to data:
     fit_start_time = time.time()
-    m = m.fit()
+    m = m.fit(max_iter=args.max_iter)
     fit_end_time = time.time()
 
     # ----------------------------------------------------------
 
-    # Get memory usage after fitting the model:
-    end_mem = get_memory_usage()
-
     # Record the profiler metrics:
     result_dict['ProfilerMetrics']['Fit_time'] = round(fit_end_time - fit_start_time, 2)
-    result_dict['ProfilerMetrics']['Memory_usage_MB'] = round(end_mem - start_mem, 2)
     result_dict['ProfilerMetrics']['Total_Iterations'] = m.optim_result.iterations
 
     # ----------------------------------------------------------
@@ -517,9 +520,14 @@ def main():
     parser.add_argument('--use-symmetric-ld', dest='use_symmetric_ld', action='store_true',
                         default=False,
                         help='Use the symmetric form of the LD matrix when fitting the model.')
+    parser.add_argument('--dequantize-on-the-fly', dest='dequantize_on_the_fly', action='store_true',
+                        default=False,
+                        help='Dequantize the entries of the LD matrix on-the-fly when fitting the model.')
     parser.add_argument('--n-components', dest='n_components', type=int, default=3,
                         help='The number of non-null Gaussian mixture components to use with the VIPRSMix model '
                              '(i.e. excluding the spike component).')
+    parser.add_argument('--max-iter', dest='max_iter', type=int, default=1000,
+                        help='The maximum number of iterations to run the coordinate ascent algorithm.')
 
     # Arguments for Hyperparameter tuning / model initialization:
     parser.add_argument('--h2-est', dest='h2_est', type=float,
@@ -556,6 +564,8 @@ def main():
 
     parser.add_argument('--genomewide', dest='genomewide', action='store_true', default=False,
                         help='Fit all chromosomes jointly')
+    parser.add_argument('--keep-lrld', dest='keep_lrld', action='store_true', default=False,
+                        help='Keep the Long Range LD regions during inference (these regions are filtered by default).')
     parser.add_argument('--backend', dest='backend', type=str.lower, default='xarray',
                         choices={'xarray', 'plink'},
                         help='The backend software used for computations on the genotype matrix.')
@@ -578,11 +588,14 @@ def main():
     import time
     from datetime import timedelta
     import pandas as pd
-    import os.path as osp
-    from magenpy.utils.system_utils import makedir
+    import numpy as np
+    from magenpy.utils.system_utils import makedir, get_peak_memory_usage
     from joblib import Parallel, delayed
+    from joblib.externals.loky import get_reusable_executor
 
     # ----------------------------------------------------------
+    # Print the parsed arguments:
+
     print('{:-^62}\n'.format('  Parsed arguments  '))
 
     for key, val in vars(args).items():
@@ -599,6 +612,8 @@ def main():
 
     # (2) Read the data:
     data_loaders = init_data(args)
+    # Record time for data preparation:
+    data_prep_time = time.time()
 
     # (3) Prepare the model:
     model = prepare_model(args)
@@ -610,6 +625,9 @@ def main():
         delayed(fit_model)(model, dl, args)
         for idx, dl in enumerate(data_loaders)
     )
+
+    # Shut down the parallel executor:
+    get_reusable_executor().shutdown(wait=True)
 
     # Record end time:
     total_end_time = time.time()
@@ -634,6 +652,8 @@ def main():
         profm_table = pd.concat([pd.DataFrame(r['ProfilerMetrics'], index=[0]).assign(Chromosome=r['Chromosome'])
                                  for r in fit_results])
         profm_table['Total_WallClockTime'] = round(total_end_time - total_start_time, 2)
+        profm_table['DataPrep_Time'] = round(data_prep_time - total_start_time, 2)
+        profm_table['Peak_Memory_MB'] = round(get_peak_memory_usage(include_children=True) or np.nan, 2)
 
         output_prefix = osp.join(args.output_dir, args.output_prefix + args.model + '_' + args.hyp_search)
 
@@ -647,7 +667,7 @@ def main():
             valid_tables.to_csv(output_prefix + '.validation', sep="\t", index=False)
 
         if args.output_profiler_metrics:
-            profm_table.to_csv(output_prefix + '.time', sep="\t", index=False)
+            profm_table.to_csv(output_prefix + '.prof', sep="\t", index=False)
 
     print('>>> Total Runtime:\n', timedelta(seconds=total_end_time - total_start_time))
 
