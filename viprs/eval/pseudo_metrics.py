@@ -27,8 +27,8 @@ def _match_variant_stats(test_gdl, prs_beta_table):
 
     from magenpy.utils.model_utils import merge_snp_tables
 
-    validation_tab = test_gdl.to_snp_table(col_subset=['CHR', 'SNP', 'A1', 'A2', 'STD_BETA'],
-                                           per_chromosome=True)
+    validation_tab = test_gdl.to_summary_statistics_table(col_subset=['CHR', 'SNP', 'A1', 'A2', 'STD_BETA'],
+                                                          per_chromosome=True)
 
     required_cols = ['CHR', 'SNP', 'A1', 'A2']
     for col in required_cols:
@@ -41,8 +41,10 @@ def _match_variant_stats(test_gdl, prs_beta_table):
     if 'BETA' in prs_beta_table.columns:
         beta_cols = ['BETA']
     else:
-        beta_cols = [col for col in prs_beta_table.columns if 'BETA' in col and 'VAR' not in col]
-        assert len(beta_cols) > 0, "The PRS effect sizes table must contain a column named BETA or BETA_0, BETA_1, etc."
+        beta_cols = [col for col in prs_beta_table.columns
+                     if 'BETA' in col and 'VAR' not in col]
+        assert len(beta_cols) > 0, ("The PRS effect sizes table must contain "
+                                    "a column named BETA or BETA_0, BETA_1, etc.")
 
     per_chrom_prs_tables = dict(tuple(prs_beta_table.groupby('CHR')))
 
