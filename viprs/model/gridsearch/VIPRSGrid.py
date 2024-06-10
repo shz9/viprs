@@ -334,19 +334,19 @@ class VIPRSGrid(VIPRS):
 
                 for m in np.where(self.active_models)[0]:
 
-                    if i > min_iter:
-                        if np.isclose(prev_elbo[m], curr_elbo[m], atol=f_abs_tol, rtol=0.):
-                            self.active_models[m] = False
-                            self.optim_results[m].update(curr_elbo[m],
-                                                         stop_iteration=True,
-                                                         success=True,
-                                                         message='Objective (ELBO) converged successfully.')
-                        elif max([np.max(np.abs(diff[:, m])) for diff in self.eta_diff.values()]) < x_abs_tol:
-                            self.active_models[m] = False
-                            self.optim_results[m].update(curr_elbo[m],
-                                                         stop_iteration=True,
-                                                         success=True,
-                                                         message='Variational parameters converged successfully.')
+                    if (i > min_iter) & np.isclose(prev_elbo[m], curr_elbo[m], atol=f_abs_tol, rtol=0.):
+                        self.active_models[m] = False
+                        self.optim_results[m].update(curr_elbo[m],
+                                                     stop_iteration=True,
+                                                     success=True,
+                                                     message='Objective (ELBO) converged successfully.')
+                    elif (i > min_iter) & max([np.max(np.abs(diff[:, m]))
+                                               for diff in self.eta_diff.values()]) < x_abs_tol:
+                        self.active_models[m] = False
+                        self.optim_results[m].update(curr_elbo[m],
+                                                     stop_iteration=True,
+                                                     success=True,
+                                                     message='Variational parameters converged successfully.')
 
                     # Check to see if the objective drops due to numerical instabilities:
                     elif curr_elbo[m] < prev_elbo[m] and not np.isclose(curr_elbo[m],

@@ -68,7 +68,9 @@ def measure_e_step_performance(viprs_model, n_experiments=15, n_calls='auto', wa
         # Here, we roughly repeat until the total time is at least ~1 second:
         # Note that the minimum number of calls is 5. If this takes too long,
         # then set the number of calls manually?
-        time_iter = math.ceil(1. / np.mean(timeit.repeat(exec_func, number=5, repeat=5)))
+        time_iter = math.ceil(1. / np.median(
+            timeit.repeat(exec_func, repeat=5 + warm_up, number=5)[warm_up:]
+        ))
         n_calls = 5 * int(time_iter)
 
     with ResourceProfiler(dt=0.1) as rprof:

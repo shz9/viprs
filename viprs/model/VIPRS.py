@@ -730,7 +730,7 @@ class VIPRS(BayesPRSModel):
             theta_0=None,
             param_0=None,
             continued=False,
-            min_iter=5,
+            min_iter=3,
             f_abs_tol=1e-6,
             x_abs_tol=1e-7,
             drop_r_tol=0.01,
@@ -801,18 +801,17 @@ class VIPRS(BayesPRSModel):
                 curr_elbo = self.history['ELBO'][-1]
                 prev_elbo = self.history['ELBO'][-2]
 
-                if i > min_iter:
-                    # Check for convergence in the objective + parameters:
-                    if np.isclose(prev_elbo, curr_elbo, atol=f_abs_tol, rtol=0.):
-                        self.optim_result.update(curr_elbo,
-                                                 stop_iteration=True,
-                                                 success=True,
-                                                 message='Objective (ELBO) converged successfully.')
-                    elif max([np.max(np.abs(diff)) for diff in self.eta_diff.values()]) < x_abs_tol:
-                        self.optim_result.update(curr_elbo,
-                                                 stop_iteration=True,
-                                                 success=True,
-                                                 message='Variational parameters converged successfully.')
+                # Check for convergence in the objective + parameters:
+                if (i > min_iter) & np.isclose(prev_elbo, curr_elbo, atol=f_abs_tol, rtol=0.):
+                    self.optim_result.update(curr_elbo,
+                                             stop_iteration=True,
+                                             success=True,
+                                             message='Objective (ELBO) converged successfully.')
+                elif (i > min_iter) & max([np.max(np.abs(diff)) for diff in self.eta_diff.values()]) < x_abs_tol:
+                    self.optim_result.update(curr_elbo,
+                                             stop_iteration=True,
+                                             success=True,
+                                             message='Variational parameters converged successfully.')
 
                 # Check to see if the objective drops due to numerical instabilities:
                 elif curr_elbo < prev_elbo and not np.isclose(curr_elbo, prev_elbo, atol=0., rtol=drop_r_tol):

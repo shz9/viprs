@@ -5,13 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.3] - TBD
-
-### Changed
-
-- Fixed bug in `psuedo_metrics` when extracting summary statistics data.
-- 
-
 ## [0.1.2] - 2024-06-03
 
 ### Changed
@@ -25,6 +18,7 @@ object wasn't refreshed.
 - Refactored pars of `VIPRS` to cache some recurring computations.
 - Updated `VIPRSBMA` & `VIPRSGridSearch` to only consider models that
 successfully converged.
+- Fixed bug in `psuedo_metrics` when extracting summary statistics data.
 
 ### Added
 
@@ -32,6 +26,7 @@ successfully converged.
 - Added measure of time taken to prepare data in `viprs_fit`.
 - Added option to keep long-range LD regions in `viprs_fit`.
 - Added convergence check based on parameter values.
+- Added `min_iter` parameter to `.fit` methods to ensure CAVI is run for at least `min_iter` iterations.
 - Added separate method for initializing optimization-related objects.
 
 ## [0.1.1] - 2024-04-24
