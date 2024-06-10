@@ -802,12 +802,12 @@ class VIPRS(BayesPRSModel):
                 prev_elbo = self.history['ELBO'][-2]
 
                 # Check for convergence in the objective + parameters:
-                if (i > min_iter) & np.isclose(prev_elbo, curr_elbo, atol=f_abs_tol, rtol=0.):
+                if (i > min_iter) and np.isclose(prev_elbo, curr_elbo, atol=f_abs_tol, rtol=0.):
                     self.optim_result.update(curr_elbo,
                                              stop_iteration=True,
                                              success=True,
                                              message='Objective (ELBO) converged successfully.')
-                elif (i > min_iter) & max([np.max(np.abs(diff)) for diff in self.eta_diff.values()]) < x_abs_tol:
+                elif (i > min_iter) and max([np.max(np.abs(diff)) for diff in self.eta_diff.values()]) < x_abs_tol:
                     self.optim_result.update(curr_elbo,
                                              stop_iteration=True,
                                              success=True,

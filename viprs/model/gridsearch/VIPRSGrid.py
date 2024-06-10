@@ -334,13 +334,13 @@ class VIPRSGrid(VIPRS):
 
                 for m in np.where(self.active_models)[0]:
 
-                    if (i > min_iter) & np.isclose(prev_elbo[m], curr_elbo[m], atol=f_abs_tol, rtol=0.):
+                    if (i > min_iter) and np.isclose(prev_elbo[m], curr_elbo[m], atol=f_abs_tol, rtol=0.):
                         self.active_models[m] = False
                         self.optim_results[m].update(curr_elbo[m],
                                                      stop_iteration=True,
                                                      success=True,
                                                      message='Objective (ELBO) converged successfully.')
-                    elif (i > min_iter) & max([np.max(np.abs(diff[:, m]))
+                    elif (i > min_iter) and max([np.max(np.abs(diff[:, m]))
                                                for diff in self.eta_diff.values()]) < x_abs_tol:
                         self.active_models[m] = False
                         self.optim_results[m].update(curr_elbo[m],
