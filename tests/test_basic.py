@@ -3,6 +3,7 @@ import magenpy as mgp
 import viprs as vp
 from viprs.model.vi.e_step_cpp import check_blas_support, check_omp_support
 import numpy as np
+from viprs.model.VIPRSMix import VIPRSMix
 from viprs.model.gridsearch.HyperparameterGrid import HyperparameterGrid
 from viprs.model.gridsearch.VIPRSGrid import VIPRSGrid
 import shutil
@@ -49,7 +50,7 @@ def viprsmix_model(gdl_object):
     Initialize a VIPRS model using data pre-packaged with magenpy.
     Make this data loader available to all tests.
     """
-    return vp.VIPRSMix(gdl_object, K=10, verbose=False)
+    return VIPRSMix(gdl_object, K=10, verbose=False)
 
 
 @pytest.fixture(scope='module')

@@ -1,4 +1,3 @@
-from magenpy import GWADataLoader
 import numpy as np
 
 
@@ -19,6 +18,8 @@ def _match_variant_stats(test_gdl, prs_beta_table):
     :return: A tuple of three arrays: (1) The standardized marginal betas from the validation set,
     (2) The inferred PRS effect sizes, (3) The LD-weighted PRS effect sizes (q).
     """
+
+    from magenpy import GWADataLoader
 
     # Sanity checks:
     assert isinstance(test_gdl, GWADataLoader), "The test/validation set must be an instance of GWADataLoader."

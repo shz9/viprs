@@ -1,49 +1,6 @@
 import numpy as np
 import pandas as pd
-from scipy import stats
-import statsmodels.api as sm
-
-
-def r2_stats(r2_val, n):
-    """
-    Compute the confidence interval and p-value for a given R-squared (proportion of variance
-     explained) value.
-
-    This function and the formulas therein are based on the following paper
-    by Momin et al. 2023: https://doi.org/10.1016/j.ajhg.2023.01.004 as well as
-    the implementation in the R package `PRSmix`:
-    https://github.com/buutrg/PRSmix/blob/main/R/get_PRS_acc.R#L63
-
-    :param r2_val: The R^2 value to compute the confidence interval/p-value for.
-    :param n: The sample size used to compute the R^2 value
-
-    :return: A dictionary with the R^2 value, the lower and upper values of the confidence interval,
-    the p-value, and the standard error of the R^2 metric.
-
-    """
-
-    assert 0. < r2_val < 1., "R^2 value must be between 0 and 1."
-
-    # Compute the variance of the R^2 value:
-    r2_var = (4. * r2_val * (1. - r2_val) ** 2 * (n - 2) ** 2) / ((n ** 2 - 1) * (n + 3))
-
-    # Compute the standard errors for the R^2 value
-    # as well as the lower and upper values for
-    # the confidence interval:
-    r2_se = np.sqrt(r2_var)
-    lower_r2 = r2_val - 1.97 * r2_se
-    upper_r2 = r2_val + 1.97 * r2_se
-
-    # Compute the p-value assuming a Chi-squared distribution with 1 degree of freedom:
-    pval = stats.chi2.sf((r2_val / r2_se) ** 2, df=1)
-
-    return {
-        'R2': r2,
-        'Lower_R2': lower_r2,
-        'Upper_R2': upper_r2,
-        'P_Value': pval,
-        'SE': r2_se,
-    }
+from .eval_utils import fit_linear_model
 
 
 def r2(true_val, pred_val):
@@ -54,6 +11,8 @@ def r2(true_val, pred_val):
     :param true_val: The response value or phenotype (a numpy vector)
     :param pred_val: The predicted value or PRS (a numpy vector)
     """
+    from scipy import stats
+
     _, _, r_val, _, _ = stats.linregress(pred_val, true_val)
     return r_val ** 2
 
@@ -95,12 +54,14 @@ def incremental_r2(true_val, pred_val, covariates=None, return_all_r2=False):
     """
 
     if covariates is None:
+        add_intercept = False
         covariates = pd.DataFrame(np.ones((true_val.shape[0], 1)), columns=['const'])
     else:
-        covariates = sm.add_constant(covariates)
+        add_intercept = True
 
-    null_result = sm.OLS(true_val, covariates).fit(disp=0)
-    full_result = sm.OLS(true_val, covariates.assign(pred_val=pred_val)).fit(disp=0)
+    null_result = fit_linear_model(true_val, covariates,add_intercept=add_intercept)
+    full_result = fit_linear_model(true_val, covariates.assign(pred_val=pred_val),
+                                   add_intercept=add_intercept)
 
     if return_all_r2:
         return {
@@ -125,7 +86,7 @@ def partial_correlation(true_val, pred_val, covariates):
     the same way as the predictions and response.
     """
 
-    true_response = sm.OLS(true_val, sm.add_constant(covariates)).fit(disp=0)
-    pred_response = sm.OLS(pred_val, sm.add_constant(covariates)).fit(disp=0)
+    true_response = fit_linear_model(true_val, covariates, add_intercept=True)
+    pred_response = fit_linear_model(pred_val, covariates, add_intercept=True)
 
     return np.corrcoef(true_response.resid, pred_response.resid)[0, 1]

@@ -271,13 +271,8 @@ def prepare_model(args, verbose=True):
             print("- Model selection criterion:", args.grid_metric)
 
     from functools import partial
-    from viprs.model.gridsearch.HyperparameterGrid import HyperparameterGrid
-
     from viprs.model.VIPRS import VIPRS
     from viprs.model.VIPRSMix import VIPRSMix
-    from viprs.model.gridsearch.VIPRSGridSearch import VIPRSGridSearch
-    from viprs.model.gridsearch.VIPRSBMA import VIPRSBMA
-    from viprs.model.gridsearch.HyperparameterSearch import BayesOpt
 
     if args.hyp_search == 'EM':
         if args.model == 'VIPRS':
@@ -295,6 +290,10 @@ def prepare_model(args, verbose=True):
                               threads=args.threads)
 
     elif args.hyp_search in ('BMA', 'GS'):
+
+        from viprs.model.gridsearch.HyperparameterGrid import HyperparameterGrid
+        from viprs.model.gridsearch.VIPRSGridSearch import VIPRSGridSearch
+        from viprs.model.gridsearch.VIPRSBMA import VIPRSBMA
 
         grid = HyperparameterGrid(sigma_epsilon_grid=args.sigma_epsilon_grid,
                                   sigma_epsilon_steps=args.sigma_epsilon_steps,
@@ -315,6 +314,8 @@ def prepare_model(args, verbose=True):
                           threads=args.threads)
 
     else:
+
+        from viprs.model.gridsearch.HyperparameterSearch import BayesOpt
 
         base_model = partial(VIPRS,
                              float_precision=args.float_precision,

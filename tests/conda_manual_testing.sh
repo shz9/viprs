@@ -16,7 +16,7 @@ python_versions=("3.8" "3.9" "3.10" "3.11" "3.12")
 for version in "${python_versions[@]}"
 do
     # Create a new conda environment for the Python version
-    conda create --name "viprs_py$version" python="$version" -y
+    conda create --name "viprs_py$version" python="$version" -y || return 1
 
     # Activate the conda environment
     conda activate "viprs_py$version"

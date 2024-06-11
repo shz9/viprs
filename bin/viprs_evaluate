@@ -30,7 +30,7 @@ import viprs as vp
 from magenpy.utils.system_utils import makedir
 from magenpy import SampleTable
 from viprs.eval import eval_metric_names, eval_incremental_metrics
-from viprs.eval.continuous_metrics import r2_stats
+from viprs.eval.eval_utils import r2_stats
 
 
 print(fr"""

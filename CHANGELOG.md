@@ -19,6 +19,8 @@ object wasn't refreshed.
 - Updated `VIPRSBMA` & `VIPRSGridSearch` to only consider models that
 successfully converged.
 - Fixed bug in `psuedo_metrics` when extracting summary statistics data.
+- Streamlined evaluation code.
+- Refactored code to slightly reduce import/load time.
 
 ### Added
 

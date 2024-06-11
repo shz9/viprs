@@ -1,14 +1,6 @@
 import numpy as np
-from sklearn.metrics import (
-    auc,
-    roc_auc_score,
-    average_precision_score,
-    precision_recall_curve,
-    f1_score
-)
 from .continuous_metrics import incremental_r2
-from scipy.stats import norm
-import statsmodels.api as sm
+from .eval_utils import fit_linear_model
 import pandas as pd
 
 
@@ -20,6 +12,7 @@ def roc_auc(true_val, pred_val):
     :param true_val: The response value or phenotype (a numpy binary vector with 0s and 1s)
     :param pred_val: The predicted value or PRS (a numpy vector)
     """
+    from sklearn.metrics import roc_auc_score
     return roc_auc_score(true_val, pred_val)
 
 
@@ -31,6 +24,7 @@ def pr_auc(true_val, pred_val):
     :param true_val: The response value or phenotype (a binary numpy vector with 0s and 1s)
     :param pred_val: The predicted value or PRS (a numpy vector)
     """
+    from sklearn.metrics import precision_recall_curve, auc
     precision, recall, thresholds = precision_recall_curve(true_val, pred_val)
     return auc(recall, precision)
 
@@ -42,6 +36,7 @@ def avg_precision(true_val, pred_val):
     :param true_val: The response value or phenotype (a binary numpy vector with 0s and 1s)
     :param pred_val: The predicted value or PRS (a numpy vector)
     """
+    from sklearn.metrics import average_precision_score
     return average_precision_score(true_val, pred_val)
 
 
@@ -52,6 +47,7 @@ def f1(true_val, pred_val):
     :param true_val: The response value or phenotype (a binary numpy vector with 0s and 1s)
     :param pred_val: The predicted value or PRS (a numpy vector)
     """
+    from sklearn.metrics import f1_score
     return f1_score(true_val, pred_val)
 
 
@@ -69,12 +65,15 @@ def mcfadden_r2(true_val, pred_val, covariates=None):
     """
 
     if covariates is None:
+        add_intercept = False
         covariates = pd.DataFrame(np.ones((true_val.shape[0], 1)), columns=['const'])
     else:
-        covariates = sm.add_constant(covariates)
+        add_intercept = True
 
-    null_result = sm.Logit(true_val, covariates).fit(disp=0)
-    full_result = sm.Logit(true_val, covariates.assign(pred_val=pred_val)).fit(disp=0)
+    null_result = fit_linear_model(true_val, covariates,
+                                   family='binomial', add_intercept=add_intercept)
+    full_result = fit_linear_model(true_val, covariates.assign(pred_val=pred_val),
+                                   family='binomial', add_intercept=add_intercept)
 
     return 1. - (full_result.llf / null_result.llf)
 
@@ -92,12 +91,15 @@ def cox_snell_r2(true_val, pred_val, covariates=None):
     """
 
     if covariates is None:
+        add_intercept = False
         covariates = pd.DataFrame(np.ones((true_val.shape[0], 1)), columns=['const'])
     else:
-        covariates = sm.add_constant(covariates)
+        add_intercept = True
 
-    null_result = sm.Logit(true_val, covariates).fit(disp=0)
-    full_result = sm.Logit(true_val, covariates.assign(pred_val=pred_val)).fit(disp=0)
+    null_result = fit_linear_model(true_val, covariates,
+                                   family='binomial', add_intercept=add_intercept)
+    full_result = fit_linear_model(true_val, covariates.assign(pred_val=pred_val),
+                                   family='binomial', add_intercept=add_intercept)
     n = true_val.shape[0]
 
     return 1. - np.exp(-2 * (full_result.llf - null_result.llf) / n)
@@ -116,12 +118,15 @@ def nagelkerke_r2(true_val, pred_val, covariates=None):
     """
 
     if covariates is None:
+        add_intercept = False
         covariates = pd.DataFrame(np.ones((true_val.shape[0], 1)), columns=['const'])
     else:
-        covariates = sm.add_constant(covariates)
+        add_intercept = True
 
-    null_result = sm.Logit(true_val, covariates).fit(disp=0)
-    full_result = sm.Logit(true_val, covariates.assign(pred_val=pred_val)).fit(disp=0)
+    null_result = fit_linear_model(true_val, covariates,
+                                   family='binomial', add_intercept=add_intercept)
+    full_result = fit_linear_model(true_val, covariates.assign(pred_val=pred_val),
+                                   family='binomial', add_intercept=add_intercept)
     n = true_val.shape[0]
 
     # First compute the Cox & Snell R2:
@@ -157,6 +162,8 @@ def liability_r2(true_val, pred_val, covariates=None, return_all_r2=False):
     r2_obs = incremental_r2(true_val, pred_val, covariates, return_all_r2=return_all_r2)
 
     # Second, compute the prevalence and the standard normal quantile of the prevalence:
+
+    from scipy.stats import norm
 
     k = np.mean(true_val)
     z2 = norm.pdf(norm.ppf(1.-k))**2
@@ -194,12 +201,15 @@ def liability_probit_r2(true_val, pred_val, covariates=None, return_all_r2=False
     """
 
     if covariates is None:
+        add_intercept = False
         covariates = pd.DataFrame(np.ones((true_val.shape[0], 1)), columns=['const'])
     else:
-        covariates = sm.add_constant(covariates)
+        add_intercept = True
 
-    null_result = sm.Probit(true_val, covariates).fit(disp=0)
-    full_result = sm.Probit(true_val, covariates.assign(pred_val=pred_val)).fit(disp=0)
+    null_result = fit_linear_model(true_val, covariates,
+                                   family='binomial', link='probit', add_intercept=add_intercept)
+    full_result = fit_linear_model(true_val, covariates.assign(pred_val=pred_val),
+                                   family='binomial', link='probit', add_intercept=add_intercept)
 
     null_var = np.var(null_result.predict())
     null_r2 = null_var / (null_var + 1.)
@@ -224,7 +234,7 @@ def liability_logit_r2(true_val, pred_val, covariates=None, return_all_r2=False)
     https://pubmed.ncbi.nlm.nih.gov/22714935/
 
     The R^2 is defined as:
-    R2_{probit} = Var(pred) / (Var(pred) + pi^2 / 3)
+    R2_{logit} = Var(pred) / (Var(pred) + pi^2 / 3)
 
     Where Var(pred) is the variance of the predicted liability.
 
@@ -239,12 +249,15 @@ def liability_logit_r2(true_val, pred_val, covariates=None, return_all_r2=False)
     """
 
     if covariates is None:
+        add_intercept = False
         covariates = pd.DataFrame(np.ones((true_val.shape[0], 1)), columns=['const'])
     else:
-        covariates = sm.add_constant(covariates)
+        add_intercept = True
 
-    null_result = sm.Probit(true_val, covariates).fit(disp=0)
-    full_result = sm.Probit(true_val, covariates.assign(pred_val=pred_val)).fit(disp=0)
+    null_result = fit_linear_model(true_val, covariates,
+                                   family='binomial', add_intercept=add_intercept)
+    full_result = fit_linear_model(true_val, covariates.assign(pred_val=pred_val),
+                                   family='binomial', add_intercept=add_intercept)
 
     null_var = np.var(null_result.predict())
     null_r2 = null_var / (null_var + (np.pi**2 / 3))

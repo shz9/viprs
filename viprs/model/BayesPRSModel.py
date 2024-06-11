@@ -3,7 +3,6 @@ import pandas as pd
 import os.path as osp
 
 from ..utils.compute_utils import expand_column_names, dict_mean
-from magenpy.utils.model_utils import merge_snp_tables
 
 
 class BayesPRSModel:
@@ -185,6 +184,8 @@ class BayesPRSModel:
         post_var_beta = {}
 
         common_chroms = sorted(list(set(snp_tables.keys()).intersection(set(parameter_table.keys()))))
+
+        from magenpy.utils.model_utils import merge_snp_tables
 
         for c in common_chroms:
 

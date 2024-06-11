@@ -3,7 +3,6 @@ import logging
 from tqdm.auto import tqdm
 
 from .BayesPRSModel import BayesPRSModel
-from magenpy.stats.h2.ldsc import simple_ldsc
 from ..utils.exceptions import OptimizationDivergence
 from .vi.e_step import e_step
 from .vi.e_step_cpp import cpp_e_step
@@ -269,6 +268,7 @@ class VIPRS(BayesPRSModel):
                 # then initialize using the SNP heritability estimate
 
                 try:
+                    from magenpy.stats.h2.ldsc import simple_ldsc
                     naive_h2g = np.clip(simple_ldsc(self.gdl), a_min=1e-3, a_max=1. - 1e-3)
                 except Exception as e:
                     naive_h2g = np.random.uniform(low=.001, high=.999)
