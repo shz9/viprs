@@ -232,7 +232,7 @@ class BayesOpt(HyperparameterSearch):
 
         # Convert the `pi` limits to log-scale:
         if 'pi' in self._param_bounds:
-            self._param_bounds['pi'] = tuple(np.log10(list(self._param_bounds['pi'])))
+            self._param_bounds['pi'] = tuple(np.log10(self._param_bounds['pi']))
 
         assert all([opp in self._param_bounds for opp in self._opt_params])
 

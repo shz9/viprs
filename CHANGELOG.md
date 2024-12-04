@@ -21,6 +21,7 @@ successfully converged.
 - Fixed bug in `psuedo_metrics` when extracting summary statistics data.
 - Streamlined evaluation code.
 - Refactored code to slightly reduce import/load time.
+- Fixed bug in `viprs_evaluate`
 
 ### Added
 
@@ -30,6 +31,8 @@ successfully converged.
 - Added convergence check based on parameter values.
 - Added `min_iter` parameter to `.fit` methods to ensure CAVI is run for at least `min_iter` iterations.
 - Added separate method for initializing optimization-related objects.
+- Added regularization penalty `lambda_min`.
+- Added Spearman R and residualized R-Squared metrics to continuous metrics.
 
 ## [0.1.1] - 2024-04-24
 

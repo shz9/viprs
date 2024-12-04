@@ -10,6 +10,8 @@ def r2(true_val, pred_val):
     
     :param true_val: The response value or phenotype (a numpy vector)
     :param pred_val: The predicted value or PRS (a numpy vector)
+
+    :return: The R^2 value
     """
     from scipy import stats
 
@@ -24,9 +26,24 @@ def mse(true_val, pred_val):
     
     :param true_val: The response value or phenotype (a numpy vector)
     :param pred_val: The predicted value or PRS (a numpy vector)
+
+    :return: The mean squared error
     """
 
     return np.mean((pred_val - true_val)**2)
+
+
+def spearman_r(true_val, pred_val):
+    """
+    Compute the spearman correlation between the predictions or PRS `pred_val` and the phenotype `true_val`
+
+    :param true_val: The response value or phenotype (a numpy vector)
+    :param pred_val: The predicted value or PRS (a numpy vector)
+    :return: The spearman correlation
+    """
+
+    from scipy import stats
+    return stats.spearmanr(true_val, pred_val).statistic
 
 
 def pearson_r(true_val, pred_val):
@@ -36,8 +53,29 @@ def pearson_r(true_val, pred_val):
     
     :param true_val: The response value or phenotype (a numpy vector)
     :param pred_val: The predicted value or PRS (a numpy vector)
+
+    :return: The pearson correlation coefficient
     """
     return np.corrcoef(true_val, pred_val)[0, 1]
+
+
+def r2_residualized_target(true_val, pred_val, covariates):
+    """
+    Compute the R^2 (proportion of variance explained) between
+    the predictions or PRS `pred_val` and the phenotype `true_val`
+    after residualizing the phenotype on a set of covariates.
+
+    :param true_val: The response value or phenotype (a numpy vector)
+    :param pred_val: The predicted value or PRS (a numpy vector)
+    :param covariates: A pandas table of covariates where the rows are ordered
+    the same way as the predictions and response.
+
+    :return: The residualized R^2 value
+    """
+
+    resid_true_val = fit_linear_model(true_val, covariates, add_intercept=True)
+
+    return r2(resid_true_val.resid, pred_val)
 
 
 def incremental_r2(true_val, pred_val, covariates=None, return_all_r2=False):
@@ -51,6 +89,8 @@ def incremental_r2(true_val, pred_val, covariates=None, return_all_r2=False):
     :param covariates: A pandas table of covariates where the rows are ordered
     the same way as the predictions and response.
     :param return_all_r2: If True, return the R^2 values for the null and full models as well.
+
+    :return: The incremental R^2 value
     """
 
     if covariates is None:
@@ -59,7 +99,7 @@ def incremental_r2(true_val, pred_val, covariates=None, return_all_r2=False):
     else:
         add_intercept = True
 
-    null_result = fit_linear_model(true_val, covariates,add_intercept=add_intercept)
+    null_result = fit_linear_model(true_val, covariates, add_intercept=add_intercept)
     full_result = fit_linear_model(true_val, covariates.assign(pred_val=pred_val),
                                    add_intercept=add_intercept)
 
@@ -84,6 +124,8 @@ def partial_correlation(true_val, pred_val, covariates):
     :param pred_val: The predicted value or PRS (a numpy vector)
     :param covariates: A pandas table of covariates where the rows are ordered
     the same way as the predictions and response.
+
+    :return: The partial correlation coefficient
     """
 
     true_response = fit_linear_model(true_val, covariates, add_intercept=True)

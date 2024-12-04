@@ -49,8 +49,12 @@ class VIPRSBMA(VIPRSGrid):
         if self.n_models < 2:
             return self
 
+        if np.sum(self.valid_terminated_models) < 1:
+            raise ValueError("No models converged successfully. "
+                             "Cannot average models.")
+
         # Extract the models that converged successfully:
-        models_to_keep = np.where(self.models_to_keep)[0]
+        models_to_keep = np.where(self.valid_terminated_models)[0]
 
         elbos = self.history['ELBO'][-1][models_to_keep]
 

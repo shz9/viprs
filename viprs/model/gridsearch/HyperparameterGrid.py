@@ -14,10 +14,13 @@ class HyperparameterGrid(object):
     * `sigma_epsilon`: The residual variance for the phenotype.
     * `tau_beta`: The precision (inverse variance) of the prior for the effect sizes.
     * `pi`: The proportion of non-zero effect sizes (polygenicity).
+    * `lambda_min`: The extra ridge penalty that compensates for the non-PSD nature of the LD matrix.
 
     :ivar sigma_epsilon: A grid of values for the residual variance hyperparameter.
     :ivar tau_beta: A grid of values for the precision of the prior for the effect sizes.
     :ivar pi: A grid of values for the proportion of non-zero effect sizes.
+    :ivar lambda_min: A grid of values for the extra ridge penalty that compensates for
+    the non-PSD nature of the LD matrix.
     :ivar h2_est: An estimate of the heritability for the trait under consideration.
     :ivar h2_se: The standard error of the heritability estimate.
     :ivar n_snps: The number of common variants that may be relevant for this analysis.
@@ -31,6 +34,8 @@ class HyperparameterGrid(object):
                  tau_beta_steps=None,
                  pi_grid=None,
                  pi_steps=None,
+                 lambda_min_grid=None,
+                 lambda_min_steps=None,
                  h2_est=None,
                  h2_se=None,
                  n_snps=1e6):
@@ -42,6 +47,7 @@ class HyperparameterGrid(object):
         * `sigma_epsilon`: The residual variance
         * `tau_beta`: The precision (inverse variance) of the prior for the effect sizes
         * `pi`: The proportion of non-zero effect sizes
+        * `lambda_min`: The extra ridge penalty that compensates for the non-PSD LD matrices.
 
         For each of these hyperparameters, we can provide a grid of values to search over.
         If the heritability estimate and standard error (from e.g. LDSC) are provided,
@@ -96,6 +102,13 @@ class HyperparameterGrid(object):
             self._search_params.append('pi')
         elif pi_steps is not None:
             self.generate_pi_grid(steps=pi_steps)
+
+        # Initialize the grid for lambda_min:
+        self.lambda_min = lambda_min_grid
+        if self.lambda_min is not None:
+            self._search_params.append('lambda_min')
+        elif lambda_min_steps is not None:
+            self.generate_lambda_min_grid(steps=lambda_min_steps)
 
     def _generate_h2_grid(self, steps=5):
         """
@@ -185,6 +198,24 @@ class HyperparameterGrid(object):
 
         if 'pi' not in self._search_params:
             self._search_params.append('pi')
+
+    def generate_lambda_min_grid(self, steps=5, emp_lambda_min=None):
+        """
+        Generate a grid of values for the `lambda_min` parameter, associated with extra ridge penalty
+        that compensates for the non-PSD nature of the LD matrix.
+        :param steps: The number of steps for the `lambda_min` grid.
+        :param emp_lambda_min: The empirical value of lambda_min to use as a reference point.
+        """
+
+        assert steps > 0
+
+        if emp_lambda_min is not None:
+            self.lambda_min = np.linspace(0., 1., steps)*emp_lambda_min
+        else:
+            self.lambda_min = np.linspace(0., 5., steps)
+
+        if 'lambda_min' not in self._search_params:
+            self._search_params.append('lambda_min')
 
     def combine_grids(self):
         """

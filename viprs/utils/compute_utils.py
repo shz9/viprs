@@ -30,6 +30,15 @@ def dict_concat(d, axis=0):
         return np.concatenate([d[c] for c in sorted(d.keys())], axis=axis)
 
 
+def dict_max(d, axis=None):
+    """
+    Estimate the maximum of the values of a dictionary
+    :param d: A dictionary where values are numeric scalars or vectors
+    :param axis: Perform aggregation along given axis.
+    """
+    return np.max(np.array([np.max(v, axis=axis) for v in d.values()]), axis=axis)
+
+
 def dict_mean(d, axis=None):
     """
     Estimate the mean of the values of a dictionary

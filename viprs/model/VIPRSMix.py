@@ -162,6 +162,8 @@ class VIPRSMix(VIPRS):
         self.sigma_epsilon = np.dtype(self.float_precision).type(self.sigma_epsilon)
         self.tau_beta = np.dtype(self.float_precision).type(self.tau_beta)
         self.pi = np.dtype(self.float_precision).type(self.pi)
+        self.lambda_min = np.dtype(self.float_precision).type(self.lambda_min)
+        self._sigma_g = np.dtype(self.float_precision).type(0.)
 
     def e_step(self):
         """
@@ -182,7 +184,7 @@ class VIPRSMix(VIPRS):
             pi = self.get_pi(c)
 
             # Updates for tau variational parameters:
-            self.var_tau[c] = (self.Nj[c] / self.sigma_epsilon) + tau_beta
+            self.var_tau[c] = (self.Nj[c]*(1. + self.lambda_min) / self.sigma_epsilon) + tau_beta
 
             if isinstance(self.pi, dict):
                 log_null_pi = (np.log(1. - self.pi[c].sum(axis=1)))

@@ -40,6 +40,7 @@ def check_args(args):
 
     # ----------------------------------------------------------
     # Check that the inputs data files/directories are valid:
+    # TODO: Update this check once LD matrices are on AWS s3
     ld_store_files = get_filenames(args.ld_dir, extension='.zgroup')
     if len(ld_store_files) < 1:
         raise FileNotFoundError(f"No valid LD matrix files were found at: {args.ld_dir}")
@@ -60,6 +61,20 @@ def check_args(args):
     if args.model == 'VIPRSMix':
         if args.n_components < 1:
             raise ValueError("The number of components for the VIPRSMix model must be at least 1.")
+
+    # Check the residual variance parameter (if provided):
+    if args.fix_sigma_epsilon is not None:
+        assert 0 < args.fix_sigma_epsilon < 1., "The residual variance must be between 0. and 1. (exclusive)."
+
+    # Check that lambda_min is non-negative (if provided):
+    if args.lambda_min is not None:
+        if args.lambda_min != 'infer':
+            try:
+                lm_min = float(args.lambda_min)
+                if lm_min < 0.:
+                    raise ValueError
+            except ValueError:
+                "The lambda_min parameter must be set to 'infer' or non-negative number."
 
     # Check the arguments for validation/pseudo validation when performing
     # grid search or Bayesian optimization for hyperparameter tuning:
@@ -161,7 +176,7 @@ def init_data(args, verbose=True):
                         threads=args.threads)
 
     # Unless the user explicitly decides to keep them, filter long-range LD regions:
-    if not args.keep_lrld:
+    if args.exclude_lrld:
         print("> Filtering long-range LD regions...")
         for ld in gdl.ld.values():
             ld.filter_long_range_ld_regions()
@@ -274,20 +289,37 @@ def prepare_model(args, verbose=True):
     from viprs.model.VIPRS import VIPRS
     from viprs.model.VIPRSMix import VIPRSMix
 
+    if args.lambda_min == 'infer':
+        lambda_min = 'infer'
+    else:
+        lambda_min = float(args.lambda_min)
+
     if args.hyp_search == 'EM':
+
+        # If the user requests fixing the residual variance to a particular value,
+        # then set it here and pass to VIPRS:
+        if args.fix_sigma_epsilon is not None:
+            fix_params = {'sigma_epsilon': args.fix_sigma_epsilon}
+        else:
+            fix_params = None
+
         if args.model == 'VIPRS':
              p_model = partial(VIPRS,
                                float_precision=args.float_precision,
                                low_memory=not args.use_symmetric_ld,
+                               lambda_min=lambda_min,
                                dequantize_on_the_fly=args.dequantize_on_the_fly,
-                               threads=args.threads)
+                               threads=args.threads,
+                               fix_params=fix_params)
         elif args.model == 'VIPRSMix':
             p_model = partial(VIPRSMix,
                               K=args.n_components,
                               float_precision=args.float_precision,
                               low_memory=not args.use_symmetric_ld,
+                              lambda_min=lambda_min,
                               dequantize_on_the_fly=args.dequantize_on_the_fly,
-                              threads=args.threads)
+                              threads=args.threads,
+                              fix_params=fix_params)
 
     elif args.hyp_search in ('BMA', 'GS'):
 
@@ -310,6 +342,7 @@ def prepare_model(args, verbose=True):
                           grid=grid,
                           float_precision=args.float_precision,
                           low_memory=not args.use_symmetric_ld,
+                          lambda_min=lambda_min,
                           dequantize_on_the_fly=args.dequantize_on_the_fly,
                           threads=args.threads)
 
@@ -320,6 +353,7 @@ def prepare_model(args, verbose=True):
         base_model = partial(VIPRS,
                              float_precision=args.float_precision,
                              low_memory=not args.use_symmetric_ld,
+                             lambda_min=lambda_min,
                              dequantize_on_the_fly=args.dequantize_on_the_fly,
                              threads=args.threads)
 
@@ -359,6 +393,30 @@ def fit_model(model, data_dict, args):
 
     for d in data_dict.values():
         d.verbose = False
+
+    # ----------------------------------------------------------
+    # If the model uses a grid (e.g. VIPRSGridSearch, VIPRSBMA), then make sure
+    # to update the parameters of the grid to match the characteristics of the data
+    # used in model fit:
+
+    if args.hyp_search in ('GS', 'BMA'):
+
+        grid = model.keywords['grid']
+
+        if args.pi_steps is not None:
+            grid.n_snps = data_dict['train'].n_snps
+            grid.generate_pi_grid(n_steps=args.pi_steps)
+
+        if args.lambda_min_steps is not None:
+
+            ld_mat = list(data_dict['train'].ld.values())[0]
+            # Cap it at 5. to avoid over-shrinkage:
+            lambda_min = np.minimum(ld_mat.get_lambda_min(aggregate='min'), 5.)
+
+            grid.generate_lambda_min_grid(n_steps=args.lambda_min_steps, emp_lambda_min=lambda_min)
+
+        from functools import partial
+        model = partial(model.func, **{**model.keywords, 'grid': grid})
 
     # ----------------------------------------------------------
 
@@ -523,7 +581,14 @@ def main():
                         help='Use the symmetric form of the LD matrix when fitting the model.')
     parser.add_argument('--dequantize-on-the-fly', dest='dequantize_on_the_fly', action='store_true',
                         default=False,
-                        help='Dequantize the entries of the LD matrix on-the-fly when fitting the model.')
+                        help='Dequantize the entries of the LD matrix on-the-fly during inference.')
+    parser.add_argument('--fix-sigma-epsilon', dest='fix_sigma_epsilon', type=float,
+                        help='Set the value of the residual variance hyperparameter, sigma_epsilon, '
+                             'to the provided value.')
+    parser.add_argument('--lambda-min', dest='lambda_min', type=str,
+                        help='Set the value of the lambda_min parameter, which acts as a regularizer for '
+                             'the effect sizes and compensates for noise in the LD matrix. Set to "infer" to '
+                             'derive this parameter from the properties of the LD matrix itself.')
     parser.add_argument('--n-components', dest='n_components', type=int, default=3,
                         help='The number of non-null Gaussian mixture components to use with the VIPRSMix model '
                              '(i.e. excluding the spike component).')
@@ -561,12 +626,17 @@ def main():
     parser.add_argument('--sigma-epsilon-steps', dest='sigma_epsilon_steps', type=int,
                         help='The number of steps (unique values) for the sigma_epsilon grid.')
 
+    parser.add_argument('--lambda-min-steps', dest='lambda_min_steps', type=int,
+                        help='The number of grid steps for the lambda_min grid. Lambda_min is used to compensate '
+                             'for noise in the LD matrix and acts as an extra regularizer for the effect sizes.')
+
     # Miscellaneous / general parameters:
 
     parser.add_argument('--genomewide', dest='genomewide', action='store_true', default=False,
                         help='Fit all chromosomes jointly')
-    parser.add_argument('--keep-lrld', dest='keep_lrld', action='store_true', default=False,
-                        help='Keep the Long Range LD regions during inference (these regions are filtered by default).')
+    parser.add_argument('--exclude-lrld', dest='exclude_lrld', action='store_true', default=False,
+                        help='Exclude Long Range LD (LRLD) regions during inference. These regions can cause '
+                             'numerical instabilities in some cases.')
     parser.add_argument('--backend', dest='backend', type=str.lower, default='xarray',
                         choices={'xarray', 'plink'},
                         help='The backend software used for computations on the genotype matrix.')
@@ -620,7 +690,7 @@ def main():
     model = prepare_model(args)
 
     # (4) Fit to data:
-    print('\n{:-^62}\n'.format('  Model fitting  '))
+    print('\n{:-^62}\n'.format('  Inference  '))
 
     fit_results = Parallel(n_jobs=args.n_jobs)(
         delayed(fit_model)(model, dl, args)

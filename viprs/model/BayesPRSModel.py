@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import os.path as osp
 
-from ..utils.compute_utils import expand_column_names, dict_mean
+from ..utils.compute_utils import expand_column_names, dict_max
 
 
 class BayesPRSModel:
@@ -43,7 +43,7 @@ class BayesPRSModel:
         self.shapes = self.gdl.shapes.copy()
 
         # Determine the overall sample size:
-        self._sample_size = dict_mean(self.Nj)
+        self._sample_size = dict_max(self.Nj)
 
         # Inferred model parameters:
         self.pip = None  # Posterior inclusion probability

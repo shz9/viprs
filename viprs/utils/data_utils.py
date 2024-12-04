@@ -2,6 +2,9 @@
 def download_ukb_wb_ld_matrix(target_dir='.', chromosome=None):
     """
     Download the LD matrix for the White British samples in the UK Biobank.
+
+    TODO: Update this once data is made available.
+
     :param target_dir: The path or directory where to store the LD matrix
     :param chromosome: An integer or list of integers with the chromosome numbers for which to download
     the LD matrices from Zenodo.

@@ -64,6 +64,8 @@ parser.add_argument('--phenotype-likelihood', dest='pheno_lik', type=str, defaul
                     choices={'gaussian', 'binomial', 'infer'},
                     help='The phenotype likelihood ("gaussian" for continuous, "binomial" for case-control). '
                          'If not set, will be inferred automatically based on the phenotype file.')
+parser.add_argument('--keep', dest='keep', type=str,
+                    help='A plink-style keep file to select a subset of individuals for the evaluation.')
 parser.add_argument('--output-file', dest='output_file', type=str, required=True,
                     help='The output file where to store the evaluation metrics (with no extension).')
 parser.add_argument('--metrics', dest='metrics', type=str, nargs='+',
@@ -100,13 +102,16 @@ assert sample_table.n > 0, "No samples found in the phenotype file."
 if args.covariates_file is not None:
     sample_table.read_covariates_file(args.covariates_file)
 
+if args.keep is not None:
+    sample_table.filter_samples(keep_file=args.keep)
+
 # Make sure that samples remain after reading both:
 assert sample_table.n > 0, "No samples found after merging the covariates and phenotype files."
 
 prs_df = pd.read_csv(args.prs_file, sep=r'\s+')
 
 # Merge the PRS data with the phenotype data:
-prs_df = prs_df.merge(sample_table.get_individual_table(), on=['FID', 'IID'])
+prs_df = sample_table.get_individual_table().merge(prs_df, on=['FID', 'IID'])
 
 assert len(prs_df) > 0, "No common samples found in the PRS and phenotype files."
 
@@ -119,7 +124,7 @@ print("> Evaluating PRS model performance...")
 if sample_table.phenotype_likelihood == 'binomial':
     metrics = args.metrics or ['AUROC', 'AUPRC', 'Nagelkerke_R2', 'Liability_R2']
 else:
-    metrics = args.metrics or ['Pearson_R', 'R2', 'Incremental_R2', 'Partial_Correlation']
+    metrics = args.metrics or ['Pearson_R', 'R2', 'R2_residualized_target', 'Incremental_R2', 'Partial_Correlation']
 
 if isinstance(metrics, str):
     metrics = [metrics]
@@ -128,18 +133,19 @@ if isinstance(metrics, str):
 
 info_dict = {'Sample size': sample_table.n}
 
+if args.covariates_file is not None:
+    covariates = sample_table.get_covariates_table().drop(columns=['FID', 'IID'])
+else:
+    covariates = None
+
 for metric in metrics:
 
     # If covariates are provided and the metric can be computed
     # while adjusting for covariates, then do so:
-    if metric in eval_incremental_metrics:
-        if args.covariates_file is not None:
-            info_dict[metric] = eval_metric_names[metric](sample_table.phenotype,
-                                                          prs_df['PRS'].values,
-                                                          sample_table.get_covariates())
-        else:
-            print(f"> Warning: Skipping {metric} because covariates are required for this metric.")
-            continue
+    if metric in eval_incremental_metrics and covariates is not None:
+        info_dict[metric] = eval_metric_names[metric](sample_table.phenotype,
+                                                      prs_df['PRS'].values,
+                                                      covariates)
 
     else:
         info_dict[metric] = eval_metric_names[metric](sample_table.phenotype,

@@ -27,7 +27,6 @@ class VIPRSGrid(VIPRS):
     :ivar grid_table: A pandas table containing the hyperparameters for each model.
     :ivar n_models: The number of models to fit.
     :ivar shapes: A dictionary containing the shapes of the data matrices.
-    :ivar active_models: A boolean array indicating which models are still active (i.e. not converged).
 
     """
 
@@ -54,15 +53,23 @@ class VIPRSGrid(VIPRS):
         else:
             kwargs['fix_params'].update(grid_params)
 
+        if 'lambda_min' in grid_params:
+            kwargs['lambda_min'] = 0.
+
         # Make sure that the matrices are in Fortran order:
         kwargs['order'] = 'F'
+
+        print("here?")
 
         super().__init__(gdl, **kwargs)
 
         self.shapes = {c: (shp, self.n_models)
                        for c, shp in self.shapes.items()}
-        self.active_models = None
         self.Nj = {c: Nj[:, None].astype(self.float_precision, order=self.order) for c, Nj in self.Nj.items()}
+
+        if not np.isscalar(self.lambda_min):
+            self.lambda_min = self.lambda_min[:, None]
+
         self.optim_results = [OptimizeResult() for _ in range(self.n_models)]
 
     @property
@@ -70,11 +77,28 @@ class VIPRSGrid(VIPRS):
         """
         :return: A boolean array indicating which models have converged successfully.
         """
-        return np.logical_or(self.active_models, self.converged_models)
+        return np.logical_or(~self.terminated_models, self.converged_models)
 
     @property
     def converged_models(self):
+        """
+        :return: A boolean array indicating which models have converged successfully.
+        """
         return np.array([optr.success for optr in self.optim_results])
+
+    @property
+    def terminated_models(self):
+        """
+        :return: A boolean array indicating which models have terminated.
+        """
+        return np.array([optr.stop_iteration for optr in self.optim_results])
+
+    @property
+    def valid_terminated_models(self):
+        """
+        :return: A boolean array indicating which models have terminated without error.
+        """
+        return np.array([optr.valid_optim_result for optr in self.optim_results])
 
     def initialize_theta(self, theta_0=None):
         """
@@ -82,33 +106,22 @@ class VIPRSGrid(VIPRS):
         :param theta_0: A dictionary of initial values for the hyperparameters theta
         """
 
-        self.active_models = np.array([True for _ in range(self.n_models)])
-
         super().initialize_theta(theta_0=theta_0)
 
-        try:
-            if self.pi.shape != (self.n_models, ):
-                self.pi *= np.ones(shape=(self.n_models, ), dtype=self.float_precision)
-        except AttributeError:
-            self.pi *= np.ones(shape=(self.n_models,), dtype=self.float_precision)
+        if np.isscalar(self.pi):
+            self.pi *= np.ones(shape=(self.n_models, ), dtype=self.float_precision)
 
-        try:
-            if self.tau_beta.shape != (self.n_models, ):
-                self.tau_beta *= np.ones(shape=(self.n_models, ), dtype=self.float_precision)
-        except AttributeError:
-            self.tau_beta *= np.ones(shape=(self.n_models,), dtype=self.float_precision)
+        if np.isscalar(self.tau_beta):
+            self.tau_beta *= np.ones(shape=(self.n_models, ), dtype=self.float_precision)
 
-        try:
-            if self.sigma_epsilon.shape != (self.n_models, ):
-                self.sigma_epsilon *= np.ones(shape=(self.n_models, ), dtype=self.float_precision)
-        except AttributeError:
-            self.sigma_epsilon *= np.ones(shape=(self.n_models,), dtype=self.float_precision)
+        if np.isscalar(self.sigma_epsilon):
+            self.sigma_epsilon *= np.ones(shape=(self.n_models, ), dtype=self.float_precision)
 
-        try:
-            if self._sigma_g.shape != (self.n_models, ):
-                self._sigma_g *= np.ones(shape=(self.n_models, ), dtype=self.float_precision)
-        except AttributeError:
-            self._sigma_g *= np.ones(shape=(self.n_models,), dtype=self.float_precision)
+        if np.isscalar(self._sigma_g):
+            self._sigma_g *= np.ones(shape=(self.n_models, ), dtype=self.float_precision)
+
+        if 'lambda_min' in self.fix_params:
+            self.lambda_min = self.fix_params['lambda_min'].astype(self.float_precision)
 
     def init_optim_meta(self):
         """
@@ -135,7 +148,7 @@ class VIPRSGrid(VIPRS):
         Epub 2023 Apr 7. PMID: 37030289; PMCID: PMC10183379.
         """
 
-        active_model_idx = np.where(self.active_models)[0].astype(np.int32)
+        active_model_idx = np.where(~self.terminated_models)[0].astype(np.int32)
 
         for c, shapes in self.shapes.items():
 
@@ -146,7 +159,7 @@ class VIPRSGrid(VIPRS):
             # Updates for tau variational parameters:
             # NOTE: Here, we compute the variational sigma in-place to avoid the need
             # to change the order of the resulting matrix or its float precision:
-            np.add(self.Nj[c] / self.sigma_epsilon, tau_beta,
+            np.add(self.Nj[c]*(1. + self.lambda_min) / self.sigma_epsilon, tau_beta,
                    out=self.var_tau[c])
             np.log(self.var_tau[c], out=self._log_var_tau[c])
 
@@ -221,6 +234,12 @@ class VIPRSGrid(VIPRS):
                 {'Model': m, 'Parameter': 'sigma_beta', 'Value': taus[m]}
             ]
 
+            if 'lambda_min' in self.fix_params:
+                theta_table.append({'Model': m, 'Parameter': 'lambda_min', 'Value': self.lambda_min[m]})
+
+        if np.isscalar(self.lambda_min):
+            theta_table.append({'Model': 'ALL', 'Parameter': 'lambda_min', 'Value': self.lambda_min})
+
         return pd.DataFrame(theta_table)
 
     def to_validation_table(self):
@@ -254,8 +273,8 @@ class VIPRSGrid(VIPRS):
             continued=False,
             min_iter=3,
             f_abs_tol=1e-6,
-            x_abs_tol=1e-7,
-            drop_r_tol=1e-6,
+            x_abs_tol=1e-6,
+            drop_r_tol=0.01,
             patience=5):
         """
         A convenience method to fit all the models in the grid using the Variational EM algorithm.
@@ -279,7 +298,6 @@ class VIPRSGrid(VIPRS):
         else:
             start_idx = len(self.history['ELBO']) + 1
             for i, optr in enumerate(self.optim_results):
-                self.active_models[i] = True
                 optr.update(self.history['ELBO'][i], increment=False)
 
         patience = patience*np.ones(self.n_models)
@@ -303,13 +321,23 @@ class VIPRSGrid(VIPRS):
 
         for i in pbar:
 
-            if all([optr.stop_iteration for optr in self.optim_results]):
+            terminated_models_i = self.terminated_models
+
+            if np.all(terminated_models_i):
 
                 # If converged, update the progress bar before exiting:
+                models_converged = self.converged_models.sum()
+
+                if self.models_to_keep.sum() > 0:
+                    best_elbo = self.history['ELBO'][-1][self.models_to_keep].max()
+                else:
+                    best_elbo = np.nan
+
                 pbar.set_postfix({
-                    'Best ELBO': f"{self.history['ELBO'][-1][self.models_to_keep].max():.4f}",
-                    'Models converged': f"{self.n_models - np.sum(self.active_models)}/{self.n_models}"
+                    'Best ELBO': f"{best_elbo:.4f}",
+                    'Models Converged': f"{models_converged}/{self.n_models}"
                 })
+
                 pbar.n = i - 1
                 pbar.total = i - 1
                 pbar.refresh()
@@ -332,17 +360,15 @@ class VIPRSGrid(VIPRS):
                 curr_elbo = self.history['ELBO'][-1]
                 prev_elbo = self.history['ELBO'][-2]
 
-                for m in np.where(self.active_models)[0]:
+                for m in np.where(~terminated_models_i)[0]:
 
                     if (i > min_iter) and np.isclose(prev_elbo[m], curr_elbo[m], atol=f_abs_tol, rtol=0.):
-                        self.active_models[m] = False
                         self.optim_results[m].update(curr_elbo[m],
                                                      stop_iteration=True,
                                                      success=True,
                                                      message='Objective (ELBO) converged successfully.')
                     elif (i > min_iter) and max([np.max(np.abs(diff[:, m]))
-                                               for diff in self.eta_diff.values()]) < x_abs_tol:
-                        self.active_models[m] = False
+                                                 for diff in self.eta_diff.values()]) < x_abs_tol:
                         self.optim_results[m].update(curr_elbo[m],
                                                      stop_iteration=True,
                                                      success=True,
@@ -356,44 +382,45 @@ class VIPRSGrid(VIPRS):
                         patience[m] -= 1
 
                         if patience[m] == 0:
-                            self.active_models[m] = False
                             self.optim_results[m].update(curr_elbo[m],
                                                          stop_iteration=True,
                                                          success=False,
                                                          message='Optimization is halted '
                                                                  'due to numerical instabilities.')
                         else:
-                            self.optim_results[m].update(curr_elbo)
+                            self.optim_results[m].update(curr_elbo[m])
 
                     # Check if the model parameters behave in unexpected/pathological ways:
                     elif np.isnan(curr_elbo[m]):
-                        self.active_models[m] = False
                         self.optim_results[m].update(curr_elbo[m],
                                                      stop_iteration=True,
                                                      success=False,
                                                      message='The objective (ELBO) is NaN.')
                     elif self.sigma_epsilon[m] <= 0.:
-                        self.active_models[m] = False
                         self.optim_results[m].update(curr_elbo[m],
                                                      stop_iteration=True,
                                                      success=False,
                                                      message='Optimization is halted (sigma_epsilon <= 0).')
                     elif h2[m] >= 1.:
-                        self.active_models[m] = False
                         self.optim_results[m].update(curr_elbo[m],
                                                      stop_iteration=True,
                                                      success=False,
                                                      message='Optimization is halted (h2 >= 1).')
                     else:
-                        self.optim_results[m].update(curr_elbo)
+                        self.optim_results[m].update(curr_elbo[m])
 
                 # -----------------------------------------------------------------------
 
+            # Update the progress bar:
             if self.models_to_keep.sum() > 0:
-                pbar.set_postfix({
-                    'Best ELBO': f"{self.history['ELBO'][-1][self.models_to_keep].max():.4f}",
-                    'Models converged': f"{self.n_models - np.sum(self.active_models)}/{self.n_models}"
-                })
+                best_elbo = self.history['ELBO'][-1][self.models_to_keep].max()
+            else:
+                best_elbo = np.nan
+
+            pbar.set_postfix({
+                'Best ELBO': f"{best_elbo:.4f}",
+                'Models Terminated': f"{self.terminated_models.sum()}/{self.n_models}"
+            })
 
         # Update posterior moments:
         self.update_posterior_moments()
@@ -401,7 +428,6 @@ class VIPRSGrid(VIPRS):
         # Inspect the optimization results:
         for m, optr in enumerate(self.optim_results):
             if not optr.stop_iteration:
-                self.active_models[m] = False
                 optr.update(self.history['ELBO'][-1][m],
                             stop_iteration=True,
                             success=False,
@@ -419,7 +445,7 @@ class VIPRSGrid(VIPRS):
 
         self.validation_result = self.grid_table.copy()
         self.validation_result['ELBO'] = [optr.fun for optr in self.optim_results]
-        self.validation_result['Converged'] = self.models_to_keep
+        self.validation_result['Converged'] = self.converged_models
         self.validation_result['Optimization_message'] = [optr.message for optr in self.optim_results]
 
         return self

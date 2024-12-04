@@ -59,8 +59,6 @@ def _match_variant_stats(test_gdl, prs_beta_table):
                                 how='left',
                                 signed_statistics=beta_cols)
 
-        test_gdl.ld[chrom].load(dtype=np.float32)
-
         validation_beta.append(tab['STD_BETA'].values)
         prs_beta.append(c_df[beta_cols].fillna(0.).values)
         ld_weighted_beta.append(test_gdl.ld[chrom].dot(prs_beta[-1]))

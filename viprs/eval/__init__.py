@@ -5,8 +5,10 @@ from .continuous_metrics import *
 # Define a dictionary that maps evaluation metric names to their respective functions:
 eval_metric_names = {
     'Pearson_R': pearson_r,
+    'Spearman_R': spearman_r,
     'MSE': mse,
     'R2': r2,
+    'R2_residualized_target': r2_residualized_target,
     'Incremental_R2': incremental_r2,
     'Partial_Correlation': partial_correlation,
     'AUROC': roc_auc,
@@ -25,6 +27,7 @@ eval_metric_names = {
 # covariates to be computed:
 eval_incremental_metrics = [
     'Incremental_R2',
+    'R2_residualized_target',
     'Partial_Correlation',
     'Liability_R2',
     'Liability_Probit_R2',

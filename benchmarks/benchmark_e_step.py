@@ -43,7 +43,7 @@ from dask.diagnostics import ResourceProfiler
 # ------------------------------------------------------------------------
 
 
-def measure_e_step_performance(viprs_model, n_experiments=15, n_calls='auto', warm_up=5, initialize_once=False):
+def measure_e_step_performance(viprs_model, n_experiments=15, n_calls=None, warm_up=10, initialize_once=False):
     """
     Measure the time it takes to execute the E-Step of a VIPRS model for `n_calls`.
     :param viprs_model: The VIPRS model to benchmark.
@@ -55,20 +55,18 @@ def measure_e_step_performance(viprs_model, n_experiments=15, n_calls='auto', wa
 
     def exec_func():
         if not initialize_once:
-            viprs_model.initialize()
+            viprs_model.initialize_variational_parameters()
         viprs_model.e_step()
 
     viprs_model.verbose = False
+    viprs_model.initialize()
 
-    if initialize_once:
-        viprs_model.initialize()
-
-    if n_calls == 'auto':
+    if n_calls is None:
         # If auto, then we will determine the number of calls automatically:
         # Here, we roughly repeat until the total time is at least ~1 second:
         # Note that the minimum number of calls is 5. If this takes too long,
         # then set the number of calls manually?
-        time_iter = math.ceil(1. / np.median(
+        time_iter = math.ceil(1. / np.min(
             timeit.repeat(exec_func, repeat=5 + warm_up, number=5)[warm_up:]
         ))
         n_calls = 5 * int(time_iter)
@@ -76,7 +74,7 @@ def measure_e_step_performance(viprs_model, n_experiments=15, n_calls='auto', wa
     with ResourceProfiler(dt=0.1) as rprof:
         times = timeit.repeat(exec_func,
                               repeat=n_experiments + warm_up,
-                              number=n_calls)
+                              number=int(n_calls))
 
     try:
         peak_mem = np.max([r.mem for r in rprof.results])
@@ -133,17 +131,17 @@ if __name__ == '__main__':
                         help='The number of experiments to run.')
     parser.add_argument('--n-experiments-grid', dest='n_experiments_grid', type=int, default=7,
                         help='The number of experiments to run for the grid model.')
-    parser.add_argument('--n-calls', dest='n_calls', default='auto',
+    parser.add_argument('--n-calls', dest='n_calls', type=int,
                         help='The number of times to call the E-Step in each experiment '
                              '(if set to auto, number of calls will be determined automatically).')
-    parser.add_argument('--n-calls-grid', dest='n_calls_grid', default='auto',
+    parser.add_argument('--n-calls-grid', dest='n_calls_grid', type=int,
                         help='The number of times to call the E-Step in each experiment for the grid model '
                              '(if set to auto, number of calls will be determined automatically).')
     parser.add_argument('--warm-up', dest='warm_up', type=int, default=10,
                         help="The number of warm-up experiments to run (this will take care of"
                              "any overhead due to loading required libraries, JIT compilation, CPU warmup time, etc.)")
     parser.add_argument('--low-memory', dest='low_memory', default=False, action='store_true')
-    parser.add_argument('--threads', dest='threads', type=str, default="2,4",
+    parser.add_argument('--threads', dest='threads', type=str, default="1,2,4",
                         help='A comma-delimited argument specifying the number of '
                              'threads to test for the multithreading experiments.')
     parser.add_argument('--float-precision', dest='float_precision', type=str, default='float32',
@@ -178,7 +176,10 @@ if __name__ == '__main__':
         raise ValueError("BLAS is not supported on this platform to benchmark its performance.")
 
     # If OpenMP is supported, test up to 4 threads:
-    n_threads = [1] + [[], list(map(int, args.threads.split(',')))][omp_supported]
+    if omp_supported and args.threads is not None and len(args.threads) > 0:
+        n_threads = list(map(int, args.threads.split(',')))
+    else:
+        n_threads = [1]
 
     if args.ld_dir is None:
         gdl = mgp.GWADataLoader(mgp.tgp_eur_data_path(),

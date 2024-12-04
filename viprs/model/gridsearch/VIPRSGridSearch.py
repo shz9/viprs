@@ -53,31 +53,38 @@ class VIPRSGridSearch(VIPRSGrid):
         assert criterion in ('ELBO', 'validation', 'pseudo_validation')
 
         # Extract the models that converged successfully:
-        models_converged = self.models_to_keep
+        models_converged = self.valid_terminated_models
 
-        if criterion == 'ELBO':
-            elbo = self.history['ELBO'][-1]
-            elbo[~models_converged] = -np.inf
-            best_model_idx = np.argmax(self.history['ELBO'][-1])
-        elif criterion == 'validation':
+        if np.sum(models_converged) < 1:
+            raise ValueError("No models converged successfully. "
+                             "Cannot select best model.")
+        elif np.sum(models_converged) == 1:
+            best_model_idx = np.where(models_converged)[0][0]
+        else:
 
-            assert validation_gdl is not None
-            assert validation_gdl.sample_table is not None
-            assert validation_gdl.sample_table.phenotype is not None
+            if criterion == 'ELBO':
+                elbo = self.history['ELBO'][-1]
+                elbo[~models_converged] = -np.inf
+                best_model_idx = np.argmax(self.history['ELBO'][-1])
+            elif criterion == 'validation':
 
-            from viprs.eval.continuous_metrics import r2
+                assert validation_gdl is not None
+                assert validation_gdl.sample_table is not None
+                assert validation_gdl.sample_table.phenotype is not None
 
-            prs = self.predict(test_gdl=validation_gdl)
-            prs_r2 = np.array([r2(prs[:, i], validation_gdl.sample_table.phenotype) for i in range(self.n_models)])
-            prs_r2[~models_converged] = -np.inf
-            self.validation_result['Validation_R2'] = prs_r2
-            best_model_idx = np.argmax(prs_r2)
-        elif criterion == 'pseudo_validation':
+                from viprs.eval.continuous_metrics import r2
 
-            pseudo_corr = self.pseudo_validate(validation_gdl, metric='r2')
-            pseudo_corr[~models_converged] = -np.inf
-            self.validation_result['Pseudo_Validation_Corr'] = pseudo_corr
-            best_model_idx = np.argmax(np.nan_to_num(pseudo_corr, nan=-1., neginf=-1., posinf=-1.))
+                prs = self.predict(test_gdl=validation_gdl)
+                prs_r2 = np.array([r2(prs[:, i], validation_gdl.sample_table.phenotype) for i in range(self.n_models)])
+                prs_r2[~models_converged] = -np.inf
+                self.validation_result['Validation_R2'] = prs_r2
+                best_model_idx = np.argmax(prs_r2)
+            elif criterion == 'pseudo_validation':
+
+                pseudo_corr = self.pseudo_validate(validation_gdl, metric='r2')
+                pseudo_corr[~models_converged] = -np.inf
+                self.validation_result['Pseudo_Validation_Corr'] = pseudo_corr
+                best_model_idx = np.argmax(np.nan_to_num(pseudo_corr, nan=-1., neginf=-1., posinf=-1.))
 
         if int(self.verbose) > 1:
             logging.info(f"> Based on the {criterion} criterion, selected model: {best_model_idx}")
