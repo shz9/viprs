@@ -71,7 +71,7 @@ class VIPRS(BayesPRSModel):
                  fix_params=None,
                  tracked_params=None,
                  verbose=True,
-                 lambda_min='infer',
+                 lambda_min=None,
                  float_precision='float32',
                  order='F',
                  low_memory=True,
