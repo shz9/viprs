@@ -1,7 +1,25 @@
-from cython cimport floating, integral
+from cython cimport floating
+cimport numpy as cnp
+
+# --------------------------------------------------
+# Define fused data types:
+
+ctypedef fused indptr_type:
+    cnp.int32_t
+    cnp.int64_t
+
+ctypedef fused noncomplex_numeric:
+    cnp.int8_t
+    cnp.int16_t
+    cnp.int32_t
+    cnp.int64_t
+    cnp.float32_t
+    cnp.float64_t
+
+# --------------------------------------------------
 
 cpdef void e_step(int[::1] ld_left_bound,
-                  integral[::1] ld_indptr,
+                  indptr_type[::1] ld_indptr,
                   floating[::1] ld_data,
                   floating[::1] std_beta,
                   floating[::1] var_gamma,
@@ -19,7 +37,7 @@ cpdef void e_step(int[::1] ld_left_bound,
 
 
 cpdef void e_step_mixture(int[::1] ld_left_bound,
-                          integral[::1] ld_indptr,
+                          indptr_type[::1] ld_indptr,
                           floating[::1] ld_data,
                           floating[::1] std_beta,
                           floating[:, ::1] var_gamma,
@@ -37,7 +55,7 @@ cpdef void e_step_mixture(int[::1] ld_left_bound,
 
 
 cpdef void e_step_grid(int[::1] ld_left_bound,
-                       integral[::1] ld_indptr,
+                       indptr_type[::1] ld_indptr,
                        floating[::1] ld_data,
                        floating[::1] std_beta,
                        floating[::1, :] var_gamma,

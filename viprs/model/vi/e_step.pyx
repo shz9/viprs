@@ -12,7 +12,7 @@ from .e_step_cpp cimport cpp_blas_axpy, cpp_blas_dot
 cimport cython
 import numpy as np
 cimport numpy as np
-from cython cimport floating, integral
+from cython cimport floating
 
 
 # A safe way to get the number of the thread currently executing the code:
@@ -40,7 +40,7 @@ cdef extern from *:
 @cython.exceptval(check=False)
 cpdef void update_q_factor_matrix(int[:] active_model_idx,
                                   int[::1] ld_left_bound,
-                                  integral[::1] ld_indptr,
+                                  indptr_type[::1] ld_indptr,
                                   floating[::1] ld_data,
                                   floating[::1, :] eta,
                                   floating[::1, :] q,
@@ -59,7 +59,7 @@ cpdef void update_q_factor_matrix(int[:] active_model_idx,
 
     cdef:
         int j, m, m_idx, start, end, c_size = eta.shape[0], num_models = active_model_idx.shape[0]
-        integral ld_start, ld_end
+        indptr_type ld_start, ld_end
 
     for j in prange(c_size, nogil=True, schedule='static', num_threads=threads):
 
@@ -82,7 +82,7 @@ cpdef void update_q_factor_matrix(int[:] active_model_idx,
 @cython.cdivision(True)
 @cython.exceptval(check=False)
 cpdef void update_q_factor(int[::1] ld_left_bound,
-                           integral[::1] ld_indptr,
+                           indptr_type[::1] ld_indptr,
                            floating[::1] ld_data,
                            floating[::1] eta,
                            floating[::1] q,
@@ -100,7 +100,7 @@ cpdef void update_q_factor(int[::1] ld_left_bound,
 
     cdef:
         int j, start, end, c_size = eta.shape[0]
-        integral ld_start, ld_end;
+        indptr_type ld_start, ld_end;
 
     for j in prange(c_size, nogil=True, schedule='static', num_threads=threads):
 
@@ -121,7 +121,7 @@ cpdef void update_q_factor(int[::1] ld_left_bound,
 @cython.cdivision(True)
 @cython.exceptval(check=False)
 cpdef void e_step(int[::1] ld_left_bound,
-                  integral[::1] ld_indptr,
+                  indptr_type[::1] ld_indptr,
                   floating[::1] ld_data,
                   floating[::1] std_beta,
                   floating[::1] var_gamma,
@@ -159,7 +159,7 @@ cpdef void e_step(int[::1] ld_left_bound,
 
     cdef:
         int j, start, end, c_size = var_mu.shape[0]
-        long ld_start, ld_end
+        indptr_type ld_start, ld_end
         floating u_j
 
     for j in prange(c_size, nogil=True, schedule='static', num_threads=threads):
@@ -209,7 +209,7 @@ cpdef void e_step(int[::1] ld_left_bound,
 @cython.cdivision(True)
 @cython.exceptval(check=False)
 cpdef void e_step_mixture(int[::1] ld_left_bound,
-                          integral[::1] ld_indptr,
+                          indptr_type[::1] ld_indptr,
                           floating[::1] ld_data,
                           floating[::1] std_beta,
                           floating[:, ::1] var_gamma,
@@ -250,7 +250,7 @@ cpdef void e_step_mixture(int[::1] ld_left_bound,
     cdef:
         int j, start, end, thread_offset, c_size = var_mu.shape[0], k, K = var_mu.shape[1]
         int u_size = threads * (K + 1)
-        long ld_start, ld_end
+        indptr_type ld_start, ld_end
         floating mu_beta_j
         floating[::1] u_j
 
@@ -314,7 +314,7 @@ cpdef void e_step_mixture(int[::1] ld_left_bound,
 @cython.cdivision(True)
 @cython.exceptval(check=False)
 cpdef void e_step_grid(int[::1] ld_left_bound,
-                       integral[::1] ld_indptr,
+                       indptr_type[::1] ld_indptr,
                        floating[::1] ld_data,
                        floating[::1] std_beta,
                        floating[::1, :] var_gamma,
@@ -354,7 +354,7 @@ cpdef void e_step_grid(int[::1] ld_left_bound,
 
     cdef:
         int start, end, j, c_size = var_mu.shape[0], m_idx, m, num_models = active_model_idx.shape[0]
-        long ld_start, ld_end
+        indptr_type ld_start, ld_end
         floating u_j
 
     for j in prange(c_size, nogil=True, schedule='static', num_threads=threads):

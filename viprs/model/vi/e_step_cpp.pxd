@@ -1,21 +1,29 @@
-from cython cimport floating, integral
-cimport numpy as np
+from cython cimport floating
+cimport numpy as cnp
+
+# --------------------------------------------------
+# Define fused data types:
+
+ctypedef fused indptr_type:
+    cnp.int32_t
+    cnp.int64_t
 
 ctypedef fused noncomplex_numeric:
-    np.int8_t
-    np.int16_t
-    np.int32_t
-    np.int64_t
-    np.float32_t
-    np.float64_t
+    cnp.int8_t
+    cnp.int16_t
+    cnp.int32_t
+    cnp.int64_t
+    cnp.float32_t
+    cnp.float64_t
 
+# --------------------------------------------------
 
 cdef void cpp_blas_axpy(floating[::1] v1, floating[::1] v2, floating alpha) noexcept nogil
 cdef floating cpp_blas_dot(floating[::1] v1, floating[::1] v2) noexcept nogil
 
 
 cpdef void cpp_e_step(int[::1] ld_left_bound,
-                      integral[::1] ld_indptr,
+                      indptr_type[::1] ld_indptr,
                       noncomplex_numeric[::1] ld_data,
                       floating[::1] std_beta,
                       floating[::1] var_gamma,
@@ -33,7 +41,7 @@ cpdef void cpp_e_step(int[::1] ld_left_bound,
 
 
 cpdef void cpp_e_step_mixture(int[::1] ld_left_bound,
-                              integral[::1] ld_indptr,
+                              indptr_type[::1] ld_indptr,
                               noncomplex_numeric[::1] ld_data,
                               floating[::1] std_beta,
                               floating[:, ::1] var_gamma,
@@ -51,7 +59,7 @@ cpdef void cpp_e_step_mixture(int[::1] ld_left_bound,
                               bint low_memory) noexcept nogil
 
 cpdef void cpp_e_step_grid(int[::1] ld_left_bound,
-                           integral[::1] ld_indptr,
+                           indptr_type[::1] ld_indptr,
                            noncomplex_numeric[::1] ld_data,
                            floating[::1] std_beta,
                            floating[::1, :] var_gamma,

@@ -1,7 +1,7 @@
 # distutils: language = c++
 # sources: model/vi/e_step.hpp
 
-from cython cimport floating, integral
+from cython cimport floating
 
 
 cdef extern from "e_step.hpp" nogil:
@@ -13,42 +13,42 @@ cdef extern from "e_step.hpp" nogil:
     T blas_dot[T](T* x, T* y, int size) noexcept nogil
 
     void e_step[T, U, I](int c_size,
-                      int* ld_left_bound,
-                      I* ld_indptr,
-                      U* ld_data,
-                      T* std_beta,
-                      T* var_gamma,
-                      T* var_mu,
-                      T* eta,
-                      T* q,
-                      T* eta_diff,
-                      T* u_logs,
-                      T* half_var_tau,
-                      T* mu_mult,
+                         int* ld_left_bound,
+                         I* ld_indptr,
+                         U* ld_data,
+                         T* std_beta,
+                         T* var_gamma,
+                         T* var_mu,
+                         T* eta,
+                         T* q,
+                         T* eta_diff,
+                         T* u_logs,
+                         T* half_var_tau,
+                         T* mu_mult,
                          T dq_scale,
-                      int threads,
-                      bint use_blas,
-                      bint low_memory) noexcept nogil
+                         int threads,
+                         bint use_blas,
+                         bint low_memory) noexcept nogil
 
     void e_step_mixture[T, U, I](int c_size,
-                              int K,
-                              int* ld_left_bound,
-                              I* ld_indptr,
-                              U* ld_data,
-                              T* std_beta,
-                              T* var_gamma,
-                              T* var_mu,
-                              T* eta,
-                              T* q,
-                              T* eta_diff,
-                              T* log_null_pi,
-                              T* u_logs,
-                              T* half_var_tau,
-                              T* mu_mult,
+                                 int K,
+                                 int* ld_left_bound,
+                                 I* ld_indptr,
+                                 U* ld_data,
+                                 T* std_beta,
+                                 T* var_gamma,
+                                 T* var_mu,
+                                 T* eta,
+                                 T* q,
+                                 T* eta_diff,
+                                 T* log_null_pi,
+                                 T* u_logs,
+                                 T* half_var_tau,
+                                 T* mu_mult,
                                  T dq_scale,
-                              int threads,
-                              bint use_blas,
-                              bint low_memory) noexcept nogil
+                                 int threads,
+                                 bint use_blas,
+                                 bint low_memory) noexcept nogil
 
     void e_step_grid[T, U, I](int c_size,
                            int n_active_models,
@@ -92,7 +92,7 @@ cdef floating cpp_blas_dot(floating[::1] v1, floating[::1] v2) noexcept nogil:
 
 
 cpdef void cpp_e_step(int[::1] ld_left_bound,
-                      integral[::1] ld_indptr,
+                      indptr_type[::1] ld_indptr,
                       noncomplex_numeric[::1] ld_data,
                       floating[::1] std_beta,
                       floating[::1] var_gamma,
@@ -128,7 +128,7 @@ cpdef void cpp_e_step(int[::1] ld_left_bound,
 
 
 cpdef void cpp_e_step_mixture(int[::1] ld_left_bound,
-                              integral[::1] ld_indptr,
+                              indptr_type[::1] ld_indptr,
                               noncomplex_numeric[::1] ld_data,
                               floating[::1] std_beta,
                               floating[:, ::1] var_gamma,
@@ -166,7 +166,7 @@ cpdef void cpp_e_step_mixture(int[::1] ld_left_bound,
                    low_memory)
 
 cpdef void cpp_e_step_grid(int[::1] ld_left_bound,
-                           integral[::1] ld_indptr,
+                           indptr_type[::1] ld_indptr,
                            noncomplex_numeric[::1] ld_data,
                            floating[::1] std_beta,
                            floating[::1, :] var_gamma,
