@@ -209,10 +209,10 @@ class HyperparameterGrid(object):
 
         assert steps > 0
 
+        self.lambda_min = np.concatenate([[0.], np.logspace(-4, 1., steps - 1)])
+
         if emp_lambda_min is not None:
-            self.lambda_min = np.linspace(0., 1., steps)*emp_lambda_min
-        else:
-            self.lambda_min = np.linspace(0., 5., steps)
+            self.lambda_min *= emp_lambda_min
 
         if 'lambda_min' not in self._search_params:
             self._search_params.append('lambda_min')

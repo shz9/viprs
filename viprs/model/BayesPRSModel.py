@@ -191,16 +191,8 @@ class BayesPRSModel:
 
             try:
                 post_mean_cols = expand_column_names('BETA', self.post_mean_beta[c].shape)
-                if isinstance(post_mean_cols, str):
-                    post_mean_cols = [post_mean_cols]
-
                 pip_cols = expand_column_names('PIP', self.post_mean_beta[c].shape)
-                if isinstance(pip_cols, str):
-                    pip_cols = [pip_cols]
-
                 post_var_cols = expand_column_names('VAR_BETA', self.post_mean_beta[c].shape)
-                if isinstance(post_var_cols, str):
-                    post_var_cols = [post_var_cols]
 
             except (TypeError, KeyError):
                 pip_cols = [col for col in parameter_table[c].columns if 'PIP' in col]
@@ -254,13 +246,26 @@ class BayesPRSModel:
 
         for c in self.chromosomes:
 
-            tables[c][expand_column_names('BETA', self.post_mean_beta[c].shape)] = self.post_mean_beta[c]
+            cols_to_add = []
+
+            mean_beta_df = pd.DataFrame(self.post_mean_beta[c],
+                                        columns=expand_column_names('BETA', self.post_mean_beta[c].shape),
+                                        index=tables[c].index)
+            cols_to_add.append(mean_beta_df)
 
             if self.pip is not None:
-                tables[c][expand_column_names('PIP', self.pip[c].shape)] = self.pip[c]
+                pip_df = pd.DataFrame(self.pip[c],
+                                      columns=expand_column_names('PIP', self.pip[c].shape),
+                                      index=tables[c].index)
+                cols_to_add.append(pip_df)
 
             if self.post_var_beta is not None:
-                tables[c][expand_column_names('VAR_BETA', self.post_var_beta[c].shape)] = self.post_var_beta[c]
+                var_beta_df = pd.DataFrame(self.post_var_beta[c],
+                                           columns=expand_column_names('VAR_BETA', self.post_var_beta[c].shape),
+                                           index=tables[c].index)
+                cols_to_add.append(var_beta_df)
+
+            tables[c] = pd.concat([tables[c]] + cols_to_add, axis=1)
 
         if per_chromosome:
             return tables

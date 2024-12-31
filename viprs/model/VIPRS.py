@@ -202,7 +202,7 @@ class VIPRS(BayesPRSModel):
                 # If lambda min is set to `infer`, we try to retrieve information about the
                 # spectral properties of the LD matrix from the LDMatrix object.
                 # If this is not available, we set the minimum eigenvalue to 0.
-                self.lambda_min = ld_mat.get_lambda_min(min_max_ratio=0.004)
+                self.lambda_min = ld_mat.get_lambda_min(min_max_ratio=1e-3)
 
         # Standardized betas:
         self.std_beta = {c: ss.get_snp_pseudo_corr().astype(float_precision)
@@ -846,9 +846,11 @@ class VIPRS(BayesPRSModel):
 
     def update_theta_history(self):
         """
-        A convenience method to update the history of the hyperparameters of the model,
-        if the user requested that they should be tracked.
+        A convenience method to update the history of the hyperparameters/objectives/other summary statistics
+        of the model, if the user requested that they should be tracked.
         """
+
+        self.history['ELBO'].append(self.elbo())
 
         for tt in self.tracked_params:
             if tt == 'pi':
@@ -935,6 +937,7 @@ class VIPRS(BayesPRSModel):
         if not continued:
             self.initialize(theta_0, param_0)
             start_idx = 1
+            self.update_theta_history()
         else:
             start_idx = len(self.history['ELBO']) + 1
             # Update OptimizeResult object to enable continuation of the optimization:
@@ -979,12 +982,11 @@ class VIPRS(BayesPRSModel):
             self.e_step()
             self.m_step()
 
-            # Compute the objective:
-            self.history['ELBO'].append(self.elbo())
-            pbar.set_postfix({'ELBO': f"{self.history['ELBO'][-1]:.4f}"})
-
-            # Update the tracked parameters:
+            # Update the tracked parameters (including objectives):
             self.update_theta_history()
+
+            # Update the progress bar:
+            pbar.set_postfix({'ELBO': f"{self.history['ELBO'][-1]:.4f}"})
 
             # ------------------------------------------------------------
             # Sanity checking / convergence criteria:
@@ -994,16 +996,19 @@ class VIPRS(BayesPRSModel):
             # Check if the objective / model parameters behave in unexpected/pathological ways:
             if self.mse() < 0.:
                 if 'sigma_epsilon' not in self.fix_params:
-                    logging.warning(f"Iteration {i} | Mean Squared Error (MSE) is negative; Restarting optimization "
+                    logging.warning(f"Iteration {i} | MSE is negative; Restarting optimization "
                                     f"and fixing residual variance hyperparameter (sigma_epsilon).")
+                    import copy
+                    hist = copy.deepcopy(self.history)
                     self.initialize(theta_0, param_0)
+                    self.history = hist
                     prev_elbo = -np.inf
                     self.fix_params['sigma_epsilon'] = self.sigma_epsilon = .95
                     continue
                 else:
                     raise OptimizationDivergence(f"Stopping at iteration {i}: "
                                                  f"The optimization algorithm is not converging!\n"
-                                                 f"The Mean Squared Error (MSE) is negative ({self.mse():.6f}). "
+                                                 f"The MSE is negative ({self.mse():.6f}). "
                                                  f"This usually indicates poor agreement between "
                                                  f"summary statistics and LD reference panel.")
 
@@ -1051,10 +1056,9 @@ class VIPRS(BayesPRSModel):
                 patience -= 1
 
                 if patience == 0:
-                    self.optim_result.update(curr_elbo,
-                                             stop_iteration=True,
-                                             success=False,
-                                             message='Optimization is halted due to numerical instabilities.')
+                    raise OptimizationDivergence(f"Stopping at iteration {i}: "
+                                                 f"The optimization algorithm is not converging!\n"
+                                                 f"Objective (ELBO) is decreasing.")
                 else:
                     self.optim_result.update(curr_elbo)
 

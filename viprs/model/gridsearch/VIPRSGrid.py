@@ -59,8 +59,6 @@ class VIPRSGrid(VIPRS):
         # Make sure that the matrices are in Fortran order:
         kwargs['order'] = 'F'
 
-        print("here?")
-
         super().__init__(gdl, **kwargs)
 
         self.shapes = {c: (shp, self.n_models)
@@ -362,7 +360,22 @@ class VIPRSGrid(VIPRS):
 
                 for m in np.where(~terminated_models_i)[0]:
 
-                    if (i > min_iter) and np.isclose(prev_elbo[m], curr_elbo[m], atol=f_abs_tol, rtol=0.):
+                    if not np.isfinite(curr_elbo[m]):
+                        self.optim_results[m].update(curr_elbo[m],
+                                                     stop_iteration=True,
+                                                     success=False,
+                                                     message=f'The objective (ELBO) is undefined ({curr_elbo[m]}).')
+                    elif self.sigma_epsilon[m] <= 0.:
+                        self.optim_results[m].update(curr_elbo[m],
+                                                     stop_iteration=True,
+                                                     success=False,
+                                                     message='Optimization is halted (sigma_epsilon <= 0).')
+                    elif h2[m] > 1. or h2[m] < 0.:
+                        self.optim_results[m].update(curr_elbo[m],
+                                                     stop_iteration=True,
+                                                     success=False,
+                                                     message='Value of estimated heritability is out of bounds.')
+                    elif (i > min_iter) and np.isclose(prev_elbo[m], curr_elbo[m], atol=f_abs_tol, rtol=0.):
                         self.optim_results[m].update(curr_elbo[m],
                                                      stop_iteration=True,
                                                      success=True,
@@ -390,22 +403,6 @@ class VIPRSGrid(VIPRS):
                         else:
                             self.optim_results[m].update(curr_elbo[m])
 
-                    # Check if the model parameters behave in unexpected/pathological ways:
-                    elif np.isnan(curr_elbo[m]):
-                        self.optim_results[m].update(curr_elbo[m],
-                                                     stop_iteration=True,
-                                                     success=False,
-                                                     message='The objective (ELBO) is NaN.')
-                    elif self.sigma_epsilon[m] <= 0.:
-                        self.optim_results[m].update(curr_elbo[m],
-                                                     stop_iteration=True,
-                                                     success=False,
-                                                     message='Optimization is halted (sigma_epsilon <= 0).')
-                    elif h2[m] >= 1.:
-                        self.optim_results[m].update(curr_elbo[m],
-                                                     stop_iteration=True,
-                                                     success=False,
-                                                     message='Optimization is halted (h2 >= 1).')
                     else:
                         self.optim_results[m].update(curr_elbo[m])
 

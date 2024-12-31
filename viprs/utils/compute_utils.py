@@ -127,11 +127,13 @@ def expand_column_names(c_name, shape, sep='_'):
     :param c_name: A string object
     :param shape: The shape of a numpy matrix or vector
     :param sep: The separator
+
+    :return: A list of column names
     """
 
     if len(shape) < 2:
-        return c_name
+        return [c_name]
     elif shape[1] == 1:
-        return c_name
+        return [c_name]
     else:
-        return [c_name + f'{sep}{i}' for i in range(shape[1])]
+        return [f'{c_name}{sep}{i}' for i in range(shape[1])]

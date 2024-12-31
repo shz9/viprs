@@ -29,6 +29,127 @@ Usage:
 """
 
 import os.path as osp
+import psutil
+import threading
+import time
+
+
+class PeakMemoryProfiler:
+    """
+    A context manager that monitors and tracks the peak memory usage of a process
+    (and optionally its children) over a period of time. The memory usage can be
+    reported in various units (bytes, MB, or GB).
+
+    Example:
+
+    ```
+    with PeakMemoryProfiler() as profiler:
+        # Code block to monitor memory usage
+        ...
+    ```
+
+    Class Attributes:
+    :ivar pid: The PID of the process being monitored. Defaults to the current process.
+    :ivar interval: Time interval (in seconds) between memory checks. Defaults to 0.1.
+    :ivar include_children: Whether memory usage from child processes is included. Defaults to True.
+    :ivar unit: The unit used to report memory usage (either 'bytes', 'MB', or 'GB'). Defaults to 'MB'.
+    :ivar max_memory: The peak memory usage observed during the monitoring period.
+    :ivar monitoring_thread: Thread used for monitoring memory usage.
+    :ivar _stop_monitoring: Event used to signal when to stop monitoring.
+    """
+
+    def __init__(self, pid=None, interval=0.1, include_children=True, unit="MB"):
+        """
+        Initializes the PeakMemoryProfiler instance with the provided parameters.
+
+        :param pid: The PID of the process to monitor. Defaults to None (current process).
+        :param interval: The interval (in seconds) between memory checks. Defaults to 0.1.
+        :param include_children: Whether to include memory usage from child processes. Defaults to True.
+        :param unit: The unit in which to report memory usage. Options are 'bytes', 'MB', or 'GB'. Defaults to 'MB'.
+        """
+        self.pid = pid or psutil.Process().pid  # Default to current process if no PID is provided
+        self.interval = interval
+        self.include_children = include_children
+        self.unit = unit
+        self.max_memory = 0
+        self.monitoring_thread = None
+        self._stop_monitoring = threading.Event()
+
+    def __enter__(self):
+        """
+        Starts monitoring memory usage when entering the context block.
+
+        :return: Returns the instance of PeakMemoryProfiler, so that we can access peak memory later.
+        """
+        self.process = psutil.Process(self.pid)
+        self.max_memory = 0
+        self._stop_monitoring.clear()  # Clear the stop flag to begin monitoring
+        self.monitoring_thread = threading.Thread(target=self._monitor_memory)
+        self.monitoring_thread.start()
+        return self  # Return the instance so that the caller can access max_memory
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """
+        Stops the memory monitoring when exiting the context block.
+
+        :param exc_type: The exception type if an exception was raised in the block.
+        :param exc_value: The exception instance if an exception was raised.
+        :param traceback: The traceback object if an exception was raised.
+        """
+        self._stop_monitoring.set()  # Signal the thread to stop monitoring
+        self.monitoring_thread.join()  # Wait for the monitoring thread to finish
+
+    def get_curr_memory(self):
+        """
+        Get the current memory usage of the monitored process and its children.
+
+        :return: The current memory usage in the specified unit (bytes, MB, or GB).
+        :rtype: float
+        """
+
+        memory = self.process.memory_info().rss
+
+        if self.include_children:
+            # Include memory usage of child processes recursively
+            for child in self.process.children(recursive=True):
+                try:
+                    memory += child.memory_info().rss
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+        if self.unit == "MB":
+            return memory / (1024 ** 2)  # Convert to MB
+        elif self.unit == "GB":
+            return memory / (1024 ** 3)  # Convert to GB
+        else:
+            return memory  # Return in bytes if no conversion is requested
+
+    def _monitor_memory(self):
+        """
+        Monitors the memory usage of the process and its children continuously
+        until the monitoring is stopped.
+
+        This method runs in a separate thread and updates the peak memory usage
+        as long as the monitoring flag is not set.
+        """
+        while not self._stop_monitoring.is_set():
+            try:
+                curr_memory = self.get_curr_memory()
+
+                # Update max memory if a new peak is found
+                self.max_memory = max(self.max_memory, curr_memory)
+                time.sleep(self.interval)
+            except psutil.NoSuchProcess:
+                break  # Process no longer exists, stop monitoring
+
+    def get_peak_memory(self):
+        """
+        Get the peak memory usage observed during the monitoring period.
+
+        :return: The peak memory usage in the specified unit (bytes, MB, or GB).
+        :rtype: float
+        """
+        return self.max_memory
 
 
 def check_args(args):
@@ -110,15 +231,15 @@ def check_args(args):
             # provides either individual-level data or summary statistics for the validation set:
             if args.validation_bed is not None and args.validation_pheno is not None:
                 pass
-            elif args.validation_ld_panel is not None and args.validation_sumstats is not None:
+            elif args.validation_ld_panel is not None and args.validation_sumstats_path is not None:
                 ld_store_files = get_filenames(args.validation_ld_panel, extension='.zgroup')
                 if len(ld_store_files) < 1:
                     raise FileNotFoundError(f"No valid LD matrix files for the "
                                             f"validation set were found at: {args.ld_dir}")
-                sumstats_files = get_filenames(args.validation_sumstats)
+                sumstats_files = get_filenames(args.validation_sumstats_path)
                 if len(sumstats_files) < 1:
                     raise FileNotFoundError(f"No valid summary statistics files for the validation set "
-                                            f"were found at: {args.sumstats_path}")
+                                            f"were found at: {args.validation_sumstats_path}")
             else:
                 raise ValueError("To perform pseudo-validation, you need to provide either individual-level data "
                                  "or summary statistics for the validation set.")
@@ -227,7 +348,7 @@ def init_data(args, verbose=True):
         else:
 
             # Construct the validation GWADataLoader object using LD + summary statistics:
-            validation_gdl = GWADataLoader(ld_store_files=args.validation_ld_panel_ld_dir,
+            validation_gdl = GWADataLoader(ld_store_files=args.validation_ld_panel,
                                            temp_dir=args.temp_dir,
                                            verbose=verbose,
                                            threads=args.threads)
@@ -245,11 +366,12 @@ def init_data(args, verbose=True):
             validation_gdl.read_summary_statistics(args.validation_sumstats_path,
                                                    sumstats_format=ss_format,
                                                    parser=ss_parser)
-            # Harmonize the data:
-            validation_gdl.harmonize_data()
 
             # Filter SNPs:
             validation_gdl.filter_snps(extract_snps)
+
+            # Harmonize the data:
+            validation_gdl.harmonize_data()
 
             # If overall GWAS sample size is provided, set it here:
             if args.validation_gwas_sample_size is not None:
@@ -289,7 +411,9 @@ def prepare_model(args, verbose=True):
     from viprs.model.VIPRS import VIPRS
     from viprs.model.VIPRSMix import VIPRSMix
 
-    if args.lambda_min == 'infer':
+    if args.lambda_min is None:
+        lambda_min = 0.
+    elif args.lambda_min == 'infer':
         lambda_min = 'infer'
     else:
         lambda_min = float(args.lambda_min)
@@ -378,6 +502,7 @@ def fit_model(model, data_dict, args):
 
     import time
     import numpy as np
+    from viprs.utils.exceptions import OptimizationDivergence
 
     # Set the random seed:
     np.random.seed(args.seed)
@@ -405,15 +530,14 @@ def fit_model(model, data_dict, args):
 
         if args.pi_steps is not None:
             grid.n_snps = data_dict['train'].n_snps
-            grid.generate_pi_grid(n_steps=args.pi_steps)
+            grid.generate_pi_grid(steps=args.pi_steps)
 
         if args.lambda_min_steps is not None:
 
             ld_mat = list(data_dict['train'].ld.values())[0]
-            # Cap it at 5. to avoid over-shrinkage:
-            lambda_min = np.minimum(ld_mat.get_lambda_min(aggregate='min'), 5.)
+            lambda_min = ld_mat.get_lambda_min(aggregate='min')
 
-            grid.generate_lambda_min_grid(n_steps=args.lambda_min_steps, emp_lambda_min=lambda_min)
+            grid.generate_lambda_min_grid(steps=args.lambda_min_steps, emp_lambda_min=lambda_min)
 
         from functools import partial
         model = partial(model.func, **{**model.keywords, 'grid': grid})
@@ -431,7 +555,21 @@ def fit_model(model, data_dict, args):
 
     # Fit the model to data:
     fit_start_time = time.time()
-    m = m.fit(max_iter=args.max_iter)
+    try:
+        m = m.fit(max_iter=args.max_iter)
+    except OptimizationDivergence as e:
+        if m._sigma_g < 0. and np.all(m.lambda_min == 0.):
+            print("> Optimization diverged. Re-trying with setting regularization parameter lambda_min...")
+            for c in m.shapes:
+                m.lambda_min = m.gdl.ld[c].get_lambda_min(min_max_ratio=1e-3)
+            m = m.fit(max_iter=args.max_iter)
+        # If the optimization diverges with multi-threading, try a single thread:
+        elif m.threads > 1:
+            print("> Optimization diverged. Retrying with a single thread...")
+            m.threads = 1
+            m = m.fit(max_iter=args.max_iter)
+        else:
+            raise e
     fit_end_time = time.time()
 
     # ----------------------------------------------------------
@@ -456,7 +594,7 @@ def fit_model(model, data_dict, args):
 
         valid_end_time = time.time()
 
-        result_dict['ProfilerMetrics']['Validation time'] = valid_end_time - valid_start_time
+        result_dict['ProfilerMetrics']['Validation_time'] = valid_end_time - valid_start_time
 
         result_dict['Validation'] = m.to_validation_table()
 
@@ -660,7 +798,7 @@ def main():
     from datetime import timedelta
     import pandas as pd
     import numpy as np
-    from magenpy.utils.system_utils import makedir, get_peak_memory_usage
+    from magenpy.utils.system_utils import makedir
     from joblib import Parallel, delayed
     from joblib.externals.loky import get_reusable_executor
 
@@ -692,13 +830,15 @@ def main():
     # (4) Fit to data:
     print('\n{:-^62}\n'.format('  Inference  '))
 
-    fit_results = Parallel(n_jobs=args.n_jobs)(
-        delayed(fit_model)(model, dl, args)
-        for idx, dl in enumerate(data_loaders)
-    )
+    with PeakMemoryProfiler() as peak_mem:
 
-    # Shut down the parallel executor:
-    get_reusable_executor().shutdown(wait=True)
+        fit_results = Parallel(n_jobs=args.n_jobs)(
+            delayed(fit_model)(model, dl, args)
+            for idx, dl in enumerate(data_loaders)
+        )
+
+        # Shut down the parallel executor:
+        get_reusable_executor().shutdown(wait=True)
 
     # Record end time:
     total_end_time = time.time()
@@ -724,7 +864,7 @@ def main():
                                  for r in fit_results])
         profm_table['Total_WallClockTime'] = round(total_end_time - total_start_time, 2)
         profm_table['DataPrep_Time'] = round(data_prep_time - total_start_time, 2)
-        profm_table['Peak_Memory_MB'] = round(get_peak_memory_usage(include_children=True) or np.nan, 2)
+        profm_table['Peak_Memory_MB'] = round(peak_mem.get_peak_memory(), 2)
 
         output_prefix = osp.join(args.output_dir, args.output_prefix + args.model + '_' + args.hyp_search)
 
