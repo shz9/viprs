@@ -1,6 +1,7 @@
 
 from .VIPRSGrid import VIPRSGrid
 import numpy as np
+import copy
 import logging
 
 
@@ -82,6 +83,17 @@ class VIPRSBMA(VIPRSGrid):
 
             for c in param:
                 param[c] = (param[c][:, models_to_keep]*weights).sum(axis=1)
+
+        # Update the log of the variational tau parameters:
+        for c in self._log_var_tau:
+            self._log_var_tau[c] = np.log(self.var_tau[c])
+
+        # Update the hyperparameters based on the averaged weights
+        # TODO: double check to make sure this makes sense.
+        fix_params_before = copy.deepcopy(self.fix_params)
+        self.fix_params = {}
+        self.m_step()
+        self.fix_params = fix_params_before
 
         # Set the number of models to 1:
         self.n_models = 1

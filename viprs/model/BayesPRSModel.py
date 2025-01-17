@@ -272,7 +272,7 @@ class BayesPRSModel:
         else:
             return pd.concat([tables[c] for c in self.chromosomes])
 
-    def pseudo_validate(self, test_gdl, metric='pearson_correlation'):
+    def pseudo_validate(self, test_gdl, metric='r2'):
         """
         Evaluate the prediction accuracy of the inferred PRS using external GWAS summary statistics.
 

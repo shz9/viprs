@@ -75,32 +75,37 @@ class VIPRSGridSearch(VIPRSGrid):
                 from viprs.eval.continuous_metrics import r2
 
                 prs = self.predict(test_gdl=validation_gdl)
-                prs_r2 = np.array([r2(prs[:, i], validation_gdl.sample_table.phenotype) for i in range(self.n_models)])
+                prs_r2 = np.array([r2(prs[:, i], validation_gdl.sample_table.phenotype)
+                                   for i in range(self.n_models)])
                 prs_r2[~models_converged] = -np.inf
                 self.validation_result['Validation_R2'] = prs_r2
                 best_model_idx = np.argmax(prs_r2)
             elif criterion == 'pseudo_validation':
 
-                pseudo_corr = self.pseudo_validate(validation_gdl, metric='r2')
-                pseudo_corr[~models_converged] = -np.inf
-                self.validation_result['Pseudo_Validation_Corr'] = pseudo_corr
-                best_model_idx = np.argmax(np.nan_to_num(pseudo_corr, nan=-1., neginf=-1., posinf=-1.))
+                pseudo_r2 = self.pseudo_validate(validation_gdl, metric='r2')
+                pseudo_r2[~models_converged] = -np.inf
+                self.validation_result['Pseudo_Validation_R2'] = pseudo_r2
+                best_model_idx = np.argmax(np.nan_to_num(pseudo_r2, nan=0., neginf=0., posinf=0.))
 
         if int(self.verbose) > 1:
             logging.info(f"> Based on the {criterion} criterion, selected model: {best_model_idx}")
             logging.info("> Model details:\n")
             logging.info(self.validation_result.iloc[best_model_idx, :])
 
-        # Update the variational parameters and their dependencies:
+        # -----------------------------------------------------------------------
+        # Update the variational parameters and their dependencies to only select the best model:
         for param in (self.pip, self.post_mean_beta, self.post_var_beta,
                       self.var_gamma, self.var_mu, self.var_tau,
-                      self.eta, self.zeta, self.q):
+                      self.eta, self.zeta, self.q, self._log_var_tau):
 
             for c in param:
                 param[c] = param[c][:, best_model_idx]
 
-        # Update sigma epsilon:
+        # Update sigma_epsilon:
         self.sigma_epsilon = self.sigma_epsilon[best_model_idx]
+
+        # Update sigma_g:
+        self._sigma_g = self._sigma_g[best_model_idx]
 
         # Update sigma beta:
         if isinstance(self.tau_beta, dict):
@@ -119,5 +124,7 @@ class VIPRSGridSearch(VIPRSGrid):
 
         # Set the number of models to 1:
         self.n_models = 1
+
+        # -----------------------------------------------------------------------
 
         return self

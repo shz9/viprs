@@ -288,7 +288,7 @@ def init_data(args, verbose=True):
         ss_parser = None
 
     if verbose:
-        print("> Reading the training dataset...")
+        print(">>> Reading the training dataset...")
 
     # Construct a GWADataLoader object using LD + summary statistics:
     gdl = GWADataLoader(ld_store_files=args.ld_dir,
@@ -327,7 +327,7 @@ def init_data(args, verbose=True):
     if args.hyp_search in ('BO', 'GS'):
 
         if verbose:
-            print("> Reading the validation dataset...")
+            print(">>> Reading the validation dataset...")
 
         extract_snps = np.concatenate(list(gdl.snps.values()))
 
@@ -367,22 +367,21 @@ def init_data(args, verbose=True):
                                                    sumstats_format=ss_format,
                                                    parser=ss_parser)
 
-            # Filter SNPs:
-            validation_gdl.filter_snps(extract_snps)
-
-            # Harmonize the data:
-            validation_gdl.harmonize_data()
-
             # If overall GWAS sample size is provided, set it here:
             if args.validation_gwas_sample_size is not None:
                 for ss in validation_gdl.sumstats_table.values():
                     ss.set_sample_size(args.validation_gwas_sample_size)
 
-            if args.genomewide:
-                data_loaders['All']['valid'] = validation_gdl
-            else:
-                for c, g in validation_gdl.split_by_chromosome().items():
-                    data_loaders[c]['valid'] = g
+        # Filter SNPs:
+        validation_gdl.filter_snps(extract_snps)
+        # Harmonize the data:
+        validation_gdl.harmonize_data()
+
+        if args.genomewide:
+            data_loaders['All']['valid'] = validation_gdl
+        else:
+            for c, g in validation_gdl.split_by_chromosome().items():
+                data_loaders[c]['valid'] = g
 
     return data_loaders.values()
 
@@ -797,10 +796,8 @@ def main():
     import time
     from datetime import timedelta
     import pandas as pd
-    import numpy as np
     from magenpy.utils.system_utils import makedir
     from joblib import Parallel, delayed
-    from joblib.externals.loky import get_reusable_executor
 
     # ----------------------------------------------------------
     # Print the parsed arguments:
@@ -832,13 +829,13 @@ def main():
 
     with PeakMemoryProfiler() as peak_mem:
 
-        fit_results = Parallel(n_jobs=args.n_jobs)(
-            delayed(fit_model)(model, dl, args)
-            for idx, dl in enumerate(data_loaders)
-        )
+        parallel = Parallel(n_jobs=args.n_jobs)
 
-        # Shut down the parallel executor:
-        get_reusable_executor().shutdown(wait=True)
+        with parallel:
+            fit_results = parallel(
+                delayed(fit_model)(model, dl, args)
+                for idx, dl in enumerate(data_loaders)
+            )
 
     # Record end time:
     total_end_time = time.time()

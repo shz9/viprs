@@ -799,6 +799,7 @@ class VIPRS(BayesPRSModel):
         """
 
         theta_table = [
+            {'Parameter': 'ELBO', 'Value': self.elbo()},
             {'Parameter': 'Residual_variance', 'Value': self.sigma_epsilon},
             {'Parameter': 'Heritability', 'Value': self.get_heritability()},
             {'Parameter': 'Proportion_causal', 'Value': self.get_proportion_causal()},

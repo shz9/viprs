@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import psutil
 
 
@@ -137,3 +138,32 @@ def expand_column_names(c_name, shape, sep='_'):
         return [c_name]
     else:
         return [f'{c_name}{sep}{i}' for i in range(shape[1])]
+
+
+def combine_coefficient_tables(coef_tables, coef_col='BETA'):
+    """
+    Combine a list of coefficient tables (output from a PRS model) into a single
+    table that can be used for downstream tasks, such scoring and evaluation. Note that
+    this implementation assumes that the coefficients tables were generated for the same
+    set of variants, from a grid-search or similar procedure.
+
+    :param coef_tables: A list of pandas dataframes containing variant information as well as
+    inferred coefficients.
+    :param coef_col: The name of the column containing the coefficients.
+    :return: A single pandas dataframe with the combined coefficients. The new coefficient columns will be
+    labelled as BETA_0, BETA_1, etc.
+    """
+
+    # Sanity checks:
+    assert all([coef_col in t.columns for t in coef_tables]), "All tables must contain the coefficient column."
+    assert all([len(t) == len(coef_tables[0]) for t in coef_tables]), "All tables must have the same number of rows."
+
+    if len(coef_tables) == 1:
+        return coef_tables[0]
+
+    ref_table = coef_tables[0].copy()
+    ref_table.rename(columns={coef_col: f'{coef_col}_0'}, inplace=True)
+
+    # Extract the coefficients from the other tables:
+    return pd.concat([ref_table, *[t[[coef_col]].rename(columns={coef_col: f'{coef_col}_{i}'})
+                                   for i, t in enumerate(coef_tables[1:], 1)]], axis=1)
