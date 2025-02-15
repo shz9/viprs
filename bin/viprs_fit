@@ -593,7 +593,7 @@ def fit_model(model, data_dict, args):
 
         valid_end_time = time.time()
 
-        result_dict['ProfilerMetrics']['Validation_time'] = valid_end_time - valid_start_time
+        result_dict['ProfilerMetrics']['Validation_time'] = round(valid_end_time - valid_start_time, 2)
 
         result_dict['Validation'] = m.to_validation_table()
 

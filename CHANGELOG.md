@@ -15,6 +15,8 @@ and the hyperparameters objects after selecting best models or performing model 
 - Updated interfaces in `HyperparameterSearch` script to make it more flexible and efficient. Primarily, 
 I added shared memory object for the LD matrix to avoid redundant memory usage when fitting multiple
 models in parallel. (** WORK IN PROGRESS **).
+- Updated implementation of `pseudo_r2` to use square of pseudo correlation coefficient instead. The previous 
+implementation can be problematic with highly sparsified LD matrices.
 
 ### Added
 

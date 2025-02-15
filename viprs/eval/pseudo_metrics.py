@@ -88,12 +88,17 @@ def pseudo_r2(test_gdl, prs_beta_table):
     the columns: CHR, SNP, A1, A2, BETA.
     """
 
-    std_beta, prs_beta, q = _match_variant_stats(test_gdl, prs_beta_table)
+    # std_beta, prs_beta, q = _match_variant_stats(test_gdl, prs_beta_table)
 
-    rb = np.sum((prs_beta.T * std_beta).T, axis=0)
-    bsb = np.sum(prs_beta*q, axis=0)
+    # rb = np.sum((prs_beta.T * std_beta).T, axis=0)
+    # bsb = np.sum(prs_beta*q, axis=0)
 
-    return 2*rb - bsb
+    # return 2*rb - bsb
+
+    # NOTE: The above procedure can be biased/problematic when the LD matrix is highly
+    # sparsified. For now, we will use the squared Pearson correlation as a proxy for the R^2 metric:
+
+    return pseudo_pearson_r(test_gdl, prs_beta_table)**2
 
 
 def pseudo_pearson_r(test_gdl, prs_beta_table):

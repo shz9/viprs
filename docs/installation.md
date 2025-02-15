@@ -63,7 +63,7 @@ it is recommended that you install the package in a virtual environment. Here's 
 example of how to install `viprs` on a SLURM-based cluster:
 
 ```bash
-module load python/3.8
+module load python/3.11
 python3 -m venv viprs_env  # Assumes venv is available
 source viprs_env/bin/activate
 python -m pip install --upgrade pip
