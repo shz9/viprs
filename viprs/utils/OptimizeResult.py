@@ -1,4 +1,39 @@
 
+class IterationConditionCounter(object):
+    """
+    A class to keep track of the number of (consecutive) iterations that a condition has been met.
+
+    :ivar _counter: The number of consecutive iterations that the condition has been met.
+    :ivar _nit: The current iteration number.
+    """
+
+    def __init__(self):
+        """
+        Initialize the counter.
+        """
+        self._counter = 0
+        self._nit = 0
+
+    @property
+    def counter(self):
+        """
+        :return: The number of consecutive iterations that the condition has been met.
+        """
+        return self._counter
+
+    def update(self, condition, iteration):
+        """
+        Update the counter based on the condition.
+        :param condition: The condition to check
+        :param iteration: The current iteration
+        """
+        if condition and (iteration == self._nit + 1):
+            self._counter += 1
+        else:
+            self._counter = 0
+
+        self._nit = iteration
+
 
 class OptimizeResult(object):
     """

@@ -7,6 +7,17 @@
 # $ source tests/conda_manual_testing.sh
 
 # ==============================================================================
+
+if [[ -t 1 ]]; then
+  set -e  # Enable exit on error, only in non-interactive sessions
+fi
+
+# Activate the base conda environment
+source activate base
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+echo "Running tests from: $SCRIPT_DIR"
+
 # Define Python versions (add more here if needed)
 python_versions=("3.8" "3.9" "3.10" "3.11" "3.12")
 
@@ -27,9 +38,9 @@ do
     # Check python version:
     python --version
 
-    # Install magenpy
+    # Install viprs
     make clean
-    python -m pip install -v -e .[test]
+    python -m pip install -e .[test]
 
     # List the installed packages:
     python -m pip list
@@ -37,10 +48,8 @@ do
     # Run pytest
     python -m pytest -v
 
-    # Check the installed scripts
-    viprs_fit -h
-    viprs_score -h
-    viprs_evaluate -h
+    # Test the CLI scripts:
+    bash "$SCRIPT_DIR/test_cli.sh"
 
     # Deactivate the conda environment
     conda deactivate

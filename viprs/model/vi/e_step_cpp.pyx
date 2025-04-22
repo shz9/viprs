@@ -23,11 +23,10 @@ cdef extern from "e_step.hpp" nogil:
                          T* q,
                          T* eta_diff,
                          T* u_logs,
-                         T* half_var_tau,
+                         T* sqrt_half_var_tau,
                          T* mu_mult,
                          T dq_scale,
                          int threads,
-                         bint use_blas,
                          bint low_memory) noexcept nogil
 
     void e_step_mixture[T, U, I](int c_size,
@@ -43,11 +42,10 @@ cdef extern from "e_step.hpp" nogil:
                                  T* eta_diff,
                                  T* log_null_pi,
                                  T* u_logs,
-                                 T* half_var_tau,
+                                 T* sqrt_half_var_tau,
                                  T* mu_mult,
                                  T dq_scale,
                                  int threads,
-                                 bint use_blas,
                                  bint low_memory) noexcept nogil
 
     void e_step_grid[T, U, I](int c_size,
@@ -67,7 +65,6 @@ cdef extern from "e_step.hpp" nogil:
                            T* mu_mult,
                            T dq_scale,
                            int threads,
-                           bint use_blas,
                            bint low_memory) noexcept nogil
 
 
@@ -101,11 +98,10 @@ cpdef void cpp_e_step(int[::1] ld_left_bound,
                       floating[::1] q,
                       floating[::1] eta_diff,
                       floating[::1] u_logs,
-                      floating[::1] half_var_tau,
+                      floating[::1] sqrt_half_var_tau,
                       floating[::1] mu_mult,
                       floating dq_scale,
                       int threads,
-                      bint use_blas,
                       bint low_memory) noexcept nogil:
 
     e_step(var_mu.shape[0],
@@ -119,11 +115,10 @@ cpdef void cpp_e_step(int[::1] ld_left_bound,
            &q[0],
            &eta_diff[0],
            &u_logs[0],
-           &half_var_tau[0],
+           &sqrt_half_var_tau[0],
            &mu_mult[0],
            dq_scale,
            threads,
-           use_blas,
            low_memory)
 
 
@@ -138,11 +133,10 @@ cpdef void cpp_e_step_mixture(int[::1] ld_left_bound,
                               floating[::1] eta_diff,
                               floating[::1] log_null_pi,
                               floating[:, ::1] u_logs,
-                              floating[:, ::1] half_var_tau,
+                              floating[:, ::1] sqrt_half_var_tau,
                               floating[:, ::1] mu_mult,
                               floating dq_scale,
                               int threads,
-                              bint use_blas,
                               bint low_memory) noexcept nogil:
 
     e_step_mixture(var_mu.shape[0],
@@ -158,11 +152,10 @@ cpdef void cpp_e_step_mixture(int[::1] ld_left_bound,
                    &eta_diff[0],
                    &log_null_pi[0],
                    &u_logs[0, 0],
-                   &half_var_tau[0, 0],
+                   &sqrt_half_var_tau[0, 0],
                    &mu_mult[0, 0],
                    dq_scale,
                    threads,
-                   use_blas,
                    low_memory)
 
 cpdef void cpp_e_step_grid(int[::1] ld_left_bound,
@@ -180,7 +173,6 @@ cpdef void cpp_e_step_grid(int[::1] ld_left_bound,
                            floating dq_scale,
                            int[:] active_model_idx,
                            int threads,
-                           bint use_blas,
                            bint low_memory) noexcept nogil:
 
     e_step_grid(var_mu.shape[0],
@@ -200,5 +192,4 @@ cpdef void cpp_e_step_grid(int[::1] ld_left_bound,
                 &mu_mult[0, 0],
                 dq_scale,
                 threads,
-                use_blas,
                 low_memory)

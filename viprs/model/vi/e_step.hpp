@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <stdio.h>
 #include <iostream>
+#include <limits>
 #include <type_traits>
 
 // Check for and include `cblas`:
@@ -19,7 +20,7 @@
 #endif
 
 
-/* ----------------------------- */
+/* ------------------------------------------------------------------------ */
 // Helper system-related functions to check for BLAS and OpenMP support
 
 bool omp_supported() {
@@ -69,14 +70,14 @@ c_max(T* x, int size) {
     return current_max;
 }
 
-/* ------------------------------ */
+/* ------------------------------------------------------------------------ */
 // Dot product functions
 
 // Define a function pointer for the dot product functions `dot` and `blas_dot`:
 template <typename T, typename U>
 using dot_func_pt = typename std::enable_if<std::is_floating_point<T>::value && std::is_arithmetic<U>::value, T>::type (*)(T*, U*, int);
 
-/* * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 template <typename T, typename U>
 typename std::enable_if<std::is_floating_point<T>::value && std::is_arithmetic<U>::value, T>::type
@@ -97,12 +98,12 @@ dot(T* x, U* y, int size) {
         #endif
     #endif
     for (int i = 0; i < size; ++i) {
-        s += x[i]*static_cast<T>(y[i]);
+        s = std::fma(static_cast<T>(y[i]), x[i], s);
     }
     return s;
 }
 
-/* * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 template <typename T, typename U>
 typename std::enable_if<std::is_floating_point<T>::value && std::is_arithmetic<U>::value, T>::type
@@ -145,13 +146,13 @@ blas_dot(T* x, U* y, int size) {
     #endif
 }
 
-/* * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 // Define a function pointer for the axpy functions `axpy` and `blas_axpy`:
 template <typename T, typename U>
 using axpy_func_pt = typename std::enable_if<std::is_floating_point<T>::value && std::is_arithmetic<U>::value, void>::type (*)(T*, U*, T, int);
 
-/* * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 template <typename T, typename U>
 typename std::enable_if<std::is_floating_point<T>::value && std::is_arithmetic<U>::value, void>::type
@@ -169,11 +170,11 @@ axpy(T* x, U* y, T alpha, int size) {
         #endif
     #endif
     for (int i = 0; i < size; ++i) {
-        x[i] += static_cast<T>(y[i]) * alpha;
+        x[i] = std::fma(static_cast<T>(y[i]), alpha, x[i]);
     }
 }
 
-/* * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 template <typename T, typename U>
 typename std::enable_if<std::is_floating_point<T>::value && std::is_arithmetic<U>::value, void>::type
@@ -215,7 +216,7 @@ blas_axpy(T *y, U *x, T alpha, int size) {
     #endif
 }
 
-/* ------------------------------ */
+/* ------------------------------------------------------------------------ */
 // Numerically stable softmax and sigmoid functions
 
 template <typename T>
@@ -230,7 +231,7 @@ softmax(T* logits, T* output, int size) {
     T s = 0., max_val = c_max(logits, size);
 
     for (int i = 0; i < size; ++i) {
-        logits[i] = exp(logits[i] - max_val);
+        logits[i] = std::exp(logits[i] - max_val);
         s += logits[i];
     }
 
@@ -238,6 +239,8 @@ softmax(T* logits, T* output, int size) {
         output[i] = logits[i] / s;
     }
 }
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 template <typename T>
 typename std::enable_if<std::is_floating_point<T>::value, T>::type
@@ -249,11 +252,11 @@ sigmoid(T x) {
     */
 
     if (x < 0) {
-        T exp_x = exp(x);
+        T exp_x = std::exp(x);
         return exp_x / (1. + exp_x);
     }
     else {
-        return 1. / (1. + exp(-x));
+        return 1. / (1. + std::exp(-x));
     }
 }
 
@@ -271,7 +274,6 @@ update_q_factor_matrix(int c_size,
                         T* eta,
                         T* q,
                         T dq_scale,
-                        bool use_blas,
                         int threads) {
     /*
         Compute or update q factor, defined as the result of a dot product between the
@@ -286,9 +288,6 @@ update_q_factor_matrix(int c_size,
 
     I ld_start, ld_end, mat_idx;
 
-    // Determine the dot function depending on whether we are using BLAS or not:
-    dot_func_pt<T, U> dot_func = use_blas ? blas_dot<T, U> : dot<T, U>;
-
     #ifdef _OPENMP
         #pragma omp parallel for private(ld_start, ld_end, mat_idx) schedule(static) num_threads(threads)
     #endif
@@ -298,10 +297,12 @@ update_q_factor_matrix(int c_size,
 
         for (int m=0; m < n_active_models; ++m){
             mat_idx = active_model_idx[m]*c_size; // Assumes column-major matrices.
-            q[mat_idx + j] += dq_scale*dot_func(eta + (mat_idx + ld_left_bound[j]), ld_data + ld_start, ld_end - ld_start);
+            q[mat_idx + j] += dq_scale*blas_dot(eta + (mat_idx + ld_left_bound[j]), ld_data + ld_start, ld_end - ld_start);
         }
     }
 }
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 template <typename T, typename U, typename I>
 typename std::enable_if<std::is_floating_point<T>::value && std::is_arithmetic<U>::value && std::is_integral<I>::value, void>::type
@@ -312,7 +313,6 @@ update_q_factor(int c_size,
                  T* eta,
                  T* q,
                  T dq_scale,
-                 bool use_blas,
                  int threads) {
     /*
         Compute or update q factor, defined as the result of a dot product between the
@@ -325,9 +325,6 @@ update_q_factor(int c_size,
 
     I ld_start, ld_end;
 
-    // Determine the dot function depending on whether we are using BLAS or not:
-    dot_func_pt<T, U> dot_func = use_blas ? blas_dot<T, U> : dot<T, U>;
-
     #ifdef _OPENMP
         #pragma omp parallel for private(ld_start, ld_end) schedule(static) num_threads(threads)
     #endif
@@ -336,7 +333,7 @@ update_q_factor(int c_size,
         ld_start = ld_indptr[j];
         ld_end = ld_indptr[j + 1];
 
-        q[j] += dq_scale*dot_func(eta + ld_left_bound[j], ld_data + ld_start, ld_end - ld_start);
+        q[j] += dq_scale*blas_dot(eta + ld_left_bound[j], ld_data + ld_start, ld_end - ld_start);
     }
 }
 
@@ -356,11 +353,10 @@ e_step(int c_size,
         T* q,
         T* eta_diff,
         T* u_logs,
-        T* half_var_tau,
+        T* sqrt_half_var_tau,
         T* mu_mult,
         T dq_scale,
         int threads,
-        bool use_blas,
         bool low_memory) {
 
     /*
@@ -379,13 +375,14 @@ e_step(int c_size,
 
     int start, end;
     I ld_start, ld_end;
-    T u_j;
+    T u_j, mu_j, gamma_j, eta_diff_j;
 
-    // Determine the axpy function depending on whether we are using BLAS or not:
-    axpy_func_pt<T, U> axpy_func = use_blas ? blas_axpy<T, U> : axpy<T, U>;
+    // Obtain the machine precision for the data type T:
+    // TODO: Allow the user to set this value by passing an argument.
+    T machine_precision = std::max(std::numeric_limits<T>::epsilon(), static_cast<T>(1e-8));
 
     #ifdef _OPENMP
-        #pragma omp parallel for private(start, end, ld_start, ld_end, u_j) schedule(static) num_threads(threads)
+        #pragma omp parallel for private(start, end, ld_start, ld_end, u_j, mu_j, gamma_j, eta_diff_j) schedule(static) num_threads(threads)
     #endif
     for (int j = 0; j < c_size; ++j) {
 
@@ -394,39 +391,58 @@ e_step(int c_size,
         start = ld_left_bound[j];
         end = start + (ld_end - ld_start);
 
-        /* Update the posterior mean for variant j */
-        var_mu[j] = mu_mult[j] * (std_beta[j] - q[j]);
+        /*
+            Compute the posterior Gaussian mean for variant j
+            This operation uses fused multiply-add to avoid numerical instability.
+            The formula is:
+            mu_j = mu_mult[j] * (std_beta[j] - q[j])
+        */
 
-        /* Update the posterior inclusion probability for variant j */
-        u_j = u_logs[j] + half_var_tau[j] * var_mu[j] * var_mu[j];
-        var_gamma[j] = sigmoid(u_j);
+        mu_j = std::fma(mu_mult[j], std_beta[j], -mu_mult[j] * q[j]);
+
+        /* Compute the the posterior inclusion probability for variant j */
+        u_j = sqrt_half_var_tau[j] * mu_j;
+        gamma_j = sigmoid(std::fma(u_j, u_j, u_logs[j]));
 
         /* Update eta_diff for variant j */
-        eta_diff[j] = var_gamma[j] * var_mu[j] - eta[j];
+        eta_diff_j = std::fma(gamma_j, mu_j, -eta[j]);
 
-        /* Update the q-factors for variants that are in LD with variant j */
-        axpy_func(q + start, ld_data + ld_start, dq_scale*eta_diff[j], end - start);
-
-        if (!low_memory) {
-            /* If the matrix is symmetric, updating q in the previous step would also
-            update the q-factor for the focal variant (j). So, we need to correct for
-            this here. */
-            q[j] = q[j] - eta_diff[j];
+        if (std::abs(eta_diff_j) < machine_precision) {
+            /* If the eta_diff is less than machine precision, set it to zero and continue */
+            eta_diff[j] = 0.;
         }
+        else{
 
-        /* Update eta (posterior mean) for variant j */
-        eta[j] = eta[j] + eta_diff[j];
+            var_mu[j] = mu_j;
+            var_gamma[j] = gamma_j;
+            eta_diff[j] = eta_diff_j;
+
+            /* Update the q-factors for variants that are in LD with variant j */
+            blas_axpy(q + start, ld_data + ld_start, dq_scale*eta_diff_j, end - start);
+
+            if (!low_memory) {
+                /* If the matrix is symmetric, updating q in the previous step would also
+                update the q-factor for the focal variant (j). So, we need to correct for
+                this here. */
+                q[j] -= eta_diff_j;
+            }
+
+            /* Update eta (posterior mean) for variant j */
+            eta[j] += eta_diff_j;
+        }
     }
 
     if (low_memory) {
         /* If the LD matrix used in the above operations is upper-triangular, then we would not
            have updated the q-factors of variants based on the new etas for variants that come after them
            in the dataset. So, we need to correct for that here: */
-        update_q_factor(c_size, ld_left_bound, ld_indptr, ld_data, eta_diff, q, dq_scale, use_blas, threads);
+        update_q_factor(c_size, ld_left_bound, ld_indptr, ld_data, eta_diff, q, dq_scale, threads);
     }
 
 }
 
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 template <typename T, typename U, typename I>
 typename std::enable_if<std::is_floating_point<T>::value && std::is_arithmetic<U>::value && std::is_integral<I>::value, void>::type
@@ -443,11 +459,10 @@ e_step_mixture(int c_size,
                 T* eta_diff,
                 T* log_null_pi,
                 T* u_logs,
-                T* half_var_tau,
+                T* sqrt_half_var_tau,
                 T* mu_mult,
                 T dq_scale,
                 int threads,
-                bool use_blas,
                 bool low_memory) {
 
     /*
@@ -464,9 +479,6 @@ e_step_mixture(int c_size,
         defined as the difference between the current value of eta and the updated value of eta.
     */
 
-    // Determine the axpy function depending on whether we are using BLAS or not:
-    axpy_func_pt<T, U> axpy_func = use_blas ? blas_axpy<T, U> : axpy<T, U>;
-
     /* Delineate the parallel region: */
     #ifdef _OPENMP
         #pragma omp parallel num_threads(threads)
@@ -475,7 +487,7 @@ e_step_mixture(int c_size,
         // Declare variables that are private to each thread:
         int start, end, mat_idx;
         I ld_start, ld_end;
-        T mu_beta_j;
+        T mu_beta_j, mu_tau_j;
         T* u_j = new T[K + 1];
 
         #ifdef _OPENMP
@@ -495,7 +507,8 @@ e_step_mixture(int c_size,
             for (int k = 0; k < K; ++k) {
                 mat_idx = j*K + k; // Assumes C-order matrices.
                 var_mu[mat_idx] = mu_mult[mat_idx] * mu_beta_j;
-                u_j[k] = u_logs[mat_idx] + half_var_tau[mat_idx] * var_mu[mat_idx] * var_mu[mat_idx];
+                mu_tau_j = sqrt_half_var_tau[mat_idx] * var_mu[mat_idx];
+                u_j[k] = std::fma(mu_tau_j, mu_tau_j, u_logs[mat_idx]);
             }
 
             /* Compute the posterior inclusion probability by applying softmax over the logits (u_j) */
@@ -507,11 +520,11 @@ e_step_mixture(int c_size,
 
             for (int k = 0; k < K; ++k) {
                 mat_idx = j*K + k; // Assumes C-order matrices.
-                eta_diff[j] += var_gamma[mat_idx] * var_mu[mat_idx];
+                eta_diff[j] = std::fma(var_gamma[mat_idx], var_mu[mat_idx], eta_diff[j]);
             }
 
             /* Update the q-factors for variants that are in LD with variant j */
-            axpy_func(q + start, ld_data + ld_start, dq_scale*eta_diff[j], end - start);
+            blas_axpy(q + start, ld_data + ld_start, dq_scale*eta_diff[j], end - start);
 
             if (!low_memory) {
                 /* If the matrix is symmetric, updating q in the previous step would also
@@ -532,10 +545,12 @@ e_step_mixture(int c_size,
             have updated the q-factors of variants based on the new etas for variants that come after them
             in the dataset. So, we need to correct for that here:
         */
-        update_q_factor(c_size, ld_left_bound, ld_indptr, ld_data, eta_diff, q, dq_scale, use_blas, threads);
+        update_q_factor(c_size, ld_left_bound, ld_indptr, ld_data, eta_diff, q, dq_scale, threads);
     }
 
 }
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 template <typename T, typename U, typename I>
 typename std::enable_if<std::is_floating_point<T>::value && std::is_arithmetic<U>::value && std::is_integral<I>::value, void>::type
@@ -556,7 +571,6 @@ e_step_grid(int c_size,
              T* mu_mult,
              T dq_scale,
              int threads,
-             bool use_blas,
              bool low_memory) {
      /*
         Perform the E-Step of the coordinate-ascent variational inference (CAVI) algorithm for the
@@ -578,9 +592,6 @@ e_step_grid(int c_size,
     int start, end, mat_idx, model_idx;
     I ld_start, ld_end;
     T u_j;
-
-    // Determine the axpy function depending on whether we are using BLAS or not:
-    axpy_func_pt<T, U> axpy_func = use_blas ? blas_axpy<T, U> : axpy<T, U>;
 
     #ifdef _OPENMP
         #pragma omp parallel for private(start, end, ld_start, ld_end, mat_idx, model_idx, u_j) schedule(static) num_threads(threads)
@@ -609,7 +620,7 @@ e_step_grid(int c_size,
             eta_diff[mat_idx] = var_gamma[mat_idx] * var_mu[mat_idx] - eta[mat_idx];
 
             /* Update the q-factors for variants that are in LD with variant j */
-            axpy_func(q + (model_idx*c_size + start), ld_data + ld_start, dq_scale*eta_diff[mat_idx], end - start);
+            blas_axpy(q + (model_idx*c_size + start), ld_data + ld_start, dq_scale*eta_diff[mat_idx], end - start);
 
             if (!low_memory) {
                 /* If the matrix is symmetric, updating q in the previous step would also
@@ -630,7 +641,7 @@ e_step_grid(int c_size,
         */
         update_q_factor_matrix(c_size, n_active_models, active_model_idx,
                                ld_left_bound, ld_indptr, ld_data, eta_diff,
-                               q, dq_scale, use_blas, threads);
+                               q, dq_scale, threads);
     }
 
 }

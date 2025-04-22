@@ -29,127 +29,11 @@ Usage:
 """
 
 import os.path as osp
-import psutil
-import threading
 import time
 
-
-class PeakMemoryProfiler:
-    """
-    A context manager that monitors and tracks the peak memory usage of a process
-    (and optionally its children) over a period of time. The memory usage can be
-    reported in various units (bytes, MB, or GB).
-
-    Example:
-
-    ```
-    with PeakMemoryProfiler() as profiler:
-        # Code block to monitor memory usage
-        ...
-    ```
-
-    Class Attributes:
-    :ivar pid: The PID of the process being monitored. Defaults to the current process.
-    :ivar interval: Time interval (in seconds) between memory checks. Defaults to 0.1.
-    :ivar include_children: Whether memory usage from child processes is included. Defaults to True.
-    :ivar unit: The unit used to report memory usage (either 'bytes', 'MB', or 'GB'). Defaults to 'MB'.
-    :ivar max_memory: The peak memory usage observed during the monitoring period.
-    :ivar monitoring_thread: Thread used for monitoring memory usage.
-    :ivar _stop_monitoring: Event used to signal when to stop monitoring.
-    """
-
-    def __init__(self, pid=None, interval=0.1, include_children=True, unit="MB"):
-        """
-        Initializes the PeakMemoryProfiler instance with the provided parameters.
-
-        :param pid: The PID of the process to monitor. Defaults to None (current process).
-        :param interval: The interval (in seconds) between memory checks. Defaults to 0.1.
-        :param include_children: Whether to include memory usage from child processes. Defaults to True.
-        :param unit: The unit in which to report memory usage. Options are 'bytes', 'MB', or 'GB'. Defaults to 'MB'.
-        """
-        self.pid = pid or psutil.Process().pid  # Default to current process if no PID is provided
-        self.interval = interval
-        self.include_children = include_children
-        self.unit = unit
-        self.max_memory = 0
-        self.monitoring_thread = None
-        self._stop_monitoring = threading.Event()
-
-    def __enter__(self):
-        """
-        Starts monitoring memory usage when entering the context block.
-
-        :return: Returns the instance of PeakMemoryProfiler, so that we can access peak memory later.
-        """
-        self.process = psutil.Process(self.pid)
-        self.max_memory = 0
-        self._stop_monitoring.clear()  # Clear the stop flag to begin monitoring
-        self.monitoring_thread = threading.Thread(target=self._monitor_memory)
-        self.monitoring_thread.start()
-        return self  # Return the instance so that the caller can access max_memory
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        """
-        Stops the memory monitoring when exiting the context block.
-
-        :param exc_type: The exception type if an exception was raised in the block.
-        :param exc_value: The exception instance if an exception was raised.
-        :param traceback: The traceback object if an exception was raised.
-        """
-        self._stop_monitoring.set()  # Signal the thread to stop monitoring
-        self.monitoring_thread.join()  # Wait for the monitoring thread to finish
-
-    def get_curr_memory(self):
-        """
-        Get the current memory usage of the monitored process and its children.
-
-        :return: The current memory usage in the specified unit (bytes, MB, or GB).
-        :rtype: float
-        """
-
-        memory = self.process.memory_info().rss
-
-        if self.include_children:
-            # Include memory usage of child processes recursively
-            for child in self.process.children(recursive=True):
-                try:
-                    memory += child.memory_info().rss
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-
-        if self.unit == "MB":
-            return memory / (1024 ** 2)  # Convert to MB
-        elif self.unit == "GB":
-            return memory / (1024 ** 3)  # Convert to GB
-        else:
-            return memory  # Return in bytes if no conversion is requested
-
-    def _monitor_memory(self):
-        """
-        Monitors the memory usage of the process and its children continuously
-        until the monitoring is stopped.
-
-        This method runs in a separate thread and updates the peak memory usage
-        as long as the monitoring flag is not set.
-        """
-        while not self._stop_monitoring.is_set():
-            try:
-                curr_memory = self.get_curr_memory()
-
-                # Update max memory if a new peak is found
-                self.max_memory = max(self.max_memory, curr_memory)
-                time.sleep(self.interval)
-            except psutil.NoSuchProcess:
-                break  # Process no longer exists, stop monitoring
-
-    def get_peak_memory(self):
-        """
-        Get the peak memory usage observed during the monitoring period.
-
-        :return: The peak memory usage in the specified unit (bytes, MB, or GB).
-        :rtype: float
-        """
-        return self.max_memory
+# Setup the logger:
+import logging
+logger = logging.getLogger(__name__)
 
 
 def check_args(args):
@@ -193,14 +77,14 @@ def check_args(args):
             try:
                 lm_min = float(args.lambda_min)
                 if lm_min < 0.:
-                    raise ValueError
+                    raise ValueError("The lambda_min parameter must be a non-negative number.")
             except ValueError:
                 "The lambda_min parameter must be set to 'infer' or non-negative number."
 
     # Check the arguments for validation/pseudo validation when performing
     # grid search or Bayesian optimization for hyperparameter tuning:
 
-    if args.hyp_search in ('BO', 'GS'):
+    if args.hyp_search in ('GS',):
 
         # If the grid metric is validation/pseudo-validation, and genotype/phenotype files
         # are provided, then ensure that the files exist:
@@ -241,8 +125,9 @@ def check_args(args):
                     raise FileNotFoundError(f"No valid summary statistics files for the validation set "
                                             f"were found at: {args.validation_sumstats_path}")
             else:
-                raise ValueError("To perform pseudo-validation, you need to provide either individual-level data "
-                                 "or summary statistics for the validation set.")
+                logger.info("\n> Performing pseudo-validation without external GWAS summary statistics."
+                            "\nWill automatically split the training data into "
+                            f"training and validation sets (training proportion: {args.prop_train}).")
 
     if args.hyp_search in ('GS', 'BMA'):
         # If the hyperparameter strategy is grid search or Bayesian model averaging,
@@ -252,10 +137,11 @@ def check_args(args):
                 args.sigma_epsilon_grid is None, args.sigma_epsilon_steps is None]):
             raise ValueError("For grid search (GS) or Bayesian model averaging (BMA), you need to "
                              "provide either a grid or the number of steps for the hyperparameter "
-                             "search over the hyperparameters of interest.")
+                             "search over the hyperparameters of interest. See --pi-grid, --pi-steps, "
+                             "--sigma-epsilon-grid, and --sigma-epsilon-steps.")
 
 
-def init_data(args, verbose=True):
+def init_data(args):
     """
     Initialize the data loaders and parsers for the GWAS summary statistics.
     This function takes as input an argparse.Namespace object (the output of
@@ -263,7 +149,6 @@ def init_data(args, verbose=True):
     containing the GWADataLoaders for the training (and validation) datasets.
 
     :param args: An argparse.Namespace object containing the parsed commandline arguments.
-    :param verbose: Whether to print status messages to the console.
     :return: A list of dictionaries containing the GWADataLoaders for the training (and validation) datasets.
     Each dictionary contains the following keys:
     - 'train': The GWADataLoader for the training dataset
@@ -274,8 +159,7 @@ def init_data(args, verbose=True):
     from magenpy.GWADataLoader import GWADataLoader
     from magenpy.parsers.sumstats_parsers import SumstatsParser
 
-    if verbose:
-        print('\n{:-^62}\n'.format('  Reading & harmonizing input data  '))
+    logger.info('\n{:-^100}\n'.format('  Reading & harmonizing input data  '))
 
     # Prepare the summary statistics parsers:
     if args.sumstats_format == 'custom':
@@ -287,18 +171,16 @@ def init_data(args, verbose=True):
         ss_format = args.sumstats_format
         ss_parser = None
 
-    if verbose:
-        print(">>> Reading the training dataset...")
+    logger.info(">>> Reading the training dataset...")
 
     # Construct a GWADataLoader object using LD + summary statistics:
     gdl = GWADataLoader(ld_store_files=args.ld_dir,
                         temp_dir=args.temp_dir,
-                        verbose=verbose,
                         threads=args.threads)
 
     # Unless the user explicitly decides to keep them, filter long-range LD regions:
     if args.exclude_lrld:
-        print("> Filtering long-range LD regions...")
+        logger.info("> Filtering long-range LD regions...")
         for ld in gdl.ld.values():
             ld.filter_long_range_ld_regions()
 
@@ -323,11 +205,13 @@ def init_data(args, verbose=True):
         data_loaders = {c: {'train': g} for c, g in gdl.split_by_chromosome().items()}
 
     # ----------------------------------------------------------
+    # If the user provides validation data, extract this data and harmonize it with the
+    # training data:
 
-    if args.hyp_search in ('BO', 'GS'):
+    if args.hyp_search in ('GS', ) and (args.validation_bed is not None or
+                                        args.validation_ld_panel is not None):
 
-        if verbose:
-            print(">>> Reading the validation dataset...")
+        logger.info(">>> Reading the validation dataset...")
 
         extract_snps = np.concatenate(list(gdl.snps.values()))
 
@@ -350,7 +234,6 @@ def init_data(args, verbose=True):
             # Construct the validation GWADataLoader object using LD + summary statistics:
             validation_gdl = GWADataLoader(ld_store_files=args.validation_ld_panel,
                                            temp_dir=args.temp_dir,
-                                           verbose=verbose,
                                            threads=args.threads)
 
             # Prepare the validation summary statistics parsers:
@@ -386,29 +269,27 @@ def init_data(args, verbose=True):
     return data_loaders.values()
 
 
-def prepare_model(args, verbose=True):
+def prepare_model(args):
     """
     Prepare the model object for fitting to the GWAS summary statistics.
 
     :param args: An argparse.Namespace object containing the parsed commandline arguments.
-    :param verbose: Whether to print status messages to the console.
     :return: A partial function object for the model to fit to the GWAS data.
 
     """
 
-    if verbose:
-        print('\n{:-^62}\n'.format('  Model details  '))
+    # Print information about the model details:
+    logger.info('\n{:-^100}\n'.format('  Model details  '))
 
-        print("- Model:", args.model)
-        hyp_map = {'GS': 'Grid search', 'BO': 'Bayesian optimization',
-                   'BMA': 'Bayesian model averaging', 'EM': 'Expectation maximization'}
-        print("- Hyperparameter tuning strategy:", hyp_map[args.hyp_search])
-        if args.hyp_search in ('BO', 'GS'):
-            print("- Model selection criterion:", args.grid_metric)
+    logger.info(f"- Model:{args.model}")
+    hyp_map = {'GS': 'Grid search', 'BO': 'Bayesian optimization',
+               'BMA': 'Bayesian model averaging', 'EM': 'Expectation maximization'}
+    logger.info(f"- Hyperparameter tuning strategy: {hyp_map[args.hyp_search]}")
+    if args.hyp_search in ('GS', ):
+        logger.info(f"- Model selection criterion: {args.grid_metric}")
 
     from functools import partial
-    from viprs.model.VIPRS import VIPRS
-    from viprs.model.VIPRSMix import VIPRSMix
+    from viprs.model import VIPRS, VIPRSMix
 
     if args.lambda_min is None:
         lambda_min = 0.
@@ -446,9 +327,8 @@ def prepare_model(args, verbose=True):
 
     elif args.hyp_search in ('BMA', 'GS'):
 
-        from viprs.model.gridsearch.HyperparameterGrid import HyperparameterGrid
-        from viprs.model.gridsearch.VIPRSGridSearch import VIPRSGridSearch
-        from viprs.model.gridsearch.VIPRSBMA import VIPRSBMA
+        from viprs.model.gridsearch import HyperparameterGrid
+        from viprs.model import VIPRSGrid
 
         grid = HyperparameterGrid(sigma_epsilon_grid=args.sigma_epsilon_grid,
                                   sigma_epsilon_steps=args.sigma_epsilon_steps,
@@ -456,12 +336,11 @@ def prepare_model(args, verbose=True):
                                   pi_steps=args.pi_steps,
                                   h2_est=args.h2_est,
                                   h2_se=args.h2_se)
-        model_class = {
-            'GS': VIPRSGridSearch,
-            'BMA': VIPRSBMA
-        }
 
-        p_model = partial(model_class[args.hyp_search],
+        logger.info("- Hyperparameter grid:")
+        logger.info(grid.to_table())
+
+        p_model = partial(VIPRSGrid,
                           grid=grid,
                           float_precision=args.float_precision,
                           low_memory=not args.use_symmetric_ld,
@@ -469,6 +348,7 @@ def prepare_model(args, verbose=True):
                           dequantize_on_the_fly=args.dequantize_on_the_fly,
                           threads=args.threads)
 
+    """
     else:
 
         from viprs.model.gridsearch.HyperparameterSearch import BayesOpt
@@ -485,6 +365,7 @@ def prepare_model(args, verbose=True):
                           model=base_model,
                           criterion=args.grid_metric
                           )
+    """
 
     return p_model
 
@@ -499,9 +380,7 @@ def fit_model(model, data_dict, args):
     :param args: An argparse.Namespace object containing the parsed commandline arguments.
     """
 
-    import time
     import numpy as np
-    from viprs.utils.exceptions import OptimizationDivergence
 
     # Set the random seed:
     np.random.seed(args.seed)
@@ -551,24 +430,46 @@ def fit_model(model, data_dict, args):
     result_dict['ProfilerMetrics']['Load_time'] = round(load_end_time - load_start_time, 2)
 
     # ----------------------------------------------------------
+    # If the user selected grid search (GS) but did not provide validation data,
+    # then split the training data into training and validation sets:
+
+    if args.hyp_search == 'GS' and 'valid' not in data_dict:
+
+        logger.debug("> Splitting the training data into training and validation sets (PUMAS)...")
+
+        split_start_time = time.time()
+        m.split_gwas_sumstats(args.prop_train,
+                              seed=args.seed,
+                              threads=args.threads)
+        split_end_time = time.time()
+
+        result_dict['ProfilerMetrics']['PUMAS_split_time'] = round(split_end_time - split_start_time, 2)
+
+    # ----------------------------------------------------------
+
+    from functools import partial
+
+    if args.hyp_search in ('GS', 'BMA') and args.grid_search_mode != 'pathwise':
+        fit_func = partial(m.fit, max_iter=args.max_iter, pathwise=False)
+    else:
+        fit_func = partial(m.fit, max_iter=args.max_iter)
 
     # Fit the model to data:
     fit_start_time = time.time()
-    try:
-        m = m.fit(max_iter=args.max_iter)
-    except OptimizationDivergence as e:
+
+    m = fit_func()
+    if m.optim_result.error_on_termination:
+
         if m._sigma_g < 0. and np.all(m.lambda_min == 0.):
-            print("> Optimization diverged. Re-trying with setting regularization parameter lambda_min...")
+            logger.info("> Optimization diverged. "
+                        "Re-trying with setting regularization parameter lambda_min...")
             for c in m.shapes:
                 m.lambda_min = m.gdl.ld[c].get_lambda_min(min_max_ratio=1e-3)
-            m = m.fit(max_iter=args.max_iter)
-        # If the optimization diverges with multi-threading, try a single thread:
-        elif m.threads > 1:
-            print("> Optimization diverged. Retrying with a single thread...")
-            m.threads = 1
-            m = m.fit(max_iter=args.max_iter)
+            m = fit_func()
+
         else:
-            raise e
+            raise Exception(m.optim_result.message)
+
     fit_end_time = time.time()
 
     # ----------------------------------------------------------
@@ -580,16 +481,40 @@ def fit_model(model, data_dict, args):
     # ----------------------------------------------------------
     # Perform validation / model averaging:
 
-    if args.hyp_search in ('GS', 'BMA', 'BO'):
+    if args.hyp_search in ('GS', 'BMA'):
+
+        from viprs.model.gridsearch.grid_utils import (
+            bayesian_model_average, select_best_model
+        )
 
         valid_start_time = time.time()
 
         if args.hyp_search == 'BMA':
-            # If the model is a Bayesian model averaging model, then
+            # If the mode is a Bayesian model averaging model, then
             # we need to extract the final model from the BMA object:
-            m = m.average_models()
+
+            m = bayesian_model_average(m)
         elif args.hyp_search == 'GS':
-            m = m.select_best_model(data_dict['valid'], criterion=args.grid_metric)
+
+            if 'valid' in data_dict:
+                m = select_best_model(m, data_dict['valid'], criterion=args.grid_metric)
+            else:
+                m = select_best_model(m, None, criterion='pseudo_validation')
+
+                # If the sumstats were split, then reset the original data and
+                # then refit the selected model on the full sumstats:
+                m.initialize_input_data_arrays()
+
+                # If the number of threads was reduced previously,
+                # reset it:
+                if m.threads < args.threads:
+                    m.threads = args.threads
+
+                fit_start_time = time.time()
+                m = fit_func()
+                fit_end_time = time.time()
+
+                result_dict['ProfilerMetrics']['Fit_time'] += round(fit_end_time - fit_start_time, 2)
 
         valid_end_time = time.time()
 
@@ -619,26 +544,16 @@ def main():
     import argparse
     import viprs as vp
 
-    print(fr"""
-        **********************************************
-                    _____
-            ___   _____(_)________ ________________
-            __ | / /__  / ___  __ \__  ___/__  ___/
-            __ |/ / _  /  __  /_/ /_  /    _(__  )
-            _____/  /_/   _  .___/ /_/     /____/
-                          /_/
-        Variational Inference of Polygenic Risk Scores
-        Version: {vp.__version__} | Release date: {vp.__release_date__}
-        Author: Shadi Zabad, McGill University
-        **********************************************
-        < Fit VIPRS models to GWAS summary statistics >
-    """)
+    print("\n" + vp.make_ascii_logo(
+        desc='< Fit VIPRS to GWAS summary statistics >',
+        left_padding=10
+    ) + "\n", flush=True)
 
     parser = argparse.ArgumentParser(description="""
-        Commandline arguments for fitting VIPRS models to GWAS summary statistics
+        Commandline arguments for fitting VIPRS to GWAS summary statistics
     """)
 
-    # Required input/output parameters:
+    # Required input parameters:
     parser.add_argument('-l', '--ld-panel', dest='ld_dir', type=str, required=True,
                         help='The path to the directory where the LD matrices are stored. '
                              'Can be a wildcard of the form ld/chr_*')
@@ -742,20 +657,29 @@ def main():
                              'or hyperparameter grid search.')
 
     parser.add_argument('--hyp-search', dest='hyp_search', type=str, default='EM',
-                        choices={'EM', 'GS', 'BO', 'BMA'},
+                        choices={'EM', 'GS', 'BMA'},
                         help='The strategy for tuning the hyperparameters of the model. '
                              'Options are EM (Expectation-Maximization), GS (Grid search), '
-                             'BO (Bayesian Optimization), and BMA (Bayesian Model Averaging).')
-    parser.add_argument('--grid-metric', dest='grid_metric', type=str, default='validation',
+                             'and BMA (Bayesian Model Averaging).')
+    parser.add_argument('--grid-metric', dest='grid_metric', type=str, default='pseudo_validation',
                         help='The metric for selecting best performing model in grid search.',
                         choices={'ELBO', 'validation', 'pseudo_validation'})
 
     # Grid-related parameters:
+    parser.add_argument('--grid-search-mode', dest='grid_search_mode',
+                        type=str.lower, default='pathwise',
+                        choices={'pathwise', 'independent'},
+                        help='The mode for grid search. Pathwise mode updates the hyperparameters '
+                             'sequentially and in a warm-start fashion, while independent mode updates each model '
+                             'separately starting from same initialization.')
+    parser.add_argument('--prop-train', dest='prop_train', type=float, default=0.8,
+                        help='The proportion of the samples to use for training when performing cross '
+                             'validation using the PUMAS procedure.')
     parser.add_argument('--pi-grid', dest='pi_grid', type=str,
                         help='A comma-separated grid values for the hyperparameter pi (see also --pi-steps).')
     parser.add_argument('--pi-steps', dest='pi_steps', type=int,
                         help='The number of steps for the (default) pi grid. This will create an equidistant '
-                             'grid between 1/M and (M-1)/M on a log10 scale, where M is the number of SNPs.')
+                             'grid between 10/M and 0.2 on a log10 scale, where M is the number of variants.')
 
     parser.add_argument('--sigma-epsilon-grid', dest='sigma_epsilon_grid', type=str,
                         help='A comma-separated grid values for the hyperparameter sigma_epsilon '
@@ -785,6 +709,10 @@ def main():
     parser.add_argument('--output-profiler-metrics', dest='output_profiler_metrics', action='store_true',
                         default=False, help='Output the profiler metrics that measure runtime, memory usage, etc.')
 
+    # Logging / reproducibility parameters:
+    parser.add_argument('--log-level', dest='log_level', type=str, default='WARNING',
+                        choices={'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'},
+                        help='The logging level for the console output.')
     parser.add_argument('--seed', dest='seed', type=int, default=7209,
                         help='The random seed to use for the random number generator.')
 
@@ -793,25 +721,50 @@ def main():
     # ----------------------------------------------------------
     # Import required modules:
 
-    import time
     from datetime import timedelta
     import pandas as pd
-    from magenpy.utils.system_utils import makedir
+    from magenpy.utils.system_utils import makedir, PeakMemoryProfiler, setup_logger
     from joblib import Parallel, delayed
+
+    # ----------------------------------------------------------
+    # Setup the logger:
+
+    # Create the output directory:
+    makedir(osp.abspath(args.output_dir))
+    # Set the output prefix:
+    output_prefix = osp.join(args.output_dir, args.output_prefix + args.model + '_' + args.hyp_search)
+
+    # Clear the log file:
+    open(f"{output_prefix}.log", 'w').close()
+
+    # Set up the module loggers:
+    setup_logger(modules=['viprs', 'magenpy'],
+                 log_file=f"{output_prefix}.log",
+                 log_level=args.log_level)
+
+    # Set up the logger for the main module:
+    setup_logger(loggers=[logger],
+                 log_file=f"{output_prefix}.log",
+                 log_format='%(message)s',
+                 log_level=['INFO', args.log_level][logging.getLevelName(args.log_level) < logging.INFO])
 
     # ----------------------------------------------------------
     # Print the parsed arguments:
 
-    print('{:-^62}\n'.format('  Parsed arguments  '))
+    logger.info('{:-^100}\n'.format('  Parsed arguments  '))
 
     for key, val in vars(args).items():
         if val is not None and val != parser.get_default(key):
-            print("--", key, ":", val)
+            logger.info(f"-- {key}: {val}")
 
     # ----------------------------------------------------------
 
     # (1) Check the validity, consistency, and completeness of the commandline arguments:
-    check_args(args)
+    try:
+        check_args(args)
+    except Exception as e:
+        logger.error(f"An error occurred while parsing the commandline arguments:\n{str(e)}")
+        raise e
 
     # Record start time:
     total_start_time = time.time()
@@ -822,10 +775,14 @@ def main():
     data_prep_time = time.time()
 
     # (3) Prepare the model:
-    model = prepare_model(args)
+    try:
+        model = prepare_model(args)
+    except Exception as e:
+        logger.error(f"An error occurred while preparing the model:\n{str(e)}")
+        raise e
 
     # (4) Fit to data:
-    print('\n{:-^62}\n'.format('  Inference  '))
+    logger.info('\n{:-^100}\n'.format('  Inference  '))
 
     with PeakMemoryProfiler() as peak_mem:
 
@@ -843,8 +800,8 @@ def main():
     # (5) Write the results to file:
 
     if len(fit_results) > 0:
-        print('\n{:-^62}\n'.format(''))
-        print("\n>>> Writing the inference results to:\n", args.output_dir)
+        logger.info('\n{:-^100}\n'.format(''))
+        logger.info(f"\n>>> Writing the inference results to:\n {args.output_dir}")
 
         makedir(osp.abspath(args.output_dir))
 
@@ -857,27 +814,27 @@ def main():
             valid_tables = None
             pass
 
-        profm_table = pd.concat([pd.DataFrame(r['ProfilerMetrics'], index=[0]).assign(Chromosome=r['Chromosome'])
-                                 for r in fit_results])
+        profm_table = pd.concat([
+            pd.DataFrame(r['ProfilerMetrics'], index=[0]).assign(Chromosome=r['Chromosome'])
+            for r in fit_results
+        ])
         profm_table['Total_WallClockTime'] = round(total_end_time - total_start_time, 2)
         profm_table['DataPrep_Time'] = round(data_prep_time - total_start_time, 2)
         profm_table['Peak_Memory_MB'] = round(peak_mem.get_peak_memory(), 2)
 
-        output_prefix = osp.join(args.output_dir, args.output_prefix + args.model + '_' + args.hyp_search)
-
         if len(eff_tables) > 0:
-            eff_tables.to_csv(output_prefix + '.fit.gz', sep="\t", index=False)
+            eff_tables.to_csv(f"{output_prefix}.fit.gz", sep="\t", index=False)
 
         if len(hyp_tables) > 0:
-            hyp_tables.to_csv(output_prefix + '.hyp', sep="\t", index=False)
+            hyp_tables.to_csv(f"{output_prefix}.hyp", sep="\t", index=False)
 
         if valid_tables is not None:
-            valid_tables.to_csv(output_prefix + '.validation', sep="\t", index=False)
+            valid_tables.to_csv(f"{output_prefix}.validation", sep="\t", index=False)
 
         if args.output_profiler_metrics:
-            profm_table.to_csv(output_prefix + '.prof', sep="\t", index=False)
+            profm_table.to_csv(f"{output_prefix}.prof", sep="\t", index=False)
 
-    print('>>> Total Runtime:\n', timedelta(seconds=total_end_time - total_start_time))
+    logger.info(f">>> Total Runtime:\n {timedelta(seconds=total_end_time - total_start_time)}")
 
 
 if __name__ == '__main__':

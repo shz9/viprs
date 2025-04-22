@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 import os.path as osp
 
+from magenpy import GWADataLoader
 from ..utils.compute_utils import expand_column_names, dict_max
+
+# Set up the logger:
+import logging
+logger = logging.getLogger(__name__)
 
 
 class BayesPRSModel:
@@ -16,36 +21,60 @@ class BayesPRSModel:
 
     :ivar gdl: A GWADataLoader object containing harmonized GWAS summary statistics and
     Linkage-Disequilibrium (LD) matrices.
-    :ivar Nj: A dictionary where keys are chromosomes and values are the sample sizes per variant.
+    :ivar float_precision: The precision of the floating point variables. Options are: 'float32' or 'float64'.
     :ivar shapes: A dictionary where keys are chromosomes and values are the shapes of the variant arrays
     (e.g. the number of variants per chromosome).
-    :ivar _sample_size: The average per-SNP sample size.
+    :ivar n_per_snp: A dictionary where keys are chromosomes and values are the sample sizes per variant.
+    :ivar std_beta: A dictionary of the standardized marginal effect sizes from GWAS.
+    :ivar validation_std_beta: A dictionary of the standardized marginal effect sizes
+    from an independent validation set.
+    :ivar _sample_size: The maximum per-SNP sample size.
     :ivar pip: The posterior inclusion probability.
     :ivar post_mean_beta: The posterior mean for the effect sizes.
     :ivar post_var_beta: The posterior variance for the effect sizes.
     """
 
-    def __init__(self, gdl):
+    def __init__(self,
+                 gdl: GWADataLoader,
+                 float_precision='float32'):
         """
         Initialize the Bayesian PRS model.
-        :param gdl: An instance of `GWADataLoader`.
+        :param gdl: An instance of `GWADataLoader`. Must contain either GWAS summary statistics
+        or genotype data.
+        :param float_precision: The precision for the floating point numbers.
         """
 
+        # ------------------- Sanity checks -------------------
+
+        assert isinstance(gdl, GWADataLoader), "The `gdl` object must be an instance of GWASDataLoader."
+
+        assert gdl.genotype is not None or (gdl.ld is not None and gdl.sumstats_table is not None), (
+            "The GWADataLoader object must contain either genotype data or summary statistics and LD matrices."
+        )
+
+        # -----------------------------------------------------
+
         self.gdl = gdl
-
-        # Sample size per SNP:
-        try:
-            self.Nj = {c: ss.n_per_snp.astype(float) for c, ss in gdl.sumstats_table.items()}
-        except AttributeError:
-            # If not provided, use the overall sample size:
-            self.Nj = {c: np.repeat(gdl.n, c_size).astype(float) for c, c_size in gdl.shapes.items()}
-
+        self.float_precision = float_precision
+        self.float_eps = np.finfo(self.float_precision).eps
         self.shapes = self.gdl.shapes.copy()
 
-        # Determine the overall sample size:
-        self._sample_size = dict_max(self.Nj)
+        # Placeholder for sample size per SNP:
+        self.n_per_snp = None
+        # Placeholder for standardized marginal betas:
+        self.std_beta = None
 
-        # Inferred model parameters:
+        # Placeholder for standardized marginal betas from an independent validation set:
+        self.validation_std_beta = None
+
+        if gdl.sumstats_table is not None:
+            # Initialize the input data arrays:
+            self.initialize_input_data_arrays()
+
+            # Determine the overall sample size:
+            self._sample_size = dict_max(self.n_per_snp)
+
+        # Placeholder for inferred model parameters:
         self.pip = None  # Posterior inclusion probability
         self.post_mean_beta = None  # The posterior mean for the effect sizes
         self.post_var_beta = None  # The posterior variance for the effect sizes
@@ -85,6 +114,77 @@ class BayesPRSModel:
         :return: The number of SNPs in the model.
         """
         return self.m
+
+    def initialize_input_data_arrays(self):
+        """
+        Initialize the input data arrays for the Bayesian PRS model.
+        The input data for summary statistics-based PRS models typically include the following:
+            * The sample size per variant (n_per_snp)
+            * The standardized marginal betas (std_beta)
+            * LD matrices (LD)
+
+        This convenience method initializes the first two inputs, primarily the sample size per variant
+        and the standardized marginal betas.
+        """
+
+        logger.debug("> Initializing the input data arrays (marginal statistics).")
+
+        try:
+            self.n_per_snp = {c: ss.n_per_snp
+                              for c, ss in self.gdl.sumstats_table.items()}
+            self.std_beta = {c: ss.get_snp_pseudo_corr().astype(self.float_precision)
+                             for c, ss in self.gdl.sumstats_table.items()}
+        except AttributeError:
+            # If not provided, use the overall sample size:
+            self.n_per_snp = {c: np.repeat(self.gdl.n, c_size)
+                              for c, c_size in self.shapes.items()}
+
+        self.validation_std_beta = None
+
+    def set_validation_sumstats(self):
+        """
+        Set the validation summary statistics.
+        TODO: Allow the user to set the validation sumstats as a property of the model.
+        """
+        raise NotImplementedError
+
+    def split_gwas_sumstats(self,
+                            prop_train=0.8,
+                            seed=None,
+                            **kwargs):
+        """
+        Split the GWAS summary statistics into training and validation sets, using the
+        PUMAS procedure outlined in Zhao et al. (2021).
+
+        :param prop_train: The proportion of samples to include in the training set.
+        :param seed: The random seed for reproducibility.
+        :param kwargs: Additional keyword arguments to pass to the `sumstats_train_test_split` function.
+        """
+
+        from magenpy.utils.model_utils import sumstats_train_test_split
+
+        logger.debug("> Splitting the GWAS summary statistics into training and validation sets. "
+                     f"Training proportion: {prop_train}")
+
+        split_sumstats = sumstats_train_test_split(self.gdl,
+                                                   prop_train=prop_train,
+                                                   seed=seed,
+                                                   **kwargs)
+
+        self.std_beta = {
+            c: split_sumstats[c]['train_beta'].astype(self.float_precision)
+            for c in self.chromosomes
+        }
+
+        self.n_per_snp = {
+            c: self.n_per_snp[c]*prop_train
+            for c in self.chromosomes
+        }
+
+        self.validation_std_beta = {
+            c: split_sumstats[c]['test_beta'].astype(self.float_precision)
+            for c in self.chromosomes
+        }
 
     def fit(self, *args, **kwargs):
         """
@@ -272,29 +372,42 @@ class BayesPRSModel:
         else:
             return pd.concat([tables[c] for c in self.chromosomes])
 
-    def pseudo_validate(self, test_gdl, metric='r2'):
+    def pseudo_validate(self, test_gdl=None):
         """
         Evaluate the prediction accuracy of the inferred PRS using external GWAS summary statistics.
 
         :param test_gdl: A `GWADataLoader` object with the external GWAS summary statistics and LD matrix information.
-        :param metric: The metric to use for evaluation. Options: 'r2' or 'pearson_correlation'.
 
-        :return: The pseudo-validation metric.
+        :return: The pseudo-R^2 metric.
         """
 
-        from ..eval.pseudo_metrics import pseudo_r2, pseudo_pearson_r
-
-        metric = metric.lower()
+        from ..eval.pseudo_metrics import pseudo_r2, _streamlined_pseudo_r2
+        from ..utils.compute_utils import dict_concat
 
         assert self.post_mean_beta is not None, "The posterior means for BETA are not set. Call `.fit()` first."
+        assert self.validation_std_beta is not None or test_gdl is not None, (
+            "Must provide a GWADataLoader object with validation sumstats or initialize the standardized "
+            "betas inside the model."
+        )
 
-        if metric in ('pearson_correlation', 'corr', 'r'):
-            return pseudo_pearson_r(test_gdl, self.to_table(per_chromosome=False))
-        elif metric == 'r2':
+        if test_gdl is not None:
             return pseudo_r2(test_gdl, self.to_table(per_chromosome=False))
         else:
-            raise KeyError(f"Pseudo validation metric ({metric}) not recognized. "
-                           f"Options are: 'r2' or 'pearson_correlation'.")
+
+            # Check if q is an attribute of the model:
+            if hasattr(self, 'q'):
+                ldw_prs = {c: self.q[c] + self.post_mean_beta[c] for c in self.shapes}
+            else:
+                # Compute LD-weighted PRS weights first:
+                ldw_prs = {}
+                for c in self.shapes:
+                    ldw_prs[c] = self.gdl.ld[c].dot(self.post_mean_beta[c])
+
+            return _streamlined_pseudo_r2(
+                dict_concat(self.validation_std_beta),
+                dict_concat(self.post_mean_beta),
+                dict_concat(ldw_prs)
+            )
 
     def set_model_parameters(self, parameter_table):
         """

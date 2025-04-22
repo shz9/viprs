@@ -126,3 +126,27 @@ def pseudo_pearson_r(test_gdl, prs_beta_table):
 
     return rb / np.sqrt(bsb)
 
+
+def _streamlined_pseudo_r2(validation_beta, prs_beta, ldw_prs_beta):
+    """
+    This function implements a streamlined version of the pseudo-R^2 computation
+    where we assume that the LD matrix is shared between the training and validation set,
+    and thus we don't need to recompute the LD-weighted PRS effect sizes.
+
+    This function also assumes that the validation_beta and prs_beta arrays are already
+    standardized and matched to each other.
+
+    This is useful for cross-validation purposes in the context of PRS analysis.
+
+    :param validation_beta: A numpy array of standardized marginal betas from the validation set.
+    :param prs_beta: A numpy array/matrix of inferred PRS effect sizes.
+    :param ldw_prs_beta: The LD-weighted PRS effect sizes from a fitted PRS model (i.e. the result of
+    multiplying the PRS effect sizes by the LD matrix).
+
+    :return: The pseudo-R^2 metric(s).
+    """
+
+    rb = np.sum((prs_beta.T * validation_beta).T, axis=0)
+    bsb = np.sum(prs_beta * ldw_prs_beta, axis=0)
+
+    return rb**2 / bsb

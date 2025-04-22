@@ -1,8 +1,9 @@
 numpy<2
 scipy
-pandas<=2.2.1  # Seen installation issues with newer versions
+pandas
 tqdm
-magenpy>=0.1.4
+magenpy>=0.1.5
 statsmodels
 scikit-learn
 psutil
+joblib

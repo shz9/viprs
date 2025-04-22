@@ -11,6 +11,8 @@ def plot_history(prs_model, quantity=None):
 
     :param prs_model: A `VIPRS` (or its derived classes) object.
     :param quantity: The quantities to plot (e.g. `ELBO`, `heritability`, etc.).
+
+    :return: A seaborn `FacetGrid` object containing the plots.
     """
 
     if quantity is None:

@@ -36,7 +36,6 @@ cpdef void cpp_e_step(int[::1] ld_left_bound,
                       floating[::1] mu_mult,
                       floating dq_scale,
                       int threads,
-                      bint use_blas,
                       bint low_memory) noexcept nogil
 
 
@@ -55,7 +54,6 @@ cpdef void cpp_e_step_mixture(int[::1] ld_left_bound,
                               floating[:, ::1] mu_mult,
                               floating dq_scale,
                               int threads,
-                              bint use_blas,
                               bint low_memory) noexcept nogil
 
 cpdef void cpp_e_step_grid(int[::1] ld_left_bound,
@@ -73,5 +71,4 @@ cpdef void cpp_e_step_grid(int[::1] ld_left_bound,
                            floating dq_scale,
                            int[:] active_model_idx,
                            int threads,
-                           bint use_blas,
                            bint low_memory) noexcept nogil

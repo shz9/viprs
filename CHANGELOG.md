@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.3] - 2025-01-16
+## [0.1.3] - 2025-04-22
 
 ### Changed
 
@@ -17,15 +17,24 @@ I added shared memory object for the LD matrix to avoid redundant memory usage w
 models in parallel. (** WORK IN PROGRESS **).
 - Updated implementation of `pseudo_r2` to use square of pseudo correlation coefficient instead. The previous 
 implementation can be problematic with highly sparsified LD matrices.
+- Updated implementation of `VIPRSGrid` to be better integrated with the `VIPRS` class. The new implementation
+also allows for fitting the grid in a `pathwise` fashion (now default behavior), where we use 
+parameter estimates from previous grid points as warm-start initialization for the current grid point.
+- Removed `VIPRSGridSearch` and `VIPRSBMA` classes for now. These functions are implemented in `grid_utils.py` instead
+and they can be applied generically to any `VIPRSGrid` model.
 
 ### Added
 
 - Added `viprs-cli-example.ipynb` notebook to demonstrate how to use the `viprs` commandline interface.
 - Added documentation page for Downloading LD matrices.
 - Added new utility function `combine_coefficient_tables` to combine the output from multiple VIPRS models.
-- Added more thorough tests for `VIPRSGridSearch` and `VIPRSBMA` models.
+- Added more thorough tests for the various models + CLI scripts.
 - Added `PeakMemoryProfiler` to `viprs_fit` to more accurately track peak memory usage. Temporary solution, 
 this will be moved to `magenpy` later on.
+- Added support for splitting GWAS sumstats to training/validation sets and exposed appropriate interfaces 
+in the base class `BayesPRSModel`.
+- Added `IterationConditionCounter` class to keep track of the number of consecutive iterations 
+where a certain condition is met. This is used to monitors convergence of the optimization routine.
 
 ## [0.1.2] - 2024-12-25
 

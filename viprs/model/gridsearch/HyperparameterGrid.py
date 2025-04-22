@@ -72,12 +72,9 @@ class HyperparameterGrid(object):
 
         # If the heritability estimate is not provided, use a reasonable default value of 0.1
         # with a wide standard error of 0.1.
-        if h2_est is None:
-            self.h2_est = 0.1
-            self.h2_se = 0.1
-        else:
-            self.h2_est = h2_est
-            self.h2_se = h2_se
+
+        self.h2_est = h2_est or 0.1
+        self.h2_se = h2_se or 0.1
 
         self.n_snps = n_snps
         self._search_params = []
@@ -184,17 +181,28 @@ class HyperparameterGrid(object):
         if 'tau_beta' not in self._search_params:
             self._search_params.append('tau_beta')
 
-    def generate_pi_grid(self, steps=5):
+    def generate_pi_grid(self, steps=5, max_pi=0.2):
         """
         Generate a grid of values for the `pi` (proportion of non-zero effect sizes) hyperparameter.
         :param steps: The number of steps for the `pi` grid
+        :param max_pi: The maximum value for the `pi` grid.
         """
 
         assert steps > 0
 
-        self.pi = np.unique(np.clip(10. ** (-np.linspace(np.floor(np.log10(self.n_snps)), 0., steps)),
-                                    a_min=1. / self.n_snps,
-                                    a_max=1. - 1. / self.n_snps))
+        min_pi = np.log10(max(10./self.n_snps, 1e-5))
+        # For now, we impose a limit of 10k causal variants
+        # Need to figure out better ways to determine the maximum
+        # value here.
+        max_pi = np.log10(min(10000 / self.n_snps, max_pi))
+
+        assert min_pi < max_pi
+
+        self.pi = np.logspace(
+            min_pi,
+            max_pi,
+            steps
+        )
 
         if 'pi' not in self._search_params:
             self._search_params.append('pi')
@@ -241,8 +249,9 @@ class HyperparameterGrid(object):
     def to_table(self):
         """
         :return: The hyperparameter grid as a pandas `DataFrame`.
+        :raises ValueError: If all the grids are empty.
         """
 
         combined_grids = self.combine_grids()
-        if combined_grids:
-            return pd.DataFrame(combined_grids)
+
+        return pd.DataFrame(combined_grids)

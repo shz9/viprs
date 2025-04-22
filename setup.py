@@ -171,11 +171,6 @@ extensions = [
               libraries=[[], ["m"]][os.name != 'nt'],  # Only include for non-Windows systems
               include_dirs=[np.get_include()],
               extra_compile_args=["-O3"]),
-    Extension("viprs.model.vi.e_step",
-              ["viprs/model/vi/e_step.pyx"],
-              include_dirs=[np.get_include()],
-              define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")],
-              extra_compile_args=["-O3"]),
     Extension("viprs.model.vi.e_step_cpp",
               ["viprs/model/vi/e_step_cpp.pyx"],
               language="c++",
@@ -188,7 +183,7 @@ extensions = [
 
 if check_openmp_support():
     # Add any extension that requires openMP here:
-    openmp_extensions = ['viprs.model.vi.e_step_cpp', 'viprs.model.vi.e_step']
+    openmp_extensions = ['viprs.model.vi.e_step_cpp']
 
     for omp_ext in extensions:
         if omp_ext.name in openmp_extensions:
@@ -239,7 +234,7 @@ with open("requirements-docs.txt") as fp:
 
 setup(
     name="viprs",
-    version="0.1.3-alpha",
+    version="0.1.3",
     author="Shadi Zabad",
     author_email="shadi.zabad@mail.mcgill.ca",
     description="Variational Inference of Polygenic Risk Scores (VIPRS)",

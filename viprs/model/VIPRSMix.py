@@ -3,7 +3,6 @@ import numpy as np
 
 from magenpy.stats.h2.ldsc import simple_ldsc
 from .VIPRS import VIPRS
-from .vi.e_step import e_step_mixture
 from .vi.e_step_cpp import cpp_e_step_mixture
 from ..utils.compute_utils import dict_sum, dict_mean
 
@@ -59,7 +58,8 @@ class VIPRSMix(VIPRS):
 
         # Populate/update relevant fields:
         self.shapes = {c: (shp, self.K) for c, shp in self.shapes.items()}
-        self.Nj = {c: Nj[:, None].astype(self.float_precision, order=self.order) for c, Nj in self.Nj.items()}
+        self.n_per_snp = {c: n[:, None].astype(self.float_precision, order=self.order)
+                          for c, n in self.n_per_snp.items()}
 
     def initialize_theta(self, theta_0=None):
         """
@@ -104,8 +104,8 @@ class VIPRSMix(VIPRS):
                 self.tau_beta = theta_0['tau_betas']
 
                 self.sigma_epsilon = np.clip(1. - np.dot(1./self.tau_beta, self.pi),
-                                             a_min=self.float_resolution,
-                                             a_max=1. - self.float_resolution)
+                                             a_min=1e-4,
+                                             a_max=1. - 1e-4)
 
             elif 'tau_beta' in theta_0:
                 # NOTE: Here, we assume the provided `tau_beta` is a scalar.
@@ -124,8 +124,8 @@ class VIPRSMix(VIPRS):
                 h2g_estimate = (self.n_snps*self.pi/self.tau_beta).sum()
                 # Step (2): Set sigma_epsilon to 1 - h2g_estimate:
                 self.sigma_epsilon = np.clip(1. - h2g_estimate,
-                                             a_min=self.float_resolution,
-                                             a_max=1. - self.float_resolution)
+                                             a_min=1e-4,
+                                             a_max=1. - 1e-4)
 
             else:
                 # If neither sigma_beta nor sigma_epsilon are given,
@@ -160,7 +160,6 @@ class VIPRSMix(VIPRS):
 
         # Cast all the hyperparameters to conform to the precision set by the user:
         self.sigma_epsilon = np.dtype(self.float_precision).type(self.sigma_epsilon)
-        self.tau_beta = np.dtype(self.float_precision).type(self.tau_beta)
         self.pi = np.dtype(self.float_precision).type(self.pi)
         self.lambda_min = np.dtype(self.float_precision).type(self.lambda_min)
         self._sigma_g = np.dtype(self.float_precision).type(0.)
@@ -184,7 +183,7 @@ class VIPRSMix(VIPRS):
             pi = self.get_pi(c)
 
             # Updates for tau variational parameters:
-            self.var_tau[c] = (self.Nj[c]*(1. + self.lambda_min) / self.sigma_epsilon) + tau_beta
+            self.var_tau[c] = (self.n_per_snp[c]*(1. + self.lambda_min) / self.sigma_epsilon) + tau_beta
 
             if isinstance(self.pi, dict):
                 log_null_pi = (np.log(1. - self.pi[c].sum(axis=1)))
@@ -192,29 +191,10 @@ class VIPRSMix(VIPRS):
                 log_null_pi = np.ones_like(self.eta[c])*np.log(1. - self.pi.sum())
 
             # Compute some quantities that are needed for the per-SNP updates:
-            mu_mult = self.Nj[c] / (self.var_tau[c] * self.sigma_epsilon)
+            mu_mult = self.n_per_snp[c] / (self.var_tau[c] * self.sigma_epsilon)
             u_logs = np.log(pi) - np.log(1. - pi) + .5 * (np.log(tau_beta) - np.log(self.var_tau[c]))
 
-            if self.use_cpp:
-                cpp_e_step_mixture(self.ld_left_bound[c],
-                                   self.ld_indptr[c],
-                                   self.ld_data[c],
-                                   self.std_beta[c],
-                                   self.var_gamma[c],
-                                   self.var_mu[c],
-                                   self.eta[c],
-                                   self.q[c],
-                                   self.eta_diff[c],
-                                   log_null_pi,
-                                   u_logs,
-                                   0.5*self.var_tau[c],
-                                   mu_mult,
-                                   self.dequantize_scale,
-                                   self.threads,
-                                   self.use_blas,
-                                   self.low_memory)
-            else:
-                e_step_mixture(self.ld_left_bound[c],
+            cpp_e_step_mixture(self.ld_left_bound[c],
                                self.ld_indptr[c],
                                self.ld_data[c],
                                self.std_beta[c],
@@ -225,10 +205,10 @@ class VIPRSMix(VIPRS):
                                self.eta_diff[c],
                                log_null_pi,
                                u_logs,
-                               0.5*self.var_tau[c],
+                               np.sqrt(0.5*self.var_tau[c]),
                                mu_mult,
+                               self.dequantize_scale,
                                self.threads,
-                               self.use_blas,
                                self.low_memory)
 
         self.zeta = self.compute_zeta()

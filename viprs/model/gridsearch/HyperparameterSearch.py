@@ -3,12 +3,14 @@ import numpy as np
 from multiprocessing import shared_memory
 from joblib import Parallel, delayed
 
-from pprint import pprint
-
 from viprs.eval.continuous_metrics import r2
 from viprs.eval.binary_metrics import roc_auc
 from viprs.model.BayesPRSModel import BayesPRSModel
 from viprs.model.VIPRS import VIPRS
+
+# Set up the logger:
+import logging
+logger = logging.getLogger(__name__)
 
 
 def fit_model_fixed_params(model, fixed_params, shm_data=None, **fit_kwargs):
@@ -47,7 +49,7 @@ def fit_model_fixed_params(model, fixed_params, shm_data=None, **fit_kwargs):
     try:
         model.fit(**fit_kwargs)
     except Exception as e:
-        print("Exception encountered when fitting model:", e)
+        logger.warning("Exception encountered when fitting model:", e)
         model = None
     finally:
         if shm_data is not None:
@@ -76,7 +78,6 @@ class BaseHyperparamSearch(object):
                  model=None,
                  criterion='training_objective',
                  validation_gdl=None,
-                 verbose=False,
                  n_jobs=1):
         """
         A generic hyperparameter search class that implements common functionalities
@@ -91,7 +92,6 @@ class BaseHyperparamSearch(object):
         object for the validation dataset. If the criterion is pseudo-validation, the `validation_gdl` should
         contain summary statistics from a held-out test set. If the criterion is validation, `validation_gdl` should
         contain individual-level data from a held-out test set.
-        :param verbose: Verbosity of the information printed to standard output.
         :param n_jobs: The number of processes to use for the hyperparameters search.
         """
 
@@ -114,12 +114,6 @@ class BaseHyperparamSearch(object):
 
         self.criterion = criterion
         self._validation_gdl = validation_gdl
-
-        self.verbose = verbose
-        self.model.verbose = verbose
-
-        if self._validation_gdl is not None:
-            self._validation_gdl.verbose = verbose
 
         self._model_coefs = None
         self._model_hyperparams = None
@@ -211,7 +205,6 @@ class GridSearch(BaseHyperparamSearch):
                  model=None,
                  criterion='training_objective',
                  validation_gdl=None,
-                 verbose=False,
                  n_jobs=1):
 
         """
@@ -226,7 +219,6 @@ class GridSearch(BaseHyperparamSearch):
         object for the validation dataset. If the criterion is pseudo-validation, the `validation_gdl` should
         contain summary statistics from a held-out test set. If the criterion is validation, `validation_gdl` should
         contain individual-level data from a held-out test set.
-        :param verbose: Verbosity of the information printed to standard output.
         :param n_jobs: The number of processes to use for the hyperparameters search.
         """
 
@@ -234,7 +226,6 @@ class GridSearch(BaseHyperparamSearch):
                          model=model,
                          criterion=criterion,
                          validation_gdl=validation_gdl,
-                         verbose=verbose,
                          n_jobs=n_jobs)
 
         self.grid = grid
@@ -254,8 +245,8 @@ class GridSearch(BaseHyperparamSearch):
         :return: The best model based on the criterion set by the user.
         """
 
-        print("> Performing Grid Search over the following grid:")
-        print(self.grid.to_table())
+        logger.info("> Performing Grid Search over the following grid:")
+        logger.info(self.grid.to_table())
 
         if self.n_jobs > 1:
             # Only create the shared memory object if the number of processes is more than 1.
@@ -350,8 +341,8 @@ class GridSearch(BaseHyperparamSearch):
 
         best_idx = np.argmax(self.to_validation_table()[self.criterion].values)
 
-        print("> Grid search identified the best hyperparameters as:")
-        pprint(grid[best_idx])
+        logger.info("> Grid search identified the best hyperparameters as:")
+        logger.info(grid[best_idx])
 
         self.model.fix_params = grid[best_idx]
         self.model.initialize()

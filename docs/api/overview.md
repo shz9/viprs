@@ -8,8 +8,7 @@
     * [Hyperparameter grid](model/gridsearch/HyperparameterGrid.md): A utility class to help construct grids over model hyperparameters.
     * [HyperparameterSearch](model/gridsearch/HyperparameterSearch.md)
     * [VIPRSGrid](model/gridsearch/VIPRSGrid.md)
-        * [VIPRSGridSearch](model/gridsearch/VIPRSGridSearch.md)
-        * [VIPRSBMA](model/gridsearch/VIPRSBMA.md)
+    * [grid_utils](model/gridsearch/grid_utils.md): Utilities for performing model selection/averaging.
 * **Baseline Models**:
     * [LDPredInf](model/LDPredInf.md): Implementation of the LDPred-inf model.
 

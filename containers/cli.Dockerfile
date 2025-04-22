@@ -9,7 +9,7 @@
 FROM python:3.11-slim-buster
 
 LABEL authors="Shadi Zabad"
-LABEL version="0.1"
+LABEL version="0.1.3"
 LABEL description="Docker image containing all requirements to run the commandline scripts in the VIPRS package"
 
 # Install system dependencies
@@ -41,3 +41,5 @@ RUN pip install --upgrade pip viprs
 
 # Test the installation
 RUN viprs_fit -h
+RUN viprs_score -h
+RUN viprs_evaluate -h
