@@ -18,8 +18,8 @@ source activate base
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo "Running tests from: $SCRIPT_DIR"
 
-# Define Python versions (add more here if needed)
-python_versions=("3.8" "3.9" "3.10" "3.11" "3.12")
+# Define supported Python versions.
+python_versions=("3.10" "3.11" "3.12" "3.13")
 
 # ==============================================================================
 

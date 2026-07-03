@@ -1,6 +1,4 @@
-
-__version__ = '0.1.3'
-__release_date__ = 'April 2025'
+from ._version import __release_date__, __version__
 
 from .model import VIPRS
 from .utils.data_utils import *

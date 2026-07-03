@@ -40,15 +40,27 @@ def avg_precision(true_val, pred_val):
     return average_precision_score(true_val, pred_val)
 
 
-def f1(true_val, pred_val):
+def f1(true_val, pred_val, threshold=0.5):
     """
-    Compute the F1 score between the PRS predictions and a binary phenotype.
+    Compute the F1 score between the PRS predictions and a binary phenotype by
+    fitting a logistic model of the phenotype on the PRS and thresholding the
+    predicted probabilities.
 
     :param true_val: The response value or phenotype (a binary numpy vector with 0s and 1s)
     :param pred_val: The predicted value or PRS (a numpy vector)
+    :param threshold: The probability threshold used to convert logistic model
+    predictions to binary labels.
     """
     from sklearn.metrics import f1_score
-    return f1_score(true_val, pred_val)
+
+    assert 0. <= threshold <= 1., "The F1 threshold must be between 0 and 1."
+
+    pred_df = pd.DataFrame({'pred_val': pred_val})
+    logit_result = fit_linear_model(true_val, pred_df,
+                                    family='binomial', add_intercept=True)
+    pred_labels = (logit_result.predict() >= threshold).astype(int)
+
+    return f1_score(true_val, pred_labels)
 
 
 def mcfadden_r2(true_val, pred_val, covariates=None):

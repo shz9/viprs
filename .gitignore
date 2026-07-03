@@ -39,8 +39,10 @@ pip-delete-this-directory.txt
 .vscode/
 .tox/
 .pytest_cache/
+.venv/
 *.html
 *.zarr
 *.npz
 *.log
+*.DS_Store
 **/temp

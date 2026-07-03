@@ -8,8 +8,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-13, macos-14]
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        os: [macos-15-intel, macos-14, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout code
@@ -25,7 +25,7 @@ jobs:
         shell: "bash -l {0}"
         run: >
           conda create --name "viprs_ci" -c conda-forge -c anaconda 
-          python=${{matrix.python-version}} pip wheel compilers openblas -y
+          python=${{matrix.python-version}} pip wheel pkg-config compilers openblas -y
 
       - name: Show info about `viprs_ci` environment
         shell: "bash -l {0}"

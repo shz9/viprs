@@ -1,10 +1,25 @@
-from setuptools import setup, Extension, find_packages
+import ast
+import os
+import warnings
+
+import numpy as np
+import pkgconfig
 from extension_helpers import add_openmp_flags_if_available
 from extension_helpers._openmp_helpers import check_openmp_support
-import pkgconfig
-import numpy as np
-import warnings
-import os
+from setuptools import Extension, find_packages, setup
+
+
+def read_version():
+    with open(os.path.join("viprs", "_version.py"), encoding="utf-8") as fp:
+        version_file = ast.parse(fp.read())
+
+    for node in version_file.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__version__":
+                    return ast.literal_eval(node.value)
+
+    raise RuntimeError("Unable to find __version__ in viprs/_version.py")
 
 
 try:
@@ -47,7 +62,7 @@ def find_blas_libraries():
     conda_path = os.getenv("CONDA_PREFIX")
 
     if conda_path is not None:
-        conda_pkgconfig_path = os.path.join(conda_path, 'lib/pkgconfig')
+        conda_pkgconfig_path = os.path.join(conda_path, "lib/pkgconfig")
         if os.path.isdir(conda_pkgconfig_path):
             current_pkg_config_path += ":" + conda_pkgconfig_path
 
@@ -56,16 +71,22 @@ def find_blas_libraries():
 
     # STEP 3: Get all pkg-config packages and filter to
     # those that have "blas" in the name.
-    blas_packages = [pkg for pkg in pkgconfig.list_all()
-                     if "blas" in pkg]
+    try:
+        blas_packages = [pkg for pkg in pkgconfig.list_all() if "blas" in pkg]
+    except OSError:
+        blas_packages = []
 
     # First check: Make sure that compiler flags are defined and a
     # valid cblas.h header file exists in the include directory:
     if len(blas_packages) >= 1:
-
-        blas_packages = [pkg for pkg in blas_packages
-                         if pkgconfig.cflags(pkg) and
-                         os.path.isfile(os.path.join(pkgconfig.variables(pkg)['includedir'], 'cblas.h'))]
+        blas_packages = [
+            pkg
+            for pkg in blas_packages
+            if pkgconfig.cflags(pkg)
+            and os.path.isfile(
+                os.path.join(pkgconfig.variables(pkg)["includedir"], "cblas.h")
+            )
+        ]
 
     # If there remains more than one library after the previous
     # search and filtering steps, then apply some heuristics
@@ -78,7 +99,7 @@ def find_blas_libraries():
         # we use it to link to the same library as numpy:
         try:
             for pkg in blas_packages:
-                if pkg in np.__config__.get_info('blas_opt')['libraries']:
+                if pkg in np.__config__.get_info("blas_opt")["libraries"]:
                     blas_packages = [pkg]
                     break
         except (KeyError, AttributeError):
@@ -97,12 +118,14 @@ def find_blas_libraries():
         idx_to_remove = set()
 
         for pkg1 in blas_packages:
-            if pkg1 != 'blas':
+            if pkg1 != "blas":
                 for i, pkg2 in enumerate(blas_packages):
                     if pkg1 != pkg2 and pkg1 in pkg2:
                         idx_to_remove.add(i)
 
-        blas_packages = [pkg for i, pkg in enumerate(blas_packages) if i not in idx_to_remove]
+        blas_packages = [
+            pkg for i, pkg in enumerate(blas_packages) if i not in idx_to_remove
+        ]
 
     # After applying all the heuristics, out of all the remaining libraries,
     # select the first one in the list. Not the greatest solution, maybe
@@ -117,22 +140,25 @@ def find_blas_libraries():
 
     if final_blas_pkg is not None:
         blas_info = pkgconfig.parse(final_blas_pkg)
-        blas_info['define_macros'] = [('HAVE_CBLAS', None)]
+        blas_info["define_macros"] = [("HAVE_CBLAS", None)]
     else:
         blas_info = {
-            'include_dirs': [],
-            'library_dirs': [],
-            'libraries': [],
-            'define_macros': [],
+            "include_dirs": [],
+            "library_dirs": [],
+            "libraries": [],
+            "define_macros": [],
         }
-        warnings.warn("""
+        warnings.warn(
+            """
             ********************* WARNING *********************
-            BLAS library header files not found on your system. 
-            This may slow down some computations. If you are 
-            using conda, we recommend installing BLAS libraries 
+            BLAS library header files not found on your system.
+            This may slow down some computations. If you are
+            using conda, we recommend installing BLAS libraries
             beforehand.
             ********************* WARNING *********************
-        """, stacklevel=2)
+        """,
+            stacklevel=2,
+        )
 
     return blas_info
 
@@ -166,24 +192,29 @@ def no_cythonize(cy_extensions, **_ignore):
 
 
 extensions = [
-    Extension("viprs.utils.math_utils",
-              ["viprs/utils/math_utils.pyx"],
-              libraries=[[], ["m"]][os.name != 'nt'],  # Only include for non-Windows systems
-              include_dirs=[np.get_include()],
-              extra_compile_args=["-O3"]),
-    Extension("viprs.model.vi.e_step_cpp",
-              ["viprs/model/vi/e_step_cpp.pyx"],
-              language="c++",
-              libraries=blas_flags['libraries'],
-              include_dirs=[np.get_include()] + blas_flags['include_dirs'],
-              library_dirs=blas_flags['library_dirs'],
-              define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")] + blas_flags['define_macros'],
-              extra_compile_args=["-O3", "-std=c++17"])
+    Extension(
+        "viprs.utils.math_utils",
+        ["viprs/utils/math_utils.pyx"],
+        libraries=[[], ["m"]][os.name != "nt"],  # Only include for non-Windows systems
+        include_dirs=[np.get_include()],
+        extra_compile_args=["-O3"],
+    ),
+    Extension(
+        "viprs.model.vi.e_step_cpp",
+        ["viprs/model/vi/e_step_cpp.pyx"],
+        language="c++",
+        libraries=blas_flags["libraries"],
+        include_dirs=[np.get_include()] + blas_flags["include_dirs"],
+        library_dirs=blas_flags["library_dirs"],
+        define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
+        + blas_flags["define_macros"],
+        extra_compile_args=["-O3", "-std=c++17"],
+    ),
 ]
 
 if check_openmp_support():
     # Add any extension that requires openMP here:
-    openmp_extensions = ['viprs.model.vi.e_step_cpp']
+    openmp_extensions = ["viprs.model.vi.e_step_cpp"]
 
     for omp_ext in extensions:
         if omp_ext.name in openmp_extensions:
@@ -191,9 +222,9 @@ if check_openmp_support():
 else:
     warnings.warn("""
         ******************** WARNING ********************
-        OpenMP library not found on your system. This 
-        means that some computations may be slower than 
-        expected. It will preclude using multithreading 
+        OpenMP library not found on your system. This
+        means that some computations may be slower than
+        expected. It will preclude using multithreading
         in the coordinate ascent optimization algorithm.
         ******************** WARNING ********************
     """)
@@ -203,10 +234,10 @@ if cythonize is not None:
     compiler_directives = {
         "language_level": 3,
         "embedsignature": True,
-        'boundscheck': False,
-        'wraparound': False,
-        'nonecheck': False,
-        'cdivision': True
+        "boundscheck": False,
+        "wraparound": False,
+        "nonecheck": False,
+        "cdivision": True,
     }
     extensions = cythonize(extensions, compiler_directives=compiler_directives)
 else:
@@ -234,34 +265,33 @@ with open("requirements-docs.txt") as fp:
 
 setup(
     name="viprs",
-    version="0.1.3",
+    version=read_version(),
     author="Shadi Zabad",
-    author_email="shadi.zabad@mail.mcgill.ca",
+    author_email="shadi.zabad@stats.ox.ac.uk",
     description="Variational Inference of Polygenic Risk Scores (VIPRS)",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/shz9/viprs",
     classifiers=[
-        'Programming Language :: Python',
-        'Intended Audience :: Developers',
-        'Intended Audience :: Science/Research',
-        'Topic :: Software Development :: Libraries :: Python Modules',
-        'Topic :: Scientific/Engineering',
-        'Operating System :: OS Independent',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11',
-        'Programming Language :: Python :: 3.12'
+        "Programming Language :: Python",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Science/Research",
+        "Topic :: Software Development :: Libraries :: Python Modules",
+        "Topic :: Scientific/Engineering",
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
     ],
-    package_dir={'': '.'},
+    package_dir={"": "."},
     packages=find_packages(),
-    python_requires=">=3.8",
-    package_data={'viprs': ['model/vi/*.pxd', 'utils/*.pxd']},
-    scripts=['bin/viprs_fit', 'bin/viprs_score', 'bin/viprs_evaluate'],
+    python_requires=">=3.10,<3.14",
+    package_data={"viprs": ["model/vi/*.pxd", "utils/*.pxd"]},
+    scripts=["bin/viprs_fit", "bin/viprs_score", "bin/viprs_evaluate"],
     install_requires=install_requires,
-    extras_require={'opt': opt_requires, 'test': test_requires, 'docs': doc_requires},
+    extras_require={"opt": opt_requires, "test": test_requires, "docs": doc_requires},
     ext_modules=extensions,
-    zip_safe=False
+    zip_safe=False,
 )

@@ -24,7 +24,7 @@ Which outputs the following help message:
                            /_/                          
                                                         
           Variational Inference of Polygenic Risk Scores
-            Version: 0.1.3 | Release date: April 2025   
+            Version: 0.1.4 | Release date: July 2026    
               Author: Shadi Zabad, McGill University    
           **********************************************
           < Compute Polygenic Scores for Test Samples > 

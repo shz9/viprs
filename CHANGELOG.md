@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-07-04
+
+### Added
+
+- Added cloud-streamable UK Biobank LD matrix paths hosted on Hugging Face, allowing users to pass
+`hf://datasets/shz9/ukb-ld/<POP>/chr_*.zip` directly to `viprs_fit` without pre-downloading archives.
+- Added `uv` and `Apptainer` installation examples to the documentation.
+- Added a DockerHub publishing workflow and modernized the CLI Docker image for release as
+`shadizabad/viprs`.
+- Added `uv.lock` for reproducible development environments.
+- Added tests to ensure runtime package version metadata stays synchronized.
+
+### Changed
+
+- Restricted supported Python versions to Python 3.10 through 3.13, inclusive.
+- Centralized package version metadata in `viprs/_version.py` and reused it across runtime and packaging metadata.
+- Updated `pyproject.toml` metadata and dependencies to match the package's runtime, optional, test, and docs
+requirements.
+- Split wheel build/testing and PyPI publishing into separate GitHub Actions workflows.
+- Updated GitHub Actions runners and wheel builds to use current Linux, Windows, Intel macOS, and Apple Silicon
+macOS targets.
+- Modernized the CLI Dockerfile to use `python:3.11-slim-bookworm`, OCI labels, configurable install targets,
+and installation smoke tests.
+- Updated LD matrix documentation to put provenance and QC information before download/streaming instructions.
+
+### Fixed
+
+- Fixed the binary `f1` metric so it fits a logistic model on top of PRS values and thresholds predicted
+probabilities, instead of passing continuous PRS values directly to `sklearn.metrics.f1_score`.
+- Made BLAS discovery in `setup.py` tolerate missing system `pkg-config` and fall back to the existing
+no-BLAS build path.
+
 ## [0.1.3] - 2025-04-22
 
 ### Changed
@@ -160,4 +192,3 @@ necessarily having to write python code.
 - Updated implementation of `VIPRSMix`, `VIPRSAalpha`, etc. to inherit most 
 of their functionalities from the base `VIPRS` class.
 - Cleaned up implementation of hyperparameter search modules.
-

@@ -1,0 +1,106 @@
+name: DockerHub
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      image_name:
+        description: DockerHub repository name, for example shadizabad/viprs
+        required: false
+        default: shadizabad/viprs
+        type: string
+      tags:
+        description: Comma-separated image version tags, for example latest,0.1.4,v0.1.4
+        required: false
+        default: latest
+        type: string
+      push_latest:
+        description: Also publish the latest tag
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  build_and_publish:
+    name: Build and publish CLI image
+    runs-on: ubuntu-latest
+    environment: dockerhub
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Prepare image tags
+        id: docker_tags
+        shell: bash
+        env:
+          IMAGE_NAME: ${{ inputs.image_name }}
+          INPUT_TAGS: ${{ inputs.tags }}
+          PUSH_LATEST: ${{ inputs.push_latest }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          image_name="${IMAGE_NAME:-shadizabad/viprs}"
+          input_tags="${INPUT_TAGS}"
+          push_latest="${PUSH_LATEST:-true}"
+
+          if [ "${EVENT_NAME}" = "release" ]; then
+            input_tags="${RELEASE_TAG}"
+            push_latest="true"
+
+            if [[ "${RELEASE_TAG}" == v* && -n "${RELEASE_TAG#v}" ]]; then
+              input_tags="${input_tags},${RELEASE_TAG#v}"
+            fi
+          fi
+
+          tags=""
+
+          IFS=',' read -ra tag_array <<< "${input_tags}"
+          for tag in "${tag_array[@]}"; do
+            tag="$(echo "${tag}" | xargs)"
+            if [ -n "${tag}" ]; then
+              tags="${tags}${image_name}:${tag}"$'\n'
+            fi
+          done
+
+          if [ "${push_latest}" = "true" ] && ! grep -qx "${image_name}:latest" <<< "${tags}"; then
+            tags="${tags}${image_name}:latest"$'\n'
+          fi
+
+          if [ -z "${tags}" ]; then
+            echo "At least one Docker tag is required." >&2
+            exit 1
+          fi
+
+          {
+            echo "tags<<EOF"
+            printf "%s" "${tags}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/cli.Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            VIPRS_INSTALL_TARGET=.
+          tags: ${{ steps.docker_tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}

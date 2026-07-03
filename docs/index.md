@@ -8,10 +8,11 @@ variety of options for the user to customize the inference process.
 
 The details of the method and algorithms are described in detail in the following paper(s):
 
+> Zabad, S., Haryan, C. A., Gravel, S., Misra, S., Li, Y. (2025). **Toward whole-genome inference of polygenic scores with fast and memory-efficient algorithms.** 
+The American Journal of Human Genetics, 112(7), 1528-1546. https://doi.org/10.1016/j.ajhg.2025.05.002
 
 > Zabad, S., Gravel, S., & Li, Y. (2023). **Fast and accurate Bayesian polygenic risk modeling with variational inference.** 
 The American Journal of Human Genetics, 110(5), 741–761. https://doi.org/10.1016/j.ajhg.2023.03.009
-
 
 ## Helpful links
 
@@ -22,6 +23,7 @@ The American Journal of Human Genetics, 110(5), 741–761. https://doi.org/10.10
 * [Download Reference LD matrices](download_ld.md)
 * [Project homepage on `GitHub`](https://github.com/shz9/viprs)
 * [Sister package `magenpy`](https://github.com/shz9/magenpy)
+* [Sister package `penprs`](https://github.com/shz9/penprs)
 
 ## Software contributions
 
@@ -44,4 +46,3 @@ on the `GitHub` repository or contact us directly at:
 * [Shadi Zabad](mailto:shadi.zabad@mail.mcgill.ca)
 * [Yue Li](mailto:yueli@cs.mcgill.ca)
 * [Simon Gravel](mailto:simon.gravel@mcgill.ca)
-

@@ -7,7 +7,7 @@ to ensure that a `C/C++` Compiler (with appropriate flags) is present on your sy
 
 Building the `viprs` package requires the following dependencies:
 
-* `python` (>=3.8)
+* `python` (3.10, 3.11, 3.12, or 3.13)
 * `C/C++` Compilers
 * `cython`
 * `numPy` 
@@ -26,7 +26,7 @@ If you can use `Anaconda` or `miniconda` to manage your Python environment, we *
 a new environment with the required dependencies as follows:
 
 ```bash
-python_version=3.11  # Change python version here if needed
+python_version=3.11  # Supported versions are 3.10, 3.11, 3.12, and 3.13
 conda create --name "viprs_env" -c anaconda -c conda-forge python=$python_version compilers pkg-config openblas -y
 conda activate viprs_env
 ```
@@ -42,7 +42,26 @@ The package is available for easy installation via the Python Package Index (`py
 be installed using `pip`:
 
 ```bash
-python -m pip install viprs>=0.1
+python -m pip install viprs
+```
+
+### Using `uv`
+
+If you use [`uv`](https://docs.astral.sh/uv/) to manage Python environments, you can create a virtual environment
+with a supported Python version and install `viprs` into it as follows:
+
+```bash
+uv venv --python 3.11 viprs_env
+source viprs_env/bin/activate
+uv pip install viprs
+```
+
+For command-line use without manually activating an environment, you can also run the CLI tools through `uvx`:
+
+```bash
+uvx --from viprs viprs_fit -h
+uvx --from viprs viprs_score -h
+uvx --from viprs viprs_evaluate -h
 ```
 
 ### Building from source
@@ -67,23 +86,41 @@ module load python/3.11
 python3 -m venv viprs_env  # Assumes venv is available
 source viprs_env/bin/activate
 python -m pip install --upgrade pip
-python -m pip install viprs>=0.1
+python -m pip install viprs
 ```
 
 ### Using `Docker` containers
 
-If you are using `Docker` containers, you can build a container with the `viprs` package 
-and all its dependencies by downloading the relevant `Dockerfile` from the 
-[repository](https://github.com/shz9/viprs/tree/master/containers) and building it 
-as follows:
+If you are using `Docker` containers, you can pull the pre-built CLI image from DockerHub:
 
 ```bash
-# Build the docker image:
-docker build -f cli.Dockerfile -t viprs-cli .
-# Run the container in interactive mode:
-docker run -it viprs-cli /bin/bash
-# Test that the package installed successfully:
-viprs_fit -h
+docker pull shadizabad/viprs:latest
+docker run --rm shadizabad/viprs:latest viprs_fit -h
 ```
 
-We plan to publish pre-built `Docker` images on `DockerHub` in the future.
+You can also build the same CLI image locally from the repository checkout:
+
+```bash
+docker build --platform linux/amd64 -f containers/cli.Dockerfile -t viprs-cli .
+docker run --rm viprs-cli viprs_fit -h
+docker run --rm viprs-cli viprs_score -h
+docker run --rm viprs-cli viprs_evaluate -h
+```
+
+### Using `Apptainer`
+
+On shared computing environments where `Docker` is not available, you can run the DockerHub image with
+[`Apptainer`](https://apptainer.org/):
+
+```bash
+apptainer pull viprs-cli.sif docker://shadizabad/viprs:latest
+apptainer exec viprs-cli.sif viprs_fit -h
+```
+
+To run `viprs` commands against files in your current working directory, bind the directory into the container:
+
+```bash
+apptainer exec --bind "$PWD:/work" viprs-cli.sif viprs_fit -h
+apptainer exec --bind "$PWD:/work" viprs-cli.sif viprs_score -h
+apptainer exec --bind "$PWD:/work" viprs-cli.sif viprs_evaluate -h
+```

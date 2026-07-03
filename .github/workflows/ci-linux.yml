@@ -8,14 +8,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up miniconda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v3.0.1
         with:
           channels: conda-forge
           python-version: ${{ matrix.python-version }}
@@ -24,7 +24,17 @@ jobs:
         shell: "bash -l {0}"
         run: >
           conda create --name "viprs_ci" -c conda-forge -c anaconda 
-          python=${{matrix.python-version}} pip wheel compilers openblas libcblas -y
+          python=${{matrix.python-version}} pip wheel pkg-config compilers openblas libcblas -y
+
+      - name: Install PLINK
+        run: |
+          mkdir -p "$RUNNER_TEMP/plink"
+          wget -q https://s3.amazonaws.com/plink2-assets/alpha5/plink2_linux_x86_64_20240105.zip -O "$RUNNER_TEMP/plink/plink2.zip"
+          python -m zipfile -e "$RUNNER_TEMP/plink/plink2.zip" "$RUNNER_TEMP/plink"
+          wget -q https://s3.amazonaws.com/plink1-assets/plink_linux_x86_64_20231211.zip -O "$RUNNER_TEMP/plink/plink.zip"
+          python -m zipfile -e "$RUNNER_TEMP/plink/plink.zip" "$RUNNER_TEMP/plink"
+          chmod +x "$RUNNER_TEMP/plink/plink" "$RUNNER_TEMP/plink/plink2"
+          echo "$RUNNER_TEMP/plink" >> "$GITHUB_PATH"
 
       - name: Show info about `viprs_ci` environment
         shell: "bash -l {0}"

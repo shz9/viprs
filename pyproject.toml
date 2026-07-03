@@ -5,15 +5,78 @@ requires = [
     "wheel",
     "cython",
     "extension-helpers",
-    "scipy",
-    "oldest-supported-numpy",
+    "numpy>=2,<3",
+    "scipy<1.17",
     "pkgconfig"
 ]
 build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "viprs"
+description = "Variational Inference of Polygenic Risk Scores (VIPRS)"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dynamic = ["version"]
+authors = [
+    { name = "Shadi Zabad", email = "shadi.zabad@stats.ox.ac.uk" },
+]
+classifiers = [
+    "Programming Language :: Python",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "numpy>=2,<3",
+    "scipy<1.17",
+    "joblib",
+    "magenpy>=0.1.5",
+    "pandas",
+    "psutil",
+    "scikit-learn",
+    "statsmodels",
+    "tqdm",
+    "zarr<3",
+]
+
+[project.optional-dependencies]
+opt = [
+    "matplotlib",
+    "seaborn",
+    "scikit-optimize",
+    "huggingface_hub",
+    "s3fs",
+]
+test = [
+    "pytest",
+]
+docs = [
+    "mkdocs",
+    "mkdocstrings-python",
+    "mkdocs-material",
+    "mkdocs-material-extensions",
+]
+
+[project.urls]
+Homepage = "https://github.com/shz9/viprs"
+Repository = "https://github.com/shz9/viprs"
+Documentation = "https://shz9.github.io/viprs/"
+
+
+[tool.setuptools.dynamic]
+version = { attr = "viprs._version.__version__" }
+
 
 [tool.cibuildwheel]
 test-extras = "test"
 test-command = "pytest {project}/tests"
 # Optional
 build-verbosity = 1
-
