@@ -119,7 +119,7 @@ options:
                         regularizer for the effect sizes.
   --genomewide          Fit all chromosomes jointly
   --exclude-lrld        Exclude Long Range LD (LRLD) regions during inference. These regions can cause numerical instabilities in some cases.
-  --backend {plink,xarray}
+  --backend {plink,xarray,magenpy,bed-reader}
                         The backend software used for computations on the genotype matrix.
   --n-jobs N_JOBS       The number of processes to launch for the hyperparameter search (default is 1, but we recommend increasing this depending on system
                         capacity).

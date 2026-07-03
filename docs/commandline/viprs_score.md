@@ -30,7 +30,7 @@ Which outputs the following help message:
           < Compute Polygenic Scores for Test Samples > 
 
 usage: viprs_score [-h] -f FIT_FILES --bfile BED_FILES --output-file OUTPUT_FILE [--temp-dir TEMP_DIR] [--keep KEEP] [--extract EXTRACT]
-                   [--backend {xarray,plink}] [--threads THREADS] [--compress] [--log-level {WARNING,CRITICAL,DEBUG,INFO,ERROR}]
+                   [--backend {xarray,plink,magenpy,bed-reader}] [--threads THREADS] [--compress] [--log-level {WARNING,CRITICAL,DEBUG,INFO,ERROR}]
 
 Commandline arguments for computing polygenic scores
 
@@ -45,7 +45,7 @@ options:
   --temp-dir TEMP_DIR   The temporary directory where to store intermediate files.
   --keep KEEP           A plink-style keep file to select a subset of individuals for the test set.
   --extract EXTRACT     A plink-style extract file to select a subset of SNPs for scoring.
-  --backend {xarray,plink}
+  --backend {xarray,plink,magenpy,bed-reader}
                         The backend software used for computations with the genotype matrix.
   --threads THREADS     The number of threads to use for computations.
   --compress            Compress the output file
