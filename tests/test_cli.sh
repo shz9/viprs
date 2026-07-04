@@ -9,10 +9,10 @@ SUMSTATS_PATH=$(python3 -c "import magenpy as mgp; print(mgp.ukb_height_sumstats
 LD_BLOCKS_PATH="https://bitbucket.org/nygcresearch/ldetect-data/raw/ac125e47bf7ff3e90be31f278a7b6a61daaba0dc/EUR/fourier_ls-all.bed"
 
 # -------------------------------------------------------------------
-# Use `magenpy_ld` cli script to estimate LD:
+# Use `mgp_compute_ld` cli script to estimate LD:
 
 echo "> Estimating LD using the block estimator:"
-magenpy_ld --estimator "block" \
+mgp_compute_ld --estimator "block" \
            --bfile "$BFILE_PATH" \
            --ld-blocks "$LD_BLOCKS_PATH" \
            --output-dir "output/ld_block/"

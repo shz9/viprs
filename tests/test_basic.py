@@ -31,7 +31,7 @@ def gdl_object():
         "https://bitbucket.org/nygcresearch/ldetect-data/raw/"
         "ac125e47bf7ff3e90be31f278a7b6a61daaba0dc/EUR/fourier_ls-all.bed"
     )
-    gdl.compute_ld("block", gdl.output_dir, ld_blocks_file=ld_block_url)
+    gdl.compute_ld("block", gdl.temp_dir, ld_blocks_file=ld_block_url)
 
     gdl.harmonize_data()
 
@@ -40,7 +40,6 @@ def gdl_object():
     # Clean up after tests are done:
     gdl.cleanup()
     shutil.rmtree(gdl.temp_dir)
-    shutil.rmtree(gdl.output_dir)
 
 
 @pytest.fixture(scope="module")

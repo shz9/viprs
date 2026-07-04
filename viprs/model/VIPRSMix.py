@@ -1,10 +1,10 @@
-import pandas as pd
 import numpy as np
-
+import pandas as pd
 from magenpy.stats.h2.ldsc import simple_ldsc
-from .VIPRS import VIPRS
+
+from ..utils.compute_utils import dict_mean, dict_sum
 from .vi.e_step_cpp import cpp_e_step_mixture
-from ..utils.compute_utils import dict_sum, dict_mean
+from .VIPRS import VIPRS
 
 
 class VIPRSMix(VIPRS):
@@ -27,12 +27,7 @@ class VIPRSMix(VIPRS):
 
     """
 
-    def __init__(self,
-                 gdl,
-                 K=1,
-                 prior_multipliers=None,
-                 **kwargs):
-
+    def __init__(self, gdl, K=1, prior_multipliers=None, **kwargs):
         """
         :param gdl: An instance of `GWADataLoader`
         :param K: The number of causal (i.e. non-null) components in the mixture prior (minimum 1). When `K=1`, this
@@ -42,7 +37,7 @@ class VIPRSMix(VIPRS):
         """
 
         # Make sure that the matrices follow the C-contiguous order:
-        kwargs['order'] = 'C'
+        kwargs["order"] = "C"
 
         super().__init__(gdl, **kwargs)
 
@@ -54,12 +49,14 @@ class VIPRSMix(VIPRS):
             assert len(prior_multipliers) == K
             self.d = np.array(prior_multipliers).astype(self.float_precision)
         else:
-            self.d = 2**np.linspace(-min(K - 1, 7), 0, K).astype(self.float_precision)
+            self.d = 2 ** np.linspace(-min(K - 1, 7), 0, K).astype(self.float_precision)
 
         # Populate/update relevant fields:
         self.shapes = {c: (shp, self.K) for c, shp in self.shapes.items()}
-        self.n_per_snp = {c: n[:, None].astype(self.float_precision, order=self.order)
-                          for c, n in self.n_per_snp.items()}
+        self.n_per_snp = {
+            c: n[:, None].astype(self.float_precision, order=self.order)
+            for c, n in self.n_per_snp.items()
+        }
 
     def initialize_theta(self, theta_0=None):
         """
@@ -76,15 +73,17 @@ class VIPRSMix(VIPRS):
 
         # ----------------------------------------------
         # (1) Initialize pi from a uniform
-        if 'pis' in theta_0:
-            self.pi = theta_0['pis']
+        if "pis" in theta_0:
+            self.pi = theta_0["pis"]
         else:
-            if 'pi' in theta_0:
-                overall_pi = theta_0['pi']
+            if "pi" in theta_0:
+                overall_pi = theta_0["pi"]
             else:
-                overall_pi = np.random.uniform(low=max(0.005, 1. / self.n_snps), high=.1)
+                overall_pi = np.random.uniform(
+                    low=max(0.005, 1.0 / self.n_snps), high=0.1
+                )
 
-            self.pi = overall_pi*np.random.dirichlet(np.ones(self.K))
+            self.pi = overall_pi * np.random.dirichlet(np.ones(self.K))
 
         # ----------------------------------------------
         # (2) Initialize sigma_epsilon and sigma_beta
@@ -95,25 +94,25 @@ class VIPRSMix(VIPRS):
         # Where, by assumption, Var(y) = 1,
         # And h2 ~= pi*M*sigma_beta
 
-        if 'sigma_epsilon' not in theta_0:
-
-            if 'tau_betas' in theta_0:
-
+        if "sigma_epsilon" not in theta_0:
+            if "tau_betas" in theta_0:
                 # If tau_betas are given, use them to initialize sigma_epsilon
 
-                self.tau_beta = theta_0['tau_betas']
+                self.tau_beta = theta_0["tau_betas"]
 
-                self.sigma_epsilon = np.clip(1. - np.dot(1./self.tau_beta, self.pi),
-                                             a_min=1e-4,
-                                             a_max=1. - 1e-4)
+                self.sigma_epsilon = np.clip(
+                    1.0 - np.dot(1.0 / self.tau_beta, self.pi),
+                    a_min=1e-4,
+                    a_max=1.0 - 1e-4,
+                )
 
-            elif 'tau_beta' in theta_0:
+            elif "tau_beta" in theta_0:
                 # NOTE: Here, we assume the provided `tau_beta` is a scalar.
                 # This is different from `tau_betas`
 
                 assert self.d is not None
 
-                self.tau_beta = theta_0['tau_beta'] * self.d
+                self.tau_beta = theta_0["tau_beta"] * self.d
                 # Use the provided tau_beta to initialize sigma_epsilon.
                 # First, we derive a naive estimate of the heritability, based on the following equation:
                 # h2g/M = \sum_k pi_k \tau_k
@@ -121,40 +120,43 @@ class VIPRSMix(VIPRS):
 
                 # Step (1): Given the provided tau_beta and associated multipliers,
                 # obtain a naive estimate of the heritability:
-                h2g_estimate = (self.n_snps*self.pi/self.tau_beta).sum()
+                h2g_estimate = (self.n_snps * self.pi / self.tau_beta).sum()
                 # Step (2): Set sigma_epsilon to 1 - h2g_estimate:
-                self.sigma_epsilon = np.clip(1. - h2g_estimate,
-                                             a_min=1e-4,
-                                             a_max=1. - 1e-4)
+                self.sigma_epsilon = np.clip(
+                    1.0 - h2g_estimate, a_min=1e-4, a_max=1.0 - 1e-4
+                )
 
             else:
                 # If neither sigma_beta nor sigma_epsilon are given,
                 # then initialize using the SNP heritability estimate based on summary statistics
 
                 try:
-                    naive_h2g = np.clip(simple_ldsc(self.gdl), 1e-3, 1. - 1e-3)
+                    naive_h2g = np.clip(simple_ldsc(self.gdl), 1e-3, 1.0 - 1e-3)
                 except Exception as e:
-                    naive_h2g = np.random.uniform(low=.001, high=.999)
+                    naive_h2g = np.random.uniform(low=0.001, high=0.999)
 
-                self.sigma_epsilon = 1. - naive_h2g
+                self.sigma_epsilon = 1.0 - naive_h2g
 
-                global_tau = (self.n_snps * np.dot(1./self.d, self.pi) / naive_h2g)
+                global_tau = self.n_snps * np.dot(1.0 / self.d, self.pi) / naive_h2g
 
-                self.tau_beta = self.d*global_tau
+                self.tau_beta = self.d * global_tau
         else:
-
             # If sigma_epsilon is given, use it in the initialization
 
-            self.sigma_epsilon = theta_0['sigma_epsilon']
+            self.sigma_epsilon = theta_0["sigma_epsilon"]
 
             # Initialize tau_betas
-            if 'tau_betas' in theta_0:
-                self.tau_beta = theta_0['tau_betas']
-            elif 'tau_beta' in theta_0:
-                self.tau_beta = np.repeat(theta_0['tau_beta'], self.K)
+            if "tau_betas" in theta_0:
+                self.tau_beta = theta_0["tau_betas"]
+            elif "tau_beta" in theta_0:
+                self.tau_beta = np.repeat(theta_0["tau_beta"], self.K)
             else:
                 # If not provided, initialize using sigma_epsilon value
-                global_tau = (self.n_snps * np.dot(1./self.d, self.pi) / (1. - self.sigma_epsilon))
+                global_tau = (
+                    self.n_snps
+                    * np.dot(1.0 / self.d, self.pi)
+                    / (1.0 - self.sigma_epsilon)
+                )
 
                 self.tau_beta = self.d * global_tau
 
@@ -162,7 +164,7 @@ class VIPRSMix(VIPRS):
         self.sigma_epsilon = np.dtype(self.float_precision).type(self.sigma_epsilon)
         self.pi = np.dtype(self.float_precision).type(self.pi)
         self.lambda_min = np.dtype(self.float_precision).type(self.lambda_min)
-        self._sigma_g = np.dtype(self.float_precision).type(0.)
+        self._sigma_g = np.dtype(self.float_precision).type(0.0)
 
     def e_step(self):
         """
@@ -177,39 +179,48 @@ class VIPRSMix(VIPRS):
         """
 
         for c, shapes in self.shapes.items():
-
             # Get the priors:
             tau_beta = self.get_tau_beta(c)
             pi = self.get_pi(c)
 
             # Updates for tau variational parameters:
-            self.var_tau[c] = (self.n_per_snp[c]*(1. + self.lambda_min) / self.sigma_epsilon) + tau_beta
+            self.var_tau[c] = (
+                self.n_per_snp[c] * (1.0 + self.lambda_min) / self.sigma_epsilon
+            ) + tau_beta
 
             if isinstance(self.pi, dict):
-                log_null_pi = (np.log(1. - self.pi[c].sum(axis=1)))
+                log_null_pi = np.log(1.0 - self.pi[c].sum(axis=1))
             else:
-                log_null_pi = np.ones_like(self.eta[c])*np.log(1. - self.pi.sum())
+                log_null_pi = np.ones_like(self.eta[c]) * np.log(1.0 - self.pi.sum())
 
             # Compute some quantities that are needed for the per-SNP updates:
-            mu_mult = self.n_per_snp[c] / (self.var_tau[c] * self.sigma_epsilon)
-            u_logs = np.log(pi) - np.log(1. - pi) + .5 * (np.log(tau_beta) - np.log(self.var_tau[c]))
+            mu_mult = (
+                self.n_per_snp[c] / (self.var_tau[c] * self.sigma_epsilon)
+            ).astype(self.float_precision)
+            u_logs = (
+                np.log(pi)
+                - np.log(1.0 - pi)
+                + 0.5 * (np.log(tau_beta) - np.log(self.var_tau[c]))
+            ).astype(self.float_precision)
 
-            cpp_e_step_mixture(self.ld_left_bound[c],
-                               self.ld_indptr[c],
-                               self.ld_data[c],
-                               self.std_beta[c],
-                               self.var_gamma[c],
-                               self.var_mu[c],
-                               self.eta[c],
-                               self.q[c],
-                               self.eta_diff[c],
-                               log_null_pi,
-                               u_logs,
-                               np.sqrt(0.5*self.var_tau[c]),
-                               mu_mult,
-                               self.dequantize_scale,
-                               self.threads,
-                               self.low_memory)
+            cpp_e_step_mixture(
+                self.ld_left_bound[c],
+                self.ld_indptr[c],
+                self.ld_data[c],
+                self.std_beta[c],
+                self.var_gamma[c],
+                self.var_mu[c],
+                self.eta[c],
+                self.q[c],
+                self.eta_diff[c],
+                log_null_pi,
+                u_logs,
+                np.sqrt(0.5 * self.var_tau[c]).astype(self.float_precision),
+                mu_mult,
+                self.dequantize_scale,
+                self.threads,
+                self.low_memory,
+            )
 
         self.zeta = self.compute_zeta()
 
@@ -218,14 +229,13 @@ class VIPRSMix(VIPRS):
         Update the prior mixing proportions `pi`
         """
 
-        if 'pis' not in self.fix_params:
-
+        if "pis" not in self.fix_params:
             pi_estimate = dict_sum(self.var_gamma, axis=0)
 
-            if 'pi' in self.fix_params:
+            if "pi" in self.fix_params:
                 # If the user provides an estimate for the total proportion of causal variants,
                 # update the pis such that the proportion of SNPs in the null component becomes 1. - pi.
-                pi_estimate = self.fix_params['pi']*pi_estimate / pi_estimate.sum()
+                pi_estimate = self.fix_params["pi"] * pi_estimate / pi_estimate.sum()
             else:
                 pi_estimate /= self.n_snps
 
@@ -237,18 +247,17 @@ class VIPRSMix(VIPRS):
         Update the prior precision (inverse variance) for the effect sizes, `tau_beta`
         """
 
-        if 'tau_betas' not in self.fix_params:
-
+        if "tau_betas" not in self.fix_params:
             # If a list of multipliers is provided,
             # estimate the global sigma_beta and then multiply it
             # by the per-component multiplier to get the final sigma_betas.
 
             zetas = sum(self.compute_zeta(sum_axis=0).values())
 
-            tau_beta_estimate = np.sum(self.pi)*self.m / np.dot(self.d, zetas)
-            tau_beta_estimate = self.d*tau_beta_estimate
+            tau_beta_estimate = np.sum(self.pi) * self.m / np.dot(self.d, zetas)
+            tau_beta_estimate = self.d * tau_beta_estimate
 
-            self.tau_beta = np.clip(tau_beta_estimate, a_min=1., a_max=None)
+            self.tau_beta = np.clip(tau_beta_estimate, a_min=1.0, a_max=None)
 
     def get_null_pi(self, chrom=None):
         """
@@ -260,9 +269,9 @@ class VIPRSMix(VIPRS):
         pi = self.get_pi(chrom=chrom)
 
         if isinstance(pi, dict):
-            return {c: 1. - c_pi.sum(axis=1) for c, c_pi in pi.items()}
+            return {c: 1.0 - c_pi.sum(axis=1) for c, c_pi in pi.items()}
         else:
-            return 1. - np.sum(pi)
+            return 1.0 - np.sum(pi)
 
     def get_proportion_causal(self):
         """
@@ -301,8 +310,10 @@ class VIPRSMix(VIPRS):
         """
         :return: The expectation of the squared effect size under the variational posterior.
         """
-        return {c: (v * (self.var_mu[c] ** 2 + (1./self.var_tau[c]))).sum(axis=sum_axis)
-                for c, v in self.var_gamma.items()}
+        return {
+            c: (v * (self.var_mu[c] ** 2 + (1.0 / self.var_tau[c]))).sum(axis=sum_axis)
+            for c, v in self.var_gamma.items()
+        }
 
     def to_theta_table(self):
         """
@@ -319,6 +330,6 @@ class VIPRSMix(VIPRS):
             pis = self.pi
 
         for i in range(self.K):
-            extra_theta.append({'Parameter': f'pi_{i + 1}', 'Value': pis[i]})
+            extra_theta.append({"Parameter": f"pi_{i + 1}", "Value": pis[i]})
 
         return pd.concat([table, pd.DataFrame(extra_theta)])
