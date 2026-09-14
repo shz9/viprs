@@ -1,5 +1,6 @@
 import importlib.machinery
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -58,7 +59,8 @@ def test_individual_evaluation_still_runs_end_to_end(tmp_path):
         "--phenotype-file", str(phenotype_file),
         "--output-file", str(output_file),
         "--metrics", "Pearson_R", "R2",
-    ], capture_output=True, text=True)
+    ], capture_output=True, text=True, encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     assert process.returncode == 0, process.stderr
 
     result = pd.read_csv(str(output_file) + ".eval", sep="\t").iloc[0]
