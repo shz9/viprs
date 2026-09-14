@@ -1,62 +1,45 @@
 Evaluate Predictive Performance of PRS (`viprs_evaluate`)
 ---
 
-The `viprs_evaluate` script is used to evaluate the performance of the PRS predictions using the PRS computed in 
-the previous step. The script provides a variety of options for the user to customize the evaluation process, 
-including the choice of performance metrics and the choice of evaluation datasets.
+The `viprs_evaluate` script supports two evaluation modes:
 
-A full listing of the options available for the `viprs_evaluate` script can be found by running the 
+* **Individual-level evaluation** compares computed scores (`--prs-file`) with observed phenotypes
+  (`--phenotype-file`). Continuous and binary phenotype metrics are supported, with optional covariate adjustment.
+* **Summary-statistics evaluation** compares inferred effects from VIPRS `.fit` files (`--fit-files`) with
+  independent validation/test GWAS summary statistics (`--sumstats`) using an LD reference (`--ld-dir`). This
+  pseudo-evaluation mode computes `Pseudo_Pearson_R` and `Pseudo_R2` using standardized marginal effects and LD.
+
+## Individual-level evaluation
+
+```bash
+viprs_evaluate \
+    --prs-file output/scores.prs \
+    --phenotype-file data/phenotypes.txt \
+    --output-file output/test_performance
+```
+
+## Summary-statistics (pseudo) evaluation
+
+```bash
+viprs_evaluate \
+    --sumstats data/validation.fastgwa \
+    --sumstats-format fastgwa \
+    --fit-files 'output/viprs_fit/*.fit.gz' \
+    --ld-dir 'data/ld/chr_*' \
+    --output-file output/pseudo_performance
+```
+
+The summary statistics must contain per-variant sample sizes. If they do not, provide the overall validation GWAS
+sample size with `--gwas-sample-size`. Custom summary-statistics formats are supported with
+`--sumstats-format custom`, `--custom-sumstats-mapper`, and optionally `--custom-sumstats-sep`.
+
+Both modes write a one-row, tab-separated `<output-file>.eval` file and a `<output-file>.log` file. If a `.fit`
+table contains several inferred-effect columns (`BETA_0`, `BETA_1`, ...), the output metrics are numbered in the
+same order (for example, `Pseudo_R2_0`, `Pseudo_R2_1`, ...).
+
+A full listing of the options available for the `viprs_evaluate` script can be found by running the
 following command in your terminal:
 
 ```bash
 viprs_evaluate -h
-```
-
-Which outputs the following help message:
-
-```bash
-
-          **********************************************
-                     _____                              
-             ___   _____(_)________ ________________    
-             __ | / /__  / ___  __ \__  ___/__  ___/    
-             __ |/ / _  /  __  /_/ /_  /    _(__  )     
-             _____/  /_/   _  .___/ /_/     /____/      
-                           /_/                          
-                                                        
-          Variational Inference of Polygenic Risk Scores
-            Version: 0.1.4 | Release date: July 2026    
-              Author: Shadi Zabad, McGill University    
-          **********************************************
-          < Evaluate Prediction Accuracy of PRS Models >
-
-usage: viprs_evaluate [-h] --prs-file PRS_FILE --phenotype-file PHENO_FILE [--phenotype-col PHENO_COL]
-                      [--phenotype-likelihood {binomial,gaussian,infer}] [--keep KEEP] --output-file OUTPUT_FILE
-                      [--metrics METRICS [METRICS ...]] [--covariates-file COVARIATES_FILE]
-                      [--log-level {CRITICAL,WARNING,INFO,DEBUG,ERROR}]
-
-Commandline arguments for evaluating polygenic scores
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --prs-file PRS_FILE   The path to the PRS file (expected format: FID IID PRS, tab-separated)
-  --phenotype-file PHENO_FILE
-                        The path to the phenotype file. The expected format is: FID IID phenotype (no header), tab-separated.
-  --phenotype-col PHENO_COL
-                        The column index for the phenotype in the phenotype file (0-based index).
-  --phenotype-likelihood {binomial,gaussian,infer}
-                        The phenotype likelihood ("gaussian" for continuous, "binomial" for case-control). If not set, will be inferred
-                        automatically based on the phenotype file.
-  --keep KEEP           A plink-style keep file to select a subset of individuals for the evaluation.
-  --output-file OUTPUT_FILE
-                        The output file where to store the evaluation metrics (with no extension).
-  --metrics METRICS [METRICS ...]
-                        The evaluation metrics to compute (default: all available metrics that are relevant for the phenotype). For a full
-                        list of supported metrics, check the documentation.
-  --covariates-file COVARIATES_FILE
-                        A file with covariates for the samples included in the analysis. This tab-separated file should not have a header
-                        and the first two columns should be the FID and IID of the samples.
-  --log-level {CRITICAL,WARNING,INFO,DEBUG,ERROR}
-                        The logging level for the console output.
-
 ```

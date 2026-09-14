@@ -137,6 +137,11 @@ class VIPRS(BayesPRSModel):
         self._sigma_g = None  # A proxy for the additive genotypic variance
         self.lambda_min = None
 
+        # During fitting, effect-size parameters are reparameterized by a
+        # single variance scale based on the GWAS sample size. Outside fit(),
+        # parameters are always kept on their original scale.
+        self._parameter_scale = 1.0
+
         # ---------- Inputs to the model: ----------
 
         # NOTE: Here, we typecast the inputs to the model to the specified float precision.
@@ -225,6 +230,70 @@ class VIPRS(BayesPRSModel):
         self.initialize_theta(theta_0)
         self.initialize_variational_parameters(param_0)
         self.init_optim_meta()
+
+    def _set_optimization_scale(self, target_scale):
+        """Move effect-size parameters to or from the scaled optimization space."""
+
+        current_scale = getattr(self, "_parameter_scale", 1.0)
+        target_scale = float(target_scale)
+        if target_scale <= 0.0 or not np.isfinite(target_scale):
+            raise ValueError("The optimization variance scale must be finite and positive.")
+        if target_scale == current_scale:
+            return
+
+        variance_ratio = target_scale / current_scale
+        mean_ratio = np.sqrt(variance_ratio)
+
+        if current_scale == 1.0:
+            self._unscaled_std_beta = self.std_beta
+            self.std_beta = {
+                c: np.asarray(
+                    beta * mean_ratio,
+                    dtype=self.float_precision,
+                    order=self.order,
+                )
+                for c, beta in self.std_beta.items()
+            }
+        elif target_scale == 1.0:
+            self.std_beta = self._unscaled_std_beta
+            del self._unscaled_std_beta
+        else:
+            self.std_beta = {
+                c: np.asarray(
+                    beta * mean_ratio,
+                    dtype=self.float_precision,
+                    order=self.order,
+                )
+                for c, beta in self.std_beta.items()
+            }
+
+        for values in (self.var_mu, self.eta, self.q, self.eta_diff):
+            for value in values.values():
+                value *= mean_ratio
+        for value in self.zeta.values():
+            value *= variance_ratio
+        self.var_tau = {
+            c: np.asarray(
+                value / variance_ratio,
+                dtype=self.float_precision,
+                order=self.order,
+            )
+            for c, value in self.var_tau.items()
+        }
+
+        if isinstance(self.tau_beta, dict):
+            self.tau_beta = {
+                c: np.asarray(tau / variance_ratio, dtype=self.float_precision)
+                for c, tau in self.tau_beta.items()
+            }
+        else:
+            self.tau_beta = np.asarray(
+                self.tau_beta / variance_ratio, dtype=self.float_precision
+            )[()]
+
+        self._sigma_g *= variance_ratio
+        self._log_var_tau = {c: np.log(tau) for c, tau in self.var_tau.items()}
+        self._parameter_scale = target_scale
 
     def init_optim_meta(self):
         """
@@ -341,7 +410,9 @@ class VIPRS(BayesPRSModel):
                     self.n_per_snp[c] / self.sigma_epsilon
                 ) + self.get_tau_beta(c)
 
-            self.var_tau[c] = self.var_tau[c]
+            self.var_tau[c] = np.asarray(
+                self.var_tau[c], dtype=self.float_precision, order=self.order
+            )
 
             if 'mu' in param_0:
                 self.var_mu[c] = param_0['mu'][c].astype(self.float_precision, order=self.order)
@@ -387,7 +458,9 @@ class VIPRS(BayesPRSModel):
             if key == 'sigma_epsilon':
                 self.sigma_epsilon = np.dtype(self.float_precision).type(val)
             elif key == 'tau_beta':
-                self.tau_beta = np.dtype(self.float_precision).type(val)
+                self.tau_beta = np.dtype(self.float_precision).type(
+                    val / self._parameter_scale
+                )
             elif key == 'pi':
                 self.pi = np.dtype(self.float_precision).type(val)
             elif key == 'lambda_min':
@@ -410,13 +483,15 @@ class VIPRS(BayesPRSModel):
             # Get the priors:
             tau_beta = self.get_tau_beta(c)
             pi = self.get_pi(c)
+            parameter_scale = getattr(self, "_parameter_scale", 1.0)
+            scaled_n = self.n_per_snp[c] / parameter_scale
 
             # Updates for tau variational parameters:
-            self.var_tau[c] = (self.n_per_snp[c]*(1. + self.lambda_min) / self.sigma_epsilon) + tau_beta
+            self.var_tau[c] = (scaled_n*(1. + self.lambda_min) / self.sigma_epsilon) + tau_beta
             np.log(self.var_tau[c], out=self._log_var_tau[c])
 
             # Compute some quantities that are needed for the per-SNP updates:
-            mu_mult = (self.n_per_snp[c]/(self.var_tau[c]*self.sigma_epsilon)).astype(self.float_precision)
+            mu_mult = (scaled_n/(self.var_tau[c]*self.sigma_epsilon)).astype(self.float_precision)
             u_logs = (np.log(pi) - np.log(1. - pi) + .5*(np.log(tau_beta) -
                                                          self._log_var_tau[c])).astype(self.float_precision)
 
@@ -488,11 +563,12 @@ class VIPRS(BayesPRSModel):
         if 'sigma_epsilon' not in self.fix_params:
 
             sig_eps = 0.
+            parameter_scale = getattr(self, "_parameter_scale", 1.0)
 
             for c, _ in self.shapes.items():
-                sig_eps -= 2.*self.std_beta[c].dot(self.eta[c])
+                sig_eps -= 2.*self.std_beta[c].dot(self.eta[c]) / parameter_scale
 
-            self.sigma_epsilon = 1. + sig_eps + self._sigma_g
+            self.sigma_epsilon = 1. + sig_eps + self._sigma_g / parameter_scale
 
     def m_step(self):
         """
@@ -531,6 +607,7 @@ class VIPRS(BayesPRSModel):
         """
 
         double_resolution = np.finfo(np.float64).resolution
+        parameter_scale = getattr(self, "_parameter_scale", 1.0)
 
         # Concatenate the dictionary items for easy computation:
         var_gamma = np.clip(dict_concat(self.var_gamma).astype(np.float64),
@@ -579,7 +656,10 @@ class VIPRS(BayesPRSModel):
             eta = dict_concat(self.eta).astype(np.float64)
             std_beta = dict_concat(self.std_beta).astype(np.float64)
 
-            elbo -= (1. / self.sigma_epsilon) * (1. - 2.*std_beta.dot(eta) + self._sigma_g)
+            elbo -= (1. / self.sigma_epsilon) * (
+                1. - 2.*std_beta.dot(eta) / parameter_scale
+                + self._sigma_g / parameter_scale
+            )
 
         elbo *= 0.5*self.n
 
@@ -634,6 +714,7 @@ class VIPRS(BayesPRSModel):
         entropy -= .5 * np.multiply(var_gamma, log_var_tau).sum(axis=sum_axis)
 
         entropy += .5 * (np.log(2. * np.pi) + 1.) * var_gamma.sum(axis=sum_axis)
+        entropy -= .5 * np.log(getattr(self, "_parameter_scale", 1.0)) * var_gamma.sum(axis=sum_axis)
         return entropy
 
     def loglikelihood(self):
@@ -646,10 +727,14 @@ class VIPRS(BayesPRSModel):
 
         eta = dict_concat(self.eta)
         std_beta = dict_concat(self.std_beta)
+        parameter_scale = getattr(self, "_parameter_scale", 1.0)
 
         return -0.5*self.n*(
                 np.log(2.*np.pi*self.sigma_epsilon) +
-                (1./self.sigma_epsilon)*(1. - 2.*std_beta.dot(eta) + self._sigma_g)
+                (1./self.sigma_epsilon)*(
+                    1. - 2.*std_beta.dot(eta) / parameter_scale
+                    + self._sigma_g / parameter_scale
+                )
         )
 
     def log_prior(self, sum_axis=None):
@@ -700,6 +785,7 @@ class VIPRS(BayesPRSModel):
             log_prior -= .5 * (np.multiply(var_gamma, tau_beta) * (var_mu ** 2 + 1. / var_tau)).sum(axis=sum_axis)
 
         log_prior -= .5 * np.log(2. * np.pi) * var_gamma.sum(axis=sum_axis)
+        log_prior += .5 * np.log(getattr(self, "_parameter_scale", 1.0)) * var_gamma.sum(axis=sum_axis)
         return log_prior
 
     def complete_loglikelihood(self):
@@ -724,10 +810,11 @@ class VIPRS(BayesPRSModel):
         eta = dict_concat(self.eta)
         std_beta = dict_concat(self.std_beta)
         zeta = dict_concat(self.zeta)
+        parameter_scale = getattr(self, "_parameter_scale", 1.0)
 
-        return 1. - 2.*std_beta.dot(eta) + (
+        return 1. - 2.*std_beta.dot(eta) / parameter_scale + (
                 self._sigma_g - zeta.sum(axis=sum_axis) + (eta**2).sum(axis=sum_axis)
-        )
+        ) / parameter_scale
 
     def get_sigma_epsilon(self):
         """
@@ -801,14 +888,15 @@ class VIPRS(BayesPRSModel):
         else:
             tau_beta = self.tau_beta
 
-        return np.sum(pi / tau_beta, axis=0)
+        return np.sum(pi / tau_beta, axis=0) / getattr(self, "_parameter_scale", 1.0)
 
     def get_heritability(self):
         """
         :return: An estimate of the SNP heritability, or proportion of variance explained by SNPs.
         """
 
-        return self._sigma_g / (self._sigma_g + self.sigma_epsilon)
+        sigma_g = self._sigma_g / getattr(self, "_parameter_scale", 1.0)
+        return sigma_g / (sigma_g + self.sigma_epsilon)
 
     def to_theta_table(self):
         """
@@ -880,9 +968,18 @@ class VIPRS(BayesPRSModel):
             if tt == 'sigma_epsilon':
                 self.history['sigma_epsilon'].append(self.sigma_epsilon)
             elif tt == 'tau_beta':
-                self.history['tau_beta'].append(self.tau_beta)
+                if isinstance(self.tau_beta, dict):
+                    tau_beta = {
+                        c: tau * self._parameter_scale
+                        for c, tau in self.tau_beta.items()
+                    }
+                else:
+                    tau_beta = self.tau_beta * self._parameter_scale
+                self.history['tau_beta'].append(tau_beta)
             elif tt == 'sigma_g':
-                self.history['sigma_g'].append(self._sigma_g)
+                self.history['sigma_g'].append(
+                    self._sigma_g / self._parameter_scale
+                )
             elif tt == 'entropy':
                 self.history['entropy'].append(self.entropy())
             elif tt == 'loglikelihood':
@@ -894,7 +991,7 @@ class VIPRS(BayesPRSModel):
             elif tt == 'max_eta_diff':
                 self.history['max_eta_diff'].append(np.max([
                     np.max(np.abs(diff)) for diff in self.eta_diff.values()
-                ]))
+                ]) / np.sqrt(self._parameter_scale))
             elif callable(tt):
                 self.history[tt.__name__].append(tt(self))
 
@@ -965,11 +1062,27 @@ class VIPRS(BayesPRSModel):
         if not continued:
             self.initialize(theta_0, param_0)
             start_idx = 1
-            self.update_theta_history()
         else:
             start_idx = len(self.history['ELBO']) + 1
+
+        optimization_scale = max(
+            1.0, max(float(np.max(n)) for n in self.n_per_snp.values())
+        )
+        self._set_optimization_scale(optimization_scale)
+
+        if not continued:
+            try:
+                self.update_theta_history()
+            except Exception:
+                self._set_optimization_scale(1.0)
+                raise
+        else:
             # Update OptimizeResult object to enable continuation of the optimization:
-            self.optim_result.update(self.elbo(), increment=False)
+            try:
+                self.optim_result.update(self.elbo(), increment=False)
+            except Exception:
+                self._set_optimization_scale(1.0)
+                raise
 
         logger.info("> Performing model fit...")
         if self.threads > 1:
@@ -989,7 +1102,7 @@ class VIPRS(BayesPRSModel):
 
         # The following is used to track LD-weighted effect sizes.
         # This is useful for tracking oscillations in ultra high-dimensions due to high LD.
-        prev_sigma_g = self._sigma_g
+        prev_sigma_g = self._sigma_g / self._parameter_scale
         sigma_g_icc = IterationConditionCounter()
         divergence_icc = IterationConditionCounter()
 
@@ -1013,16 +1126,20 @@ class VIPRS(BayesPRSModel):
                     break
 
                 # Perform parameter updates (E-Step + M-Step):
-                self.e_step()
-                self.m_step()
+                try:
+                    self.e_step()
+                    self.m_step()
 
-                # Update the tracked parameters (including objectives):
-                self.update_theta_history()
+                    # Update the tracked parameters (including objectives):
+                    self.update_theta_history()
+                except Exception:
+                    self._set_optimization_scale(1.0)
+                    raise
 
                 # Compute maximum absolute difference in posterior means:
                 max_eta_diff = max(
                     np.max(np.abs(diff)) for diff in self.eta_diff.values()
-                )
+                ) / np.sqrt(self._parameter_scale)
 
                 # Update the current ELBO:
                 curr_elbo = self.history['ELBO'][-1]
@@ -1030,7 +1147,12 @@ class VIPRS(BayesPRSModel):
                 # Update the sigma_g condition counter:
                 sigma_g_icc.update(
                     (i > min_iter) and
-                    np.isclose(self._sigma_g, prev_sigma_g, atol=x_abs_tol, rtol=0.) and
+                    np.isclose(
+                        self._sigma_g / self._parameter_scale,
+                        prev_sigma_g,
+                        atol=x_abs_tol,
+                        rtol=0.,
+                    ) and
                     max_eta_diff < x_abs_tol * 10,
                     i
                 )
@@ -1057,11 +1179,13 @@ class VIPRS(BayesPRSModel):
                         logger.info(f"Iteration {i} | MSE is negative; Restarting optimization "
                                     f"and fixing residual variance hyperparameter (sigma_epsilon).")
 
+                        self._set_optimization_scale(1.0)
                         self.initialize_theta(theta_0)
                         self.initialize_variational_parameters(param_0)
 
                         # Set the residual variance to a fixed value for now:
                         self.fix_params['sigma_epsilon'] = self.sigma_epsilon = .95
+                        self._set_optimization_scale(optimization_scale)
 
                         continue
 
@@ -1125,9 +1249,11 @@ class VIPRS(BayesPRSModel):
                     self.optim_result.update(curr_elbo)
 
                 prev_elbo = curr_elbo
-                prev_sigma_g = self._sigma_g
+                prev_sigma_g = self._sigma_g / self._parameter_scale
 
         # -------------------------- Post processing / cleaning up / model checking --------------------------
+
+        self._set_optimization_scale(1.0)
 
         # Update the posterior moments:
         self.update_posterior_moments()

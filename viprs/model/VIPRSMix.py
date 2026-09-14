@@ -175,6 +175,8 @@ class VIPRSMix(VIPRS):
             # Get the priors:
             tau_beta = self.get_tau_beta(c)
             pi = self.get_pi(c)
+            parameter_scale = getattr(self, "_parameter_scale", 1.0)
+            scaled_n = self.n_per_snp[c] / parameter_scale
 
             lambda_min = self.lambda_min[c] if isinstance(self.lambda_min, dict) else self.lambda_min
             if not np.isscalar(lambda_min):
@@ -182,7 +184,7 @@ class VIPRSMix(VIPRS):
 
             # Updates for tau variational parameters:
             self.var_tau[c] = (
-                self.n_per_snp[c] * (1.0 + lambda_min) / self.sigma_epsilon
+                scaled_n * (1.0 + lambda_min) / self.sigma_epsilon
             ) + tau_beta
             np.log(self.var_tau[c], out=self._log_var_tau[c])
 
@@ -193,7 +195,7 @@ class VIPRSMix(VIPRS):
 
             # Compute some quantities that are needed for the per-SNP updates:
             mu_mult = (
-                self.n_per_snp[c] / (self.var_tau[c] * self.sigma_epsilon)
+                scaled_n / (self.var_tau[c] * self.sigma_epsilon)
             ).astype(self.float_precision)
             u_logs = (
                 np.log(pi)
@@ -246,9 +248,19 @@ class VIPRSMix(VIPRS):
         if "lambda_min" in fix_params:
             self.lambda_min = self._cast_parameter(fix_params["lambda_min"])
         if "tau_betas" in fix_params:
-            self.tau_beta = self._cast_parameter(fix_params["tau_betas"])
+            tau_beta = self._cast_parameter(fix_params["tau_betas"])
+            if isinstance(tau_beta, dict):
+                self.tau_beta = {
+                    c: tau / getattr(self, "_parameter_scale", 1.0)
+                    for c, tau in tau_beta.items()
+                }
+            else:
+                self.tau_beta = tau_beta / getattr(self, "_parameter_scale", 1.0)
         elif "tau_beta" in fix_params:
-            self.tau_beta = fix_params["tau_beta"] * self.d
+            self.tau_beta = (
+                fix_params["tau_beta"] * self.d
+                / getattr(self, "_parameter_scale", 1.0)
+            )
         if "pis" in fix_params:
             self.pi = self._cast_parameter(fix_params["pis"])
         elif "pi" in fix_params and self.pi is not None:
@@ -292,8 +304,12 @@ class VIPRSMix(VIPRS):
             total_responsibility = dict_sum(self.var_gamma)
 
             global_tau = total_responsibility / np.dot(self.d, zetas)
-            # Preserve the exact component ratios while enforcing tau_k >= 1.
-            global_tau = np.maximum(global_tau, 1.0 / np.min(self.d))
+            # Preserve the exact component ratios while enforcing tau_k >= 1
+            # on the original (unscaled) precision scale.
+            global_tau = np.maximum(
+                global_tau,
+                1.0 / (np.min(self.d) * getattr(self, "_parameter_scale", 1.0)),
+            )
 
             self.tau_beta = self.d * global_tau
 
@@ -327,7 +343,9 @@ class VIPRSMix(VIPRS):
         """
 
         total = self._prior_variance_sum(self.tau_beta)
-        return total / self.n_snps
+        return total / (
+            self.n_snps * getattr(self, "_parameter_scale", 1.0)
+        )
 
     def compute_pip(self):
         """

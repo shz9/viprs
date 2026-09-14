@@ -7,18 +7,31 @@ Evaluate the predictive performance of PRS models
 This is a commandline script that can compute various metrics to evaluate the predictive performance of
 polygenic risk score (PRS) models. The script can compute metrics for both continuous and binary phenotypes.
 
-The script requires two input files:
+The script supports two evaluation modes:
+
+Individual-level evaluation requires:
 
     - `--prs-file`: The path to the PRS file. The file should have the following
         format: FID IID PRS, where FID and IID are the family and individual IDs, and PRS is the polygenic risk score.
     - `--phenotype-file`: The path to the phenotype file. The file should have the following format: FID IID phenotype,
         where FID and IID are the family and individual IDs, and phenotype is the phenotype value.
 
+Summary-statistics-based (pseudo) evaluation requires:
+
+    - `--sumstats`: Independent validation/test GWAS summary statistics.
+    - `--fit-files`: VIPRS `.fit` output containing inferred effect sizes.
+    - `--ld-dir`: LD matrices matching the validation/test summary statistics.
+
 Usage:
 
-    python -m viprs_evaluate  --prs-file /path/to/prs_file
-                              --phenotype-file /path/to/phenotype_file
-                              --output-file /path/to/output_file
+    viprs_evaluate --prs-file /path/to/prs_file \
+                   --phenotype-file /path/to/phenotype_file \
+                   --output-file /path/to/output_file
+
+    viprs_evaluate --sumstats /path/to/validation_sumstats \
+                   --fit-files '/path/to/viprs/*.fit.gz' \
+                   --ld-dir '/path/to/ld/chr_*' \
+                   --output-file /path/to/output_file
 
 """
 
@@ -27,23 +40,27 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def main():
+SUMSTATS_FORMATS = {
+    'plink1.9', 'plink2', 'plink', 'cojo', 'magenpy', 'fastgwa',
+    'ssf', 'gwas-ssf', 'gwascatalog', 'saige', 'custom'
+}
+
+PSEUDO_METRICS = {'Pseudo_Pearson_R', 'Pseudo_R2'}
+
+
+def build_parser():
+    """Build the command-line argument parser."""
 
     import argparse
-    import viprs as vp
-
-    print("\n" + vp.make_ascii_logo(
-        desc='< Evaluate Prediction Accuracy of PRS Models >',
-        left_padding=10
-    ) + "\n", flush=True)
 
     parser = argparse.ArgumentParser(description="""
         Commandline arguments for evaluating polygenic scores
     """)
 
-    parser.add_argument('--prs-file', dest='prs_file', type=str, required=True,
-                        help='The path to the PRS file (expected format: FID IID PRS, tab-separated)')
-    parser.add_argument('--phenotype-file', dest='pheno_file', type=str, required=True,
+    # Individual-level evaluation inputs:
+    parser.add_argument('--prs-file', dest='prs_file', type=str,
+                        help='The path to the PRS file (expected format: FID IID PRS, tab-separated).')
+    parser.add_argument('--phenotype-file', dest='pheno_file', type=str,
                         help='The path to the phenotype file. '
                              'The expected format is: FID IID phenotype (no header), tab-separated.')
     parser.add_argument('--phenotype-col', dest='pheno_col', type=int, default=2,
@@ -51,30 +68,208 @@ def main():
     parser.add_argument('--phenotype-likelihood', dest='pheno_lik', type=str, default='infer',
                         choices={'gaussian', 'binomial', 'infer'},
                         help='The phenotype likelihood ("gaussian" for continuous, "binomial" for case-control). '
-                             'If not set, will be inferred automatically based on the phenotype file.')
+                             'If not set, it will be inferred automatically from the phenotype file.')
     parser.add_argument('--keep', dest='keep', type=str,
                         help='A plink-style keep file to select a subset of individuals for the evaluation.')
-    parser.add_argument('--output-file', dest='output_file', type=str, required=True,
-                        help='The output file where to store the evaluation metrics (with no extension).')
-    parser.add_argument('--metrics', dest='metrics', type=str, nargs='+',
-                        help='The evaluation metrics to compute (default: all available metrics that are '
-                             'relevant for the phenotype). For a full list of supported metrics, '
-                             'check the documentation.')
     parser.add_argument('--covariates-file', dest='covariates_file', type=str,
                         help='A file with covariates for the samples included in the analysis. This tab-separated '
                              'file should not have a header and the first two columns should be '
                              'the FID and IID of the samples.')
+
+    # Summary-statistics-based evaluation inputs:
+    parser.add_argument('-s', '--sumstats', '--sumstats-file', dest='sumstats_path', type=str,
+                        help='The validation/test summary statistics file(s). This can be a file, directory, '
+                             'or wildcard matching multiple files.')
+    parser.add_argument('-f', '--fit-files', dest='fit_files', type=str,
+                        help='The VIPRS .fit file(s) containing inferred effect sizes. This can be a file, '
+                             'directory, or wildcard matching per-chromosome files.')
+    parser.add_argument('-l', '--ld-dir', dest='ld_dir', type=str,
+                        help='The path to LD matrices for the validation/test dataset. This can be a directory '
+                             'or wildcard of the form ld/chr_*.')
+    parser.add_argument('--sumstats-format', dest='sumstats_format', type=str.lower, default='plink',
+                        choices=SUMSTATS_FORMATS,
+                        help='The format of the validation/test summary statistics file(s).')
+    parser.add_argument('--custom-sumstats-mapper', dest='custom_sumstats_mapper', type=str,
+                        help='Comma-separated column mappings for custom summary statistics, e.g. '
+                             'rsid=SNP,eff_allele=A1,beta=BETA.')
+    parser.add_argument('--custom-sumstats-sep', dest='custom_sumstats_sep', type=str, default='\t',
+                        help='The delimiter for custom-format summary statistics (default: tab).')
+    parser.add_argument('--gwas-sample-size', dest='gwas_sample_size', type=float,
+                        help='The validation/test GWAS sample size. Required when it is absent from the '
+                             'summary statistics.')
+    parser.add_argument('--temp-dir', dest='temp_dir', type=str, default='temp',
+                        help='The temporary directory where intermediate files are stored.')
+    parser.add_argument('--threads', dest='threads', type=int, default=1,
+                        help='The number of threads to use when reading summary statistics and LD data.')
+
+    # Shared output/evaluation arguments:
+    parser.add_argument('--output-file', dest='output_file', type=str, required=True,
+                        help='The output file where evaluation metrics are stored (with no extension).')
+    parser.add_argument('--metrics', dest='metrics', type=str, nargs='+',
+                        help='The evaluation metrics to compute. Summary-statistics evaluation supports '
+                             'Pseudo_Pearson_R and Pseudo_R2. By default, all metrics relevant to the '
+                             'selected evaluation mode are computed.')
     parser.add_argument('--log-level', dest='log_level', type=str, default='WARNING',
                         choices={'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'},
                         help='The logging level for the console output.')
 
+    return parser
+
+
+def get_evaluation_mode(args, parser):
+    """Validate the input combinations and return the requested evaluation mode."""
+
+    individual_inputs = args.prs_file is not None or args.pheno_file is not None
+    summary_inputs = any(value is not None for value in
+                         (args.sumstats_path, args.fit_files, args.ld_dir))
+
+    if individual_inputs and summary_inputs:
+        parser.error('Individual-level inputs (--prs-file/--phenotype-file) cannot be combined with '
+                     'summary-statistics inputs (--sumstats/--fit-files/--ld-dir).')
+
+    if individual_inputs:
+        missing = [flag for flag, value in (
+            ('--prs-file', args.prs_file), ('--phenotype-file', args.pheno_file)
+        ) if value is None]
+        if missing:
+            parser.error('Individual-level evaluation requires ' + ' and '.join(missing) + '.')
+        return 'individual'
+
+    if summary_inputs:
+        missing = [flag for flag, value in (
+            ('--sumstats', args.sumstats_path), ('--fit-files', args.fit_files),
+            ('--ld-dir', args.ld_dir)
+        ) if value is None]
+        if missing:
+            parser.error('Summary-statistics evaluation requires ' + ', '.join(missing) + '.')
+        if args.sumstats_format == 'custom' and args.custom_sumstats_mapper is None:
+            parser.error('--custom-sumstats-mapper is required when --sumstats-format=custom.')
+        if args.threads < 1:
+            parser.error('--threads must be at least 1.')
+        return 'summary'
+
+    parser.error('Provide either --prs-file with --phenotype-file, or --sumstats with '
+                 '--fit-files and --ld-dir.')
+
+
+def _store_metric(info_dict, metric, value):
+    """Store scalar or multi-model metric output in flat output columns."""
+
+    import numpy as np
+
+    values = np.asarray(value)
+    if values.size == 1:
+        info_dict[metric] = values.reshape(-1)[0]
+    else:
+        for idx, val in enumerate(values.reshape(-1)):
+            info_dict[f'{metric}_{idx}'] = val
+
+
+def evaluate_summary_statistics(args):
+    """Evaluate fitted PRS effects against independent GWAS summary statistics."""
+
+    import pandas as pd
+    from magenpy import GWADataLoader
+    from magenpy.parsers.sumstats_parsers import SumstatsParser
+    from magenpy.utils.system_utils import get_filenames
+    from viprs.eval.pseudo_metrics import pseudo_pearson_r, pseudo_r2
+
+    metrics = args.metrics or ['Pseudo_Pearson_R', 'Pseudo_R2']
+    unsupported = sorted(set(metrics) - PSEUDO_METRICS)
+    if unsupported:
+        raise ValueError('Unsupported summary-statistics metric(s): ' + ', '.join(unsupported) +
+                         '. Choose from: ' + ', '.join(sorted(PSEUDO_METRICS)))
+
+    fit_files = get_filenames(args.fit_files, extension='.fit')
+    if len(fit_files) < 1:
+        raise FileNotFoundError(f'No VIPRS .fit files were found at: {args.fit_files}')
+
+    prs_beta_table = pd.concat(
+        [pd.read_csv(f_name, sep=r'\s+') for f_name in fit_files],
+        ignore_index=True
+    )
+
+    required_cols = {'CHR', 'SNP', 'A1', 'A2'}
+    missing_cols = sorted(required_cols - set(prs_beta_table.columns))
+    beta_cols = [col for col in prs_beta_table.columns
+                 if 'BETA' in col and 'VAR' not in col]
+    if missing_cols or len(beta_cols) < 1:
+        missing_cols += ([] if beta_cols else ['BETA (or BETA_0, BETA_1, ...)'])
+        raise ValueError('The VIPRS effect-size files are missing required columns: ' +
+                         ', '.join(missing_cols))
+
+    test_gdl = GWADataLoader(
+        ld_store_files=args.ld_dir,
+        temp_dir=args.temp_dir,
+        threads=args.threads
+    )
+
+    if test_gdl.ld is None or len(test_gdl.ld) < 1:
+        raise FileNotFoundError(f'No valid LD matrices were found at: {args.ld_dir}')
+
+    if args.sumstats_format == 'custom':
+        ss_parser = SumstatsParser(
+            col_name_converter=args.custom_sumstats_mapper,
+            sep=args.custom_sumstats_sep
+        )
+        ss_format = None
+    else:
+        ss_parser = None
+        ss_format = args.sumstats_format
+
+    test_gdl.read_summary_statistics(
+        args.sumstats_path,
+        sumstats_format=ss_format,
+        parser=ss_parser
+    )
+    if test_gdl.sumstats_table is None or len(test_gdl.sumstats_table) < 1:
+        raise FileNotFoundError(f'No valid summary statistics were found at: {args.sumstats_path}')
+
+    if args.gwas_sample_size is not None:
+        if args.gwas_sample_size <= 0:
+            raise ValueError('--gwas-sample-size must be greater than zero.')
+        for sumstats_table in test_gdl.sumstats_table.values():
+            sumstats_table.set_sample_size(args.gwas_sample_size)
+
+    try:
+        test_gdl.harmonize_data()
+
+        info_dict = {}
+        if 'Pseudo_Pearson_R' in metrics:
+            pseudo_r = pseudo_pearson_r(test_gdl, prs_beta_table)
+            _store_metric(info_dict, 'Pseudo_Pearson_R', pseudo_r)
+        else:
+            pseudo_r = None
+
+        if 'Pseudo_R2' in metrics:
+            # pseudo_r2 is currently defined as the squared pseudo-correlation.
+            # Reuse an already-computed correlation when both metrics were requested.
+            r2_value = pseudo_r ** 2 if pseudo_r is not None else pseudo_r2(
+                test_gdl, prs_beta_table
+            )
+            _store_metric(info_dict, 'Pseudo_R2', r2_value)
+        return info_dict
+    finally:
+        test_gdl.cleanup()
+
+
+def main():
+
+    import viprs as vp
+
+    print("\n" + vp.make_ascii_logo(
+        desc='< Evaluate Prediction Accuracy of PRS Models >',
+        left_padding=10
+    ) + "\n", flush=True)
+
+    parser = build_parser()
     args = parser.parse_args()
+    evaluation_mode = get_evaluation_mode(args, parser)
 
     # ----------------------------------------------------------
     import os.path as osp
     import pandas as pd
     from magenpy.utils.system_utils import makedir, setup_logger
-    from magenpy import SampleTable
     from viprs.eval import eval_metric_names, eval_incremental_metrics
     from viprs.eval.eval_utils import r2_stats
 
@@ -109,69 +304,78 @@ def main():
     # ----------------------------------------------------------
     logger.info('\n{:-^100}\n'.format('  Reading input data  '))
 
-    sample_table = SampleTable(phenotype_likelihood=args.pheno_lik)
-
-    # Read the phenotype file:
-    sample_table.read_phenotype_file(args.pheno_file, usecols=[0, 1, args.pheno_col])
-
-    assert sample_table.n > 0, logger.error("No samples found in the phenotype file.")
-
-    # Read the covariates file:
-    if args.covariates_file is not None:
-        sample_table.read_covariates_file(args.covariates_file)
-
-    if args.keep is not None:
-        sample_table.filter_samples(keep_file=args.keep)
-
-    # Make sure that samples remain after reading both:
-    assert sample_table.n > 0, logger.error("No samples found after merging the covariates and phenotype files.")
-
-    prs_df = pd.read_csv(args.prs_file, sep=r'\s+')
-
-    # Merge the PRS data with the phenotype data:
-    prs_df = sample_table.get_individual_table().merge(prs_df, on=['FID', 'IID'])
-
-    assert len(prs_df) > 0, logger.error("No common samples found in the PRS and phenotype files.")
-
-    sample_table.filter_samples(keep_samples=prs_df.IID.values)
-
-    # ----------------------------------------------------------
-    logger.info('\n{:-^100}\n'.format('  Evaluating PRS performance  '))
-
-    if sample_table.phenotype_likelihood == 'binomial':
-        metrics = args.metrics or ['AUROC', 'AUPRC', 'Nagelkerke_R2', 'Liability_R2']
+    if evaluation_mode == 'summary':
+        logger.info('\n{:-^100}\n'.format('  Evaluating PRS performance from summary statistics  '))
+        info_dict = evaluate_summary_statistics(args)
     else:
-        metrics = args.metrics or ['Pearson_R', 'R2',
-                                   'Incremental_R2', 'Partial_Correlation']
+        from magenpy import SampleTable
 
-    if isinstance(metrics, str):
-        metrics = [metrics]
+        sample_table = SampleTable(phenotype_likelihood=args.pheno_lik)
 
-    # Loop over the requested metrics and evaluate them, and store result in a dictionary:
+        # Read the phenotype file:
+        sample_table.read_phenotype_file(args.pheno_file, usecols=[0, 1, args.pheno_col])
 
-    info_dict = {'Sample size': sample_table.n}
+        assert sample_table.n > 0, logger.error("No samples found in the phenotype file.")
 
-    if args.covariates_file is not None:
-        covariates = sample_table.get_covariates_table().drop(columns=['FID', 'IID'])
-    else:
-        covariates = None
+        # Read the covariates file:
+        if args.covariates_file is not None:
+            sample_table.read_covariates_file(args.covariates_file)
 
-    for metric in metrics:
+        if args.keep is not None:
+            sample_table.filter_samples(keep_file=args.keep)
 
-        # If covariates are provided and the metric can be computed
-        # while adjusting for covariates, then do so:
-        if metric in eval_incremental_metrics and covariates is not None:
-            info_dict[metric] = eval_metric_names[metric](sample_table.phenotype,
-                                                          prs_df['PRS'].values,
-                                                          covariates)
+        # Make sure that samples remain after reading both:
+        assert sample_table.n > 0, logger.error("No samples found after merging the covariates and phenotype files.")
 
+        prs_df = pd.read_csv(args.prs_file, sep=r'\s+')
+
+        # Merge the PRS data with the phenotype data:
+        prs_df = sample_table.get_individual_table().merge(prs_df, on=['FID', 'IID'])
+
+        assert len(prs_df) > 0, logger.error("No common samples found in the PRS and phenotype files.")
+
+        sample_table.filter_samples(keep_samples=prs_df.IID.values)
+
+        # ----------------------------------------------------------
+        logger.info('\n{:-^100}\n'.format('  Evaluating PRS performance  '))
+
+        if sample_table.phenotype_likelihood == 'binomial':
+            metrics = args.metrics or ['AUROC', 'AUPRC', 'Nagelkerke_R2', 'Liability_R2']
         else:
-            info_dict[metric] = eval_metric_names[metric](sample_table.phenotype,
-                                                          prs_df['PRS'].values)
+            metrics = args.metrics or ['Pearson_R', 'R2',
+                                       'Incremental_R2', 'Partial_Correlation']
 
-        # Compute the standard errors for R-squared metrics:
-        if 'R2' in metric:
-            info_dict[f'{metric}_err'] = r2_stats(info_dict[metric], sample_table.n)['SE']
+        if isinstance(metrics, str):
+            metrics = [metrics]
+
+        unsupported = sorted(set(metrics) - set(eval_metric_names))
+        if unsupported:
+            raise ValueError('Unsupported individual-level metric(s): ' + ', '.join(unsupported))
+
+        # Loop over the requested metrics and evaluate them, and store result in a dictionary:
+        info_dict = {'Sample size': sample_table.n}
+
+        if args.covariates_file is not None:
+            covariates = sample_table.get_covariates_table().drop(columns=['FID', 'IID'])
+        else:
+            covariates = None
+
+        for metric in metrics:
+
+            # If covariates are provided and the metric can be computed
+            # while adjusting for covariates, then do so:
+            if metric in eval_incremental_metrics and covariates is not None:
+                info_dict[metric] = eval_metric_names[metric](sample_table.phenotype,
+                                                              prs_df['PRS'].values,
+                                                              covariates)
+
+            else:
+                info_dict[metric] = eval_metric_names[metric](sample_table.phenotype,
+                                                              prs_df['PRS'].values)
+
+            # Compute the standard errors for R-squared metrics:
+            if 'R2' in metric:
+                info_dict[f'{metric}_err'] = r2_stats(info_dict[metric], sample_table.n)['SE']
 
     # ----------------------------------------------------------
 

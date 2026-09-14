@@ -145,6 +145,73 @@ def test_elbo_matches_likelihood_prior_and_entropy_decomposition():
     )
 
 
+def test_global_variance_scaling_preserves_objectives_and_public_summaries():
+    model = make_mix_model(m=2, k=2)
+    model._sample_size = 100
+    model._parameter_scale = 1.0
+    model.sigma_epsilon = 0.7
+    model.fix_params = {"sigma_epsilon": 0.7}
+    model.pi = np.array([0.1, 0.2])
+    model.tau_beta = np.array([4.0, 10.0])
+    model.var_gamma = {1: np.array([[0.2, 0.3], [0.1, 0.4]])}
+    model.var_mu = {1: np.array([[0.2, -0.1], [0.05, 0.3]])}
+    model.var_tau = {1: np.array([[8.0, 12.0], [9.0, 11.0]])}
+    model._log_var_tau = {1: np.log(model.var_tau[1])}
+    model.eta = model.compute_eta()
+    model.zeta = model.compute_zeta()
+    model.q = {1: np.array([0.01, -0.02])}
+    model.eta_diff = {1: np.array([0.001, -0.002])}
+    model.std_beta = {1: np.array([0.08, -0.03])}
+    model._sigma_g = 0.15
+
+    summaries = (
+        "elbo",
+        "loglikelihood",
+        "log_prior",
+        "entropy",
+        "mse",
+        "get_average_effect_size_variance",
+        "get_heritability",
+    )
+    expected = {name: getattr(model, name)() for name in summaries}
+    expected_mu = model.var_mu[1].copy()
+    expected_zeta = model.zeta[1].copy()
+    unscaled_std_beta = model.std_beta
+
+    model._set_optimization_scale(100.0)
+
+    np.testing.assert_allclose(model.std_beta[1], 10.0 * unscaled_std_beta[1])
+    np.testing.assert_allclose(model.var_mu[1], 10.0 * expected_mu)
+    np.testing.assert_allclose(model.zeta[1], 100.0 * expected_zeta)
+    for name, value in expected.items():
+        np.testing.assert_allclose(getattr(model, name)(), value, rtol=1e-12)
+
+    expected_sigma_epsilon = (
+        1.0
+        - 2.0 * model.std_beta[1].dot(model.eta[1]) / 100.0
+        + model._sigma_g / 100.0
+    )
+    expected_tau_beta = model.d * max(
+        model.var_gamma[1].sum()
+        / np.dot(model.d, model.compute_zeta(sum_axis=0)[1] / 100.0),
+        1.0 / np.min(model.d),
+    )
+    model.fix_params = {}
+    model.update_sigma_epsilon()
+    model.update_tau_beta()
+    np.testing.assert_allclose(model.sigma_epsilon, expected_sigma_epsilon)
+    np.testing.assert_allclose(
+        model.tau_beta * model._parameter_scale, expected_tau_beta
+    )
+
+    model._set_optimization_scale(1.0)
+
+    assert model.std_beta is unscaled_std_beta
+    np.testing.assert_allclose(model.var_mu[1], expected_mu)
+    np.testing.assert_allclose(model.zeta[1], expected_zeta)
+    np.testing.assert_allclose(model.tau_beta, expected_tau_beta)
+
+
 def test_nonzero_warm_start_initializes_q_from_eta():
     model = VIPRS.__new__(VIPRS)
     model.float_precision = "float64"
