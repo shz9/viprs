@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from magenpy.stats.h2.ldsc import simple_ldsc
 
-from ..utils.compute_utils import dict_mean, dict_sum
+from ..utils.compute_utils import dict_sum
 from .vi.e_step_cpp import cpp_e_step_mixture
 from .VIPRS import VIPRS
 
@@ -23,7 +23,8 @@ class VIPRSMix(VIPRS):
 
     :ivar K: The number of causal (i.e. non-null) components in the mixture prior (minimum 1). When `K=1`, this
     effectively reduces `VIPRSMix` to the `VIPRS` model.
-    :ivar d: Multiplier for the prior on the effect size (vector of size K).
+    :ivar d: Multiplier for the prior precision of each non-null component
+        (vector of size K). Smaller values correspond to wider components.
 
     """
 
@@ -32,7 +33,9 @@ class VIPRSMix(VIPRS):
         :param gdl: An instance of `GWADataLoader`
         :param K: The number of causal (i.e. non-null) components in the mixture prior (minimum 1). When `K=1`, this
             effectively reduces `VIPRSMix` to the `VIPRS` model.
-        :param prior_multipliers: Multiplier for the prior on the effect size (vector of size K).
+        :param prior_multipliers: Multipliers for the prior precisions of the
+            non-null mixture components (vector of size K). Smaller values
+            correspond to wider components.
         :param kwargs: Additional keyword arguments to pass to the VIPRS model.
         """
 
@@ -51,6 +54,9 @@ class VIPRSMix(VIPRS):
         else:
             self.d = 2 ** np.linspace(-min(K - 1, 7), 0, K).astype(self.float_precision)
 
+        if np.any(self.d <= 0.0):
+            raise ValueError("Prior precision multipliers must be strictly positive.")
+
         # Populate/update relevant fields:
         self.shapes = {c: (shp, self.K) for c, shp in self.shapes.items()}
         self.n_per_snp = {
@@ -64,107 +70,94 @@ class VIPRSMix(VIPRS):
         :param theta_0: A dictionary of initial values for the hyperparameters theta
         """
 
-        if theta_0 is not None and self.fix_params is not None:
-            theta_0.update(self.fix_params)
-        elif self.fix_params is not None:
-            theta_0 = self.fix_params
-        elif theta_0 is None:
-            theta_0 = {}
+        theta_0 = {} if theta_0 is None else theta_0.copy()
+        theta_0.update(self.fix_params)
+        if "tau_beta" in self.fix_params and "tau_betas" not in self.fix_params:
+            theta_0.pop("tau_betas", None)
 
         # ----------------------------------------------
         # (1) Initialize pi from a uniform
         if "pis" in theta_0:
-            self.pi = theta_0["pis"]
+            self.pi = self._cast_parameter(theta_0["pis"])
+
+            # If only the total causal proportion is fixed, preserve the
+            # supplied component ratios and rescale them to that total.
+            if "pi" in self.fix_params and "pis" not in self.fix_params:
+                overall_pi = self.fix_params["pi"]
+                if isinstance(self.pi, dict):
+                    self.pi = {
+                        c: overall_pi * pi / pi.sum(axis=1, keepdims=True)
+                        for c, pi in self.pi.items()
+                    }
+                else:
+                    self.pi *= overall_pi / self.pi.sum()
         else:
-            if "pi" in theta_0:
-                overall_pi = theta_0["pi"]
-            else:
-                overall_pi = np.random.uniform(
-                    low=max(0.005, 1.0 / self.n_snps), high=0.1
-                )
+            overall_pi = theta_0["pi"] if "pi" in theta_0 else np.random.uniform(
+                low=max(0.005, 1.0 / self.n_snps), high=0.1
+            )
 
             self.pi = overall_pi * np.random.dirichlet(np.ones(self.K))
 
         # ----------------------------------------------
-        # (2) Initialize sigma_epsilon and sigma_beta
-        # Assuming that the genotype and phenotype are normalized,
-        # these two quantities are conceptually linked.
-        # The initialization routine here assumes that:
-        # Var(y) = h2 + sigma_epsilon
-        # Where, by assumption, Var(y) = 1,
-        # And h2 ~= pi*M*sigma_beta
-
-        if "sigma_epsilon" not in theta_0:
-            if "tau_betas" in theta_0:
-                # If tau_betas are given, use them to initialize sigma_epsilon
-
-                self.tau_beta = theta_0["tau_betas"]
-
-                self.sigma_epsilon = np.clip(
-                    1.0 - np.dot(1.0 / self.tau_beta, self.pi),
-                    a_min=1e-4,
-                    a_max=1.0 - 1e-4,
-                )
-
-            elif "tau_beta" in theta_0:
-                # NOTE: Here, we assume the provided `tau_beta` is a scalar.
-                # This is different from `tau_betas`
-
-                assert self.d is not None
-
-                self.tau_beta = theta_0["tau_beta"] * self.d
-                # Use the provided tau_beta to initialize sigma_epsilon.
-                # First, we derive a naive estimate of the heritability, based on the following equation:
-                # h2g/M = \sum_k pi_k \tau_k
-                # Where the per-SNP heritability is defined by the sum over the mixtures.
-
-                # Step (1): Given the provided tau_beta and associated multipliers,
-                # obtain a naive estimate of the heritability:
-                h2g_estimate = (self.n_snps * self.pi / self.tau_beta).sum()
-                # Step (2): Set sigma_epsilon to 1 - h2g_estimate:
-                self.sigma_epsilon = np.clip(
-                    1.0 - h2g_estimate, a_min=1e-4, a_max=1.0 - 1e-4
-                )
-
-            else:
-                # If neither sigma_beta nor sigma_epsilon are given,
-                # then initialize using the SNP heritability estimate based on summary statistics
-
-                try:
-                    naive_h2g = np.clip(simple_ldsc(self.gdl), 1e-3, 1.0 - 1e-3)
-                except Exception as e:
-                    naive_h2g = np.random.uniform(low=0.001, high=0.999)
-
-                self.sigma_epsilon = 1.0 - naive_h2g
-
-                global_tau = self.n_snps * np.dot(1.0 / self.d, self.pi) / naive_h2g
-
-                self.tau_beta = self.d * global_tau
+        # (2) Initialize sigma_epsilon and component precisions. Under the
+        # standardized model, h2 = sum_jk(pi_jk / tau_jk) = 1 - sigma_epsilon.
+        if "tau_betas" in theta_0:
+            self.tau_beta = self._cast_parameter(theta_0["tau_betas"])
+        elif "tau_beta" in theta_0:
+            self.tau_beta = theta_0["tau_beta"] * self.d
         else:
-            # If sigma_epsilon is given, use it in the initialization
-
-            self.sigma_epsilon = theta_0["sigma_epsilon"]
-
-            # Initialize tau_betas
-            if "tau_betas" in theta_0:
-                self.tau_beta = theta_0["tau_betas"]
-            elif "tau_beta" in theta_0:
-                self.tau_beta = np.repeat(theta_0["tau_beta"], self.K)
+            if "sigma_epsilon" in theta_0:
+                h2g_estimate = 1.0 - theta_0["sigma_epsilon"]
             else:
-                # If not provided, initialize using sigma_epsilon value
-                global_tau = (
-                    self.n_snps
-                    * np.dot(1.0 / self.d, self.pi)
-                    / (1.0 - self.sigma_epsilon)
-                )
+                try:
+                    h2g_estimate = np.clip(simple_ldsc(self.gdl), 1e-3, 1.0 - 1e-3)
+                except Exception:
+                    h2g_estimate = np.random.uniform(low=0.001, high=0.999)
 
-                self.tau_beta = self.d * global_tau
+            self.tau_beta = self.d * (
+                self._prior_variance_sum(self.d) / h2g_estimate
+            )
+
+        if "sigma_epsilon" in theta_0:
+            self.sigma_epsilon = theta_0["sigma_epsilon"]
+        else:
+            self.sigma_epsilon = np.clip(
+                1.0 - self._prior_variance_sum(self.tau_beta),
+                a_min=1e-4,
+                a_max=1.0 - 1e-4,
+            )
 
         # Cast all the hyperparameters to conform to the precision set by the user:
         self.sigma_epsilon = np.dtype(self.float_precision).type(self.sigma_epsilon)
-        self.pi = np.dtype(self.float_precision).type(self.pi)
-        self.lambda_min = np.dtype(self.float_precision).type(self.lambda_min)
+        self.pi = self._cast_parameter(self.pi)
+        self.tau_beta = self._cast_parameter(self.tau_beta)
+        self.lambda_min = self._cast_parameter(self.lambda_min)
         self._sigma_g = np.dtype(self.float_precision).type(0.0)
+
+    def _cast_parameter(self, value):
+        """Cast scalar, array, or chromosome-indexed parameters."""
+
+        if isinstance(value, dict):
+            return {
+                c: np.asarray(v, dtype=self.float_precision, order=self.order)
+                for c, v in value.items()
+            }
+        if np.isscalar(value):
+            return np.dtype(self.float_precision).type(value)
+        return np.asarray(value, dtype=self.float_precision, order=self.order)
+
+    def _prior_variance_sum(self, tau_beta):
+        """Return the total prior variance contributed by all variants."""
+
+        total = 0.0
+        for c, shape in self.shapes.items():
+            c_pi = self.pi[c] if isinstance(self.pi, dict) else self.pi
+            c_tau = tau_beta[c] if isinstance(tau_beta, dict) else tau_beta
+            if np.ndim(c_pi) == 1 and np.ndim(c_tau) == 1:
+                total += shape[0] * np.sum(c_pi / c_tau, dtype=np.float64)
+            else:
+                total += np.sum(np.asarray(c_pi) / np.asarray(c_tau), dtype=np.float64)
+        return total
 
     def e_step(self):
         """
@@ -183,10 +176,15 @@ class VIPRSMix(VIPRS):
             tau_beta = self.get_tau_beta(c)
             pi = self.get_pi(c)
 
+            lambda_min = self.lambda_min[c] if isinstance(self.lambda_min, dict) else self.lambda_min
+            if not np.isscalar(lambda_min):
+                lambda_min = np.asarray(lambda_min)[:, None]
+
             # Updates for tau variational parameters:
             self.var_tau[c] = (
-                self.n_per_snp[c] * (1.0 + self.lambda_min) / self.sigma_epsilon
+                self.n_per_snp[c] * (1.0 + lambda_min) / self.sigma_epsilon
             ) + tau_beta
+            np.log(self.var_tau[c], out=self._log_var_tau[c])
 
             if isinstance(self.pi, dict):
                 log_null_pi = np.log(1.0 - self.pi[c].sum(axis=1))
@@ -199,8 +197,7 @@ class VIPRSMix(VIPRS):
             ).astype(self.float_precision)
             u_logs = (
                 np.log(pi)
-                - np.log(1.0 - pi)
-                + 0.5 * (np.log(tau_beta) - np.log(self.var_tau[c]))
+                + 0.5 * (np.log(tau_beta) - self._log_var_tau[c])
             ).astype(self.float_precision)
 
             cpp_e_step_mixture(
@@ -223,6 +220,46 @@ class VIPRSMix(VIPRS):
             )
 
         self.zeta = self.compute_zeta()
+
+    def set_fixed_params(self, fix_params):
+        """Set fixed mixture hyperparameters, including their plural aliases."""
+
+        assert isinstance(fix_params, dict), "The fixed parameters must be provided as a dictionary."
+
+        # The plural forms fix component-specific values; the singular forms
+        # fix only the total probability or shared precision scale.
+        if "pis" in fix_params:
+            self.fix_params.pop("pi", None)
+        elif "pi" in fix_params:
+            self.fix_params.pop("pis", None)
+        if "tau_betas" in fix_params:
+            self.fix_params.pop("tau_beta", None)
+        elif "tau_beta" in fix_params:
+            self.fix_params.pop("tau_betas", None)
+
+        self.fix_params.update(fix_params)
+
+        if "sigma_epsilon" in fix_params:
+            self.sigma_epsilon = np.dtype(self.float_precision).type(
+                fix_params["sigma_epsilon"]
+            )
+        if "lambda_min" in fix_params:
+            self.lambda_min = self._cast_parameter(fix_params["lambda_min"])
+        if "tau_betas" in fix_params:
+            self.tau_beta = self._cast_parameter(fix_params["tau_betas"])
+        elif "tau_beta" in fix_params:
+            self.tau_beta = fix_params["tau_beta"] * self.d
+        if "pis" in fix_params:
+            self.pi = self._cast_parameter(fix_params["pis"])
+        elif "pi" in fix_params and self.pi is not None:
+            overall_pi = fix_params["pi"]
+            if isinstance(self.pi, dict):
+                self.pi = {
+                    c: overall_pi * pi / pi.sum(axis=1, keepdims=True)
+                    for c, pi in self.pi.items()
+                }
+            else:
+                self.pi *= overall_pi / self.pi.sum()
 
     def update_pi(self):
         """
@@ -247,17 +284,18 @@ class VIPRSMix(VIPRS):
         Update the prior precision (inverse variance) for the effect sizes, `tau_beta`
         """
 
-        if "tau_betas" not in self.fix_params:
-            # If a list of multipliers is provided,
-            # estimate the global sigma_beta and then multiply it
-            # by the per-component multiplier to get the final sigma_betas.
+        if "tau_betas" not in self.fix_params and "tau_beta" not in self.fix_params:
+            # Estimate a shared precision scale and apply the component-specific
+            # precision multipliers. This is the constrained mixture M-step.
 
             zetas = sum(self.compute_zeta(sum_axis=0).values())
+            total_responsibility = dict_sum(self.var_gamma)
 
-            tau_beta_estimate = np.sum(self.pi) * self.m / np.dot(self.d, zetas)
-            tau_beta_estimate = self.d * tau_beta_estimate
+            global_tau = total_responsibility / np.dot(self.d, zetas)
+            # Preserve the exact component ratios while enforcing tau_k >= 1.
+            global_tau = np.maximum(global_tau, 1.0 / np.min(self.d))
 
-            self.tau_beta = np.clip(tau_beta_estimate, a_min=1.0, a_max=None)
+            self.tau_beta = self.d * global_tau
 
     def get_null_pi(self, chrom=None):
         """
@@ -269,30 +307,27 @@ class VIPRSMix(VIPRS):
         pi = self.get_pi(chrom=chrom)
 
         if isinstance(pi, dict):
-            return {c: 1.0 - c_pi.sum(axis=1) for c, c_pi in pi.items()}
-        else:
-            return 1.0 - np.sum(pi)
+            return {c: 1.0 - c_pi.sum(axis=-1) for c, c_pi in pi.items()}
+        return 1.0 - np.sum(pi, axis=-1)
 
     def get_proportion_causal(self):
         """
         :return: The proportion of variants in the non-null components.
         """
         if isinstance(self.pi, dict):
-            dict_mean({c: pis.sum(axis=1) for c, pis in self.pi.items()})
-        else:
-            return np.sum(self.pi)
+            return np.dtype(self.float_precision).type(
+                sum(np.sum(pis, dtype=np.float64) for pis in self.pi.values())
+                / self.n_snps
+            )
+        return np.sum(self.pi)
 
     def get_average_effect_size_variance(self):
         """
         :return: The average per-SNP variance for the prior mixture components
         """
 
-        avg_sigma = super().get_average_effect_size_variance()
-
-        try:
-            return avg_sigma.sum()
-        except Exception:
-            return avg_sigma
+        total = self._prior_variance_sum(self.tau_beta)
+        return total / self.n_snps
 
     def compute_pip(self):
         """
@@ -311,7 +346,14 @@ class VIPRSMix(VIPRS):
         :return: The expectation of the squared effect size under the variational posterior.
         """
         return {
-            c: (v * (self.var_mu[c] ** 2 + (1.0 / self.var_tau[c]))).sum(axis=sum_axis)
+            c: np.sum(
+                v.astype(np.float64)
+                * (
+                    self.var_mu[c].astype(np.float64) ** 2
+                    + (1.0 / self.var_tau[c].astype(np.float64))
+                ),
+                axis=sum_axis,
+            )
             for c, v in self.var_gamma.items()
         }
 
@@ -324,8 +366,13 @@ class VIPRSMix(VIPRS):
 
         extra_theta = []
 
+        if isinstance(self.tau_beta, dict):
+            average_taus = dict_sum(self.tau_beta, axis=0) / self.n_snps
+            for i, tau in enumerate(np.atleast_1d(average_taus), 1):
+                table.loc[table["Parameter"] == f"tau_beta_{i}", "Value"] = tau
+
         if isinstance(self.pi, dict):
-            pis = list(dict_mean(self.pi, axis=0))
+            pis = dict_sum(self.pi, axis=0) / self.n_snps
         else:
             pis = self.pi
 

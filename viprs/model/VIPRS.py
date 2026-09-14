@@ -147,6 +147,7 @@ class VIPRS(BayesPRSModel):
         self.ld_data = {}
         self.ld_indptr = {}
         self.ld_left_bound = {}
+        self._ld_lop = {}
 
         logger.debug("> Loading LD matrices to memory")
 
@@ -165,8 +166,10 @@ class VIPRS(BayesPRSModel):
                 dequantize_on_the_fly = False
 
             ld_lop = ld_mat.load(return_symmetric=not low_memory, dtype=dtype)
+            ld_lop.threads = threads
 
             # Load the LD data:
+            self._ld_lop[c] = ld_lop
             self.ld_data[c] = ld_lop.ld_data
             self.ld_indptr[c] = ld_lop.ld_indptr
             self.ld_left_bound[c] = ld_lop.leftmost_idx
@@ -181,7 +184,7 @@ class VIPRS(BayesPRSModel):
                 self.lambda_min = lambda_min
 
                 if not np.isscalar(self.lambda_min):
-                    assert self.lambda_min.shape == self.ld_indptr[c].shape[0] - 1, \
+                    assert self.lambda_min.shape == (self.ld_indptr[c].shape[0] - 1,), \
                         "Vector-valued lambda_min must have the same shape as the LD matrix."
             else:
 
@@ -334,7 +337,9 @@ class VIPRS(BayesPRSModel):
             if 'tau' in param_0:
                 self.var_tau[c] = param_0['tau'][c]
             else:
-                self.var_tau[c] = (self.n_per_snp[c] / self.sigma_epsilon) + self.tau_beta
+                self.var_tau[c] = (
+                    self.n_per_snp[c] / self.sigma_epsilon
+                ) + self.get_tau_beta(c)
 
             self.var_tau[c] = self.var_tau[c]
 
@@ -355,7 +360,17 @@ class VIPRS(BayesPRSModel):
         self.eta = self.compute_eta()
         self.zeta = self.compute_zeta()
         self.eta_diff = {c: np.zeros_like(eta, dtype=self.float_precision) for c, eta in self.eta.items()}
-        self.q = {c: np.zeros_like(eta, dtype=self.float_precision) for c, eta in self.eta.items()}
+        self.q = {}
+        for c, eta in self.eta.items():
+            if np.any(eta):
+                # The E-step maintains q = (R - I) @ eta incrementally. A
+                # nonzero warm start must initialize q to the same state.
+                self.q[c] = np.asarray(
+                    self._ld_lop[c] @ eta, dtype=self.float_precision, order=self.order
+                )
+                self.q[c] -= eta
+            else:
+                self.q[c] = np.zeros_like(eta, dtype=self.float_precision)
         self._log_var_tau = {c: np.log(self.var_tau[c]) for c in self.var_tau}
 
     def set_fixed_params(self, fix_params):
@@ -451,10 +466,19 @@ class VIPRS(BayesPRSModel):
         in computing the pseudo-heritability.
         """
 
-        self._sigma_g = np.sum([
-            np.sum((1. + self.lambda_min)*self.zeta[c] + np.multiply(self.q[c], self.eta[c]), axis=0)
-            for c in self.shapes.keys()
-        ], axis=0)
+        sigma_g = []
+        for c in self.shapes:
+            lambda_min = self.lambda_min[c] if isinstance(self.lambda_min, dict) else self.lambda_min
+            if not np.isscalar(lambda_min) and np.ndim(lambda_min) < np.ndim(self.zeta[c]):
+                lambda_min = np.asarray(lambda_min)[:, None]
+            sigma_g.append(
+                np.sum(
+                    (1. + lambda_min) * self.zeta[c]
+                    + np.multiply(self.q[c], self.eta[c]),
+                    axis=0,
+                )
+            )
+        self._sigma_g = np.sum(sigma_g, axis=0)
 
     def update_sigma_epsilon(self):
         """
@@ -609,7 +633,8 @@ class VIPRS(BayesPRSModel):
         # Gaussian entropy terms:
         entropy -= .5 * np.multiply(var_gamma, log_var_tau).sum(axis=sum_axis)
 
-        return .5 * self.n_snps * (np.log(2. * np.pi) + 1.) + entropy
+        entropy += .5 * (np.log(2. * np.pi) + 1.) * var_gamma.sum(axis=sum_axis)
+        return entropy
 
     def loglikelihood(self):
         """
@@ -674,7 +699,8 @@ class VIPRS(BayesPRSModel):
 
             log_prior -= .5 * (np.multiply(var_gamma, tau_beta) * (var_mu ** 2 + 1. / var_tau)).sum(axis=sum_axis)
 
-        return log_prior - .5*self.n_snps*np.log(2.*np.pi)
+        log_prior -= .5 * np.log(2. * np.pi) * var_gamma.sum(axis=sum_axis)
+        return log_prior
 
     def complete_loglikelihood(self):
         """
@@ -993,8 +1019,10 @@ class VIPRS(BayesPRSModel):
                 # Update the tracked parameters (including objectives):
                 self.update_theta_history()
 
-                # Compute maximum absolute difference in effect sizes:
-                max_eta_diff = max([np.max(np.abs(diff)) for diff in self.eta_diff.values()])
+                # Compute maximum absolute difference in posterior means:
+                max_eta_diff = max(
+                    np.max(np.abs(diff)) for diff in self.eta_diff.values()
+                )
 
                 # Update the current ELBO:
                 curr_elbo = self.history['ELBO'][-1]

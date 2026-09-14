@@ -2,7 +2,6 @@
 #define E_STEP_H
 
 #include <cmath>
-#include <vector>
 #include <algorithm>
 #include <stdio.h>
 #include <iostream>
@@ -125,20 +124,16 @@ blas_dot(T* x, U* y, int size) {
             if constexpr (std::is_same<U, float>::value) {
                 return cblas_sdot(size, x, incx, y, incy);
             } else {
-                // Handles the case where y is any data type that is not a float:
-                std::vector<float> y_float(size);
-                std::transform(y, y + size, y_float.begin(),  [](U val) { return static_cast<float>(val);});
-                return cblas_sdot(size, x, incx, y_float.data(), incy);
+                // Avoid allocating and materializing a converted copy of y.
+                return dot(x, y, size);
             }
         }
         else if constexpr (std::is_same<T, double>::value) {
             if constexpr (std::is_same<U, double>::value) {
                 return cblas_ddot(size, x, incx, y, incy);
             } else {
-                // Handles the case where y is any data type that is not a double:
-                std::vector<double> y_double(size);
-                std::transform(y, y + size, y_double.begin(),  [](U val) { return static_cast<double>(val);});
-                return cblas_ddot(size, x, incx, y_double.data(), incy);
+                // Avoid allocating and materializing a converted copy of y.
+                return dot(x, y, size);
             }
         }
     #else
@@ -195,20 +190,16 @@ blas_axpy(T *y, U *x, T alpha, int size) {
             if constexpr (std::is_same<U, float>::value) {
                 cblas_saxpy(size, alpha, x, incx, y, incy);
             } else {
-                // Handles the case where x is any data type that is not a float:
-                std::vector<float> x_float(size);
-                std::transform(x, x + size, x_float.begin(),  [](U val) { return static_cast<float>(val);});
-                cblas_saxpy(size, alpha, x_float.data(), incx, y, incy);
+                // Avoid allocating and materializing a converted copy of x.
+                axpy(y, x, alpha, size);
             }
         }
         else if constexpr (std::is_same<T, double>::value) {
             if constexpr (std::is_same<U, double>::value) {
                 cblas_daxpy(size, alpha, x, incx, y, incy);
             } else {
-                // Handles the case where x is any data type that is not a float:
-                std::vector<double> x_double(size);
-                std::transform(x, x + size, x_double.begin(),  [](U val) { return static_cast<double>(val);});
-                cblas_daxpy(size, alpha, x_double.data(), incx, y, incy);
+                // Avoid allocating and materializing a converted copy of x.
+                axpy(y, x, alpha, size);
             }
         }
     #else
@@ -479,6 +470,9 @@ e_step_mixture(int c_size,
         defined as the difference between the current value of eta and the updated value of eta.
     */
 
+    // Obtain the machine precision for the data type T:
+    T machine_precision = std::max(std::numeric_limits<T>::epsilon(), static_cast<T>(1e-8));
+
     /* Delineate the parallel region: */
     #ifdef _OPENMP
         #pragma omp parallel num_threads(threads)
@@ -487,7 +481,7 @@ e_step_mixture(int c_size,
         // Declare variables that are private to each thread:
         int start, end, mat_idx;
         I ld_start, ld_end;
-        T mu_beta_j, mu_tau_j;
+        T mu_beta_j, mu_tau_j, eta_diff_j;
         T* u_j = new T[K + 1];
 
         #ifdef _OPENMP
@@ -516,24 +510,32 @@ e_step_mixture(int c_size,
             softmax(u_j, var_gamma + j*K, K + 1);
 
             /* Update eta_diff for variant j */
-            eta_diff[j] = -eta[j];
+            eta_diff_j = -eta[j];
 
             for (int k = 0; k < K; ++k) {
                 mat_idx = j*K + k; // Assumes C-order matrices.
-                eta_diff[j] = std::fma(var_gamma[mat_idx], var_mu[mat_idx], eta_diff[j]);
+                eta_diff_j = std::fma(var_gamma[mat_idx], var_mu[mat_idx], eta_diff_j);
             }
 
+            if (std::abs(eta_diff_j) < machine_precision) {
+                /* Avoid propagating negligible changes through the LD matrix. */
+                eta_diff[j] = 0.;
+                continue;
+            }
+
+            eta_diff[j] = eta_diff_j;
+
             /* Update the q-factors for variants that are in LD with variant j */
-            blas_axpy(q + start, ld_data + ld_start, dq_scale*eta_diff[j], end - start);
+            blas_axpy(q + start, ld_data + ld_start, dq_scale*eta_diff_j, end - start);
 
             if (!low_memory) {
                 /* If the matrix is symmetric, updating q in the previous step would also
                 update the q-factor for the focal variant (j). So, we need to correct for
                 this here. */
-                q[j] -= eta_diff[j];
+                q[j] -= eta_diff_j;
             }
 
-            eta[j] += eta_diff[j];
+            eta[j] += eta_diff_j;
         }
 
         delete[] u_j;
@@ -591,10 +593,13 @@ e_step_grid(int c_size,
 
     int start, end, mat_idx, model_idx;
     I ld_start, ld_end;
-    T u_j;
+    T u_j, eta_diff_j;
+
+    // Obtain the machine precision for the data type T:
+    T machine_precision = std::max(std::numeric_limits<T>::epsilon(), static_cast<T>(1e-8));
 
     #ifdef _OPENMP
-        #pragma omp parallel for private(start, end, ld_start, ld_end, mat_idx, model_idx, u_j) schedule(static) num_threads(threads)
+        #pragma omp parallel for private(start, end, ld_start, ld_end, mat_idx, model_idx, u_j, eta_diff_j) schedule(static) num_threads(threads)
     #endif
     for (int j = 0; j < c_size; ++j) {
 
@@ -617,20 +622,28 @@ e_step_grid(int c_size,
             var_gamma[mat_idx] = sigmoid(u_j);
 
             /* Update eta_diff for variant j and model m */
-            eta_diff[mat_idx] = var_gamma[mat_idx] * var_mu[mat_idx] - eta[mat_idx];
+            eta_diff_j = var_gamma[mat_idx] * var_mu[mat_idx] - eta[mat_idx];
+
+            if (std::abs(eta_diff_j) < machine_precision) {
+                /* Avoid propagating negligible changes through the LD matrix. */
+                eta_diff[mat_idx] = 0.;
+                continue;
+            }
+
+            eta_diff[mat_idx] = eta_diff_j;
 
             /* Update the q-factors for variants that are in LD with variant j */
-            blas_axpy(q + (model_idx*c_size + start), ld_data + ld_start, dq_scale*eta_diff[mat_idx], end - start);
+            blas_axpy(q + (model_idx*c_size + start), ld_data + ld_start, dq_scale*eta_diff_j, end - start);
 
             if (!low_memory) {
                 /* If the matrix is symmetric, updating q in the previous step would also
                 update the q-factor for the focal variant (j). So, we need to correct for
                 this here. */
-                q[mat_idx] -= eta_diff[mat_idx];
+                q[mat_idx] -= eta_diff_j;
             }
 
             /* Update eta (posterior mean) for variant j and model m */
-            eta[mat_idx] += eta_diff[mat_idx];
+            eta[mat_idx] += eta_diff_j;
         }
     }
 
