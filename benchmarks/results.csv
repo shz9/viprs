@@ -1,1 +1,3 @@
 Commit ID,Date,Model,Configurations,Phenotype,Accuracy,Runtime,Sumstats,LD
+2c3e86804e393e6046cc5acf2752ad31b14cc1a8,2026-09-15,VIPRS,,height,0.336213,21.48,https://zenodo.org/records/14612130/files/HEIGHT.tar.gz,https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz
+2c3e86804e393e6046cc5acf2752ad31b14cc1a8,2026-09-15,VIPRSMix(K=4),,height,0.343416,42.39,https://zenodo.org/records/14612130/files/HEIGHT.tar.gz,https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz
