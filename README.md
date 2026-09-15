@@ -33,6 +33,7 @@ Grid search, Bayesian optimization, Bayesian model averaging.
 ### Helpful links
 
 - [Documentation](https://shz9.github.io/viprs/)
+- [Continuous benchmark results](./benchmarks/results.md)
 - [Citation / BibTeX records](./CITATION.md)
 - [Report issues/bugs](https://github.com/shz9/viprs/issues)
 

@@ -6,6 +6,105 @@ posterior distribution of the variant effect sizes. The script provides a variet
 customize the inference process, including the choice of prior distributions and the choice of 
 optimization algorithms.
 
+## Summary-statistics input
+
+### Standard column names
+
+Internally, VIPRS uses the standard summary-statistics column names defined by
+[`magenpy`](https://shz9.github.io/magenpy/). This format is close to PLINK 2's
+association output. The most common equivalents are:
+
+| PLINK 2 column | VIPRS/`magenpy` column | Meaning |
+|:---------------|:-----------------------|:--------|
+| `#CHROM` | `CHR` | Chromosome |
+| `POS` | `POS` | Base-pair position |
+| `ID` | `SNP` | Variant identifier, usually an rsID |
+| `REF` | `A2` | Reference/non-effect allele in a simple biallelic table |
+| `ALT` | `A1` | Alternative allele when it is the tested allele |
+| `OBS_CT` | `N` | Per-variant GWAS sample size |
+| `T_STAT` or `Z_STAT` | `Z` | Signed association test statistic |
+| `P` | `PVAL` | Association p-value |
+
+For native PLINK 2 `.glm` output, use `--sumstats-format plink2`. PLINK 2's `A1`
+column identifies the allele tested by that row; it is therefore the VIPRS effect
+allele. The parser retains `A1` and infers `A2` from `REF` and `ALT` (or `ALT1`).
+Consequently, `ALT` should only be mapped directly to `A1` in a custom biallelic
+table when the alternate allele was in fact the tested allele.
+
+For an otherwise unsupported layout, use `--sumstats-format custom` together with
+`--custom-sumstats-mapper`. The mapper is written as comma-separated
+`input_name=VIPRS_name` pairs. For example, if `ALT` is known to be the tested
+allele:
+
+```bash
+viprs_fit \
+    --ld-panel "ld/chr_*" \
+    --sumstats sumstats.txt \
+    --sumstats-format custom \
+    --custom-sumstats-mapper '#CHROM=CHR,ID=SNP,REF=A2,ALT=A1,OBS_CT=N,T_STAT=Z,P=PVAL' \
+    --output-dir output
+```
+
+### Required information
+
+The input must provide enough information in each of the following categories:
+
+| Purpose | Required information |
+|:--------|:---------------------|
+| Variant identity | `SNP`, or both `CHR` and `POS` |
+| Sample size | Per-variant `N`, or a study-wide value supplied with `--gwas-sample-size` |
+| Alleles | Effect/tested allele `A1` and reference/non-effect allele `A2` |
+| Association strength and direction | `Z`; `BETA` with `SE`; or `PVAL`/`CHISQ` together with a signed statistic such as `BETA`, `Z`, or `OR` |
+
+A p-value alone describes association strength but not effect direction. When using
+p-values, retain a signed statistic so VIPRS can determine whether the effect with
+respect to `A1` is positive or negative. Built-in format parsers may derive some
+canonical columns—for example, the PLINK 2 parser can infer `A2`—but explicitly
+providing the information above makes harmonization more reliable.
+
+### Effect alleles, variant matching, and genome build
+
+VIPRS consistently treats `A1` as the effect (tested) allele. Signed statistics,
+including `BETA` and `Z`, must describe the effect of `A1`; `A2` is the other or
+reference allele. During harmonization, allele swaps are detected and signed
+statistics are flipped as needed.
+
+Variant tables are matched by [`merge_snp_tables`](https://github.com/shz9/magenpy/blob/master/magenpy/utils/model_utils.py).
+The function first uses `SNP` identifiers when they are present in both tables. If
+they are unavailable, it falls back to the `CHR` and `POS` pair. Alleles are checked
+after the identifier match, so variants with incompatible alleles are not retained.
+
+The precomputed LD panels currently distributed for VIPRS use the GRCh37/hg19
+coordinate system. Summary statistics must use the same build when variants are
+matched by `CHR` and `POS`; lift coordinates from other genome builds before fitting.
+Matching by rsID can reduce dependence on positions, but the alleles and variant
+definitions must still agree with the LD reference.
+
+## Choosing between VIPRS and VIPRSMix
+
+The default `VIPRS` model uses a spike-and-slab prior with one non-null Gaussian
+component. `VIPRSMix` generalizes this to a sparse mixture prior—conceptually similar
+to SBayesR—with several non-null Gaussian components of different scales plus the
+spike at zero. The number passed to `--n-components` counts only the non-null
+components.
+
+There is no separate model-selection flag. The default, `--n-components 1`, fits
+`VIPRS`; any value greater than one automatically fits `VIPRSMix`. For example, the
+following selects a four-component mixture:
+
+```bash
+viprs_fit \
+    --ld-panel "ld/chr_*" \
+    --sumstats sumstats.txt \
+    --n-components 4 \
+    --output-dir output
+```
+
+Experiments with this sparse mixture prior are reported in the Supplementary
+Material of [Zabad et al. (2023)](../citation.md).
+
+## Command reference
+
 A full listing of the options available for the `viprs_fit` script can be found by running the following command in your terminal:
 
 ```bash
@@ -35,7 +134,7 @@ usage: viprs_fit [-h] -l LD_DIR -s SUMSTATS_PATH --output-dir OUTPUT_DIR [--outp
                  [--custom-sumstats-mapper CUSTOM_SUMSTATS_MAPPER] [--custom-sumstats-sep CUSTOM_SUMSTATS_SEP] [--gwas-sample-size GWAS_SAMPLE_SIZE]
                  [--validation-bfile VALIDATION_BED] [--validation-pheno VALIDATION_PHENO] [--validation-keep VALIDATION_KEEP]
                  [--validation-ld-panel VALIDATION_LD_PANEL] [--validation-sumstats VALIDATION_SUMSTATS_PATH]
-                 [--validation-sumstats-format {gwas-ssf,saige,plink,custom,fastgwa,plink2,cojo,ssf,magenpy,gwascatalog,plink1.9}] [-m {VIPRS,VIPRSMix}]
+                 [--validation-sumstats-format {gwas-ssf,saige,plink,custom,fastgwa,plink2,cojo,ssf,magenpy,gwascatalog,plink1.9}]
                  [--float-precision {float32,float64}] [--use-symmetric-ld] [--dequantize-on-the-fly] [--fix-sigma-epsilon FIX_SIGMA_EPSILON]
                  [--lambda-min LAMBDA_MIN] [--n-components N_COMPONENTS] [--max-iter MAX_ITER] [--h2-est H2_EST] [--h2-se H2_SE] [--hyp-search {GS,BMA,EM}]
                  [--grid-metric {ELBO,validation,pseudo_validation}] [--grid-search-mode {pathwise,independent}] [--prop-train PROP_TRAIN] [--pi-grid PI_GRID]
@@ -78,8 +177,6 @@ options:
                         The summary statistics directory or file for the validation set. Can be a wildcard of the form sumstats/chr_*
   --validation-sumstats-format {gwas-ssf,saige,plink,custom,fastgwa,plink2,cojo,ssf,magenpy,gwascatalog,plink1.9}
                         The format for the summary statistics file(s) for the validation set.
-  -m {VIPRS,VIPRSMix}, --model {VIPRS,VIPRSMix}
-                        The type of PRS model to fit to the GWAS data
   --float-precision {float32,float64}
                         The float precision to use when fitting the model.
   --use-symmetric-ld    Use the symmetric form of the LD matrix when fitting the model.
@@ -91,7 +188,8 @@ options:
                         Set the value of the lambda_min parameter, which acts as a regularizer for the effect sizes and compensates for noise in the LD matrix.
                         Set to "infer" to derive this parameter from the properties of the LD matrix itself.
   --n-components N_COMPONENTS
-                        The number of non-null Gaussian mixture components to use with the VIPRSMix model (i.e. excluding the spike component).
+                        The number of non-null Gaussian mixture components (excluding the spike component). Values greater than 1 automatically select the
+                        VIPRSMix model.
   --max-iter MAX_ITER   The maximum number of iterations to run the coordinate ascent algorithm.
   --h2-est H2_EST       The estimated heritability of the trait. If available, this value can be used for parameter initialization or hyperparameter grid
                         search.

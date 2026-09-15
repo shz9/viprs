@@ -1,0 +1,236 @@
+name: Continuous benchmark
+
+on:
+  push:
+    paths-ignore:
+      - benchmarks/results.csv
+      - benchmarks/results.md
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: continuous-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  HEIGHT_URL: https://zenodo.org/records/14612130/files/HEIGHT.tar.gz
+  HEIGHT_MD5: cde86c3a4d3d7c8bc451700ef51f74e3
+  LD_PANEL: hf://datasets/shz9/ukb-ld/EUR/chr_*.zip
+  LD_URL: https://huggingface.co/datasets/shz9/ukb-ld/tree/main/EUR
+  PYTHON_VERSION: "3.12"
+  OMP_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  NUMEXPR_NUM_THREADS: "1"
+
+jobs:
+  prepare-data:
+    name: Cache HEIGHT summary statistics
+    runs-on: ubuntu-24.04
+    outputs:
+      benchmark_date: ${{ steps.benchmark_date.outputs.value }}
+    steps:
+      - name: Record benchmark date
+        id: benchmark_date
+        run: echo "value=$(date --utc +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore HEIGHT archive
+        id: height-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/viprs-benchmark-data/HEIGHT.tar.gz
+          key: height-sumstats-${{ env.HEIGHT_MD5 }}
+
+      - name: Download HEIGHT archive
+        if: steps.height-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/viprs-benchmark-data"
+          curl --fail --location --retry 5 --retry-all-errors \
+            "$HEIGHT_URL" \
+            --output "$RUNNER_TEMP/viprs-benchmark-data/HEIGHT.tar.gz"
+
+      - name: Verify HEIGHT archive
+        run: |
+          cd "$RUNNER_TEMP/viprs-benchmark-data"
+          echo "$HEIGHT_MD5  HEIGHT.tar.gz" | md5sum --check --strict
+
+  benchmark:
+    name: ${{ matrix.model.label }}
+    needs: prepare-data
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - key: viprs
+            label: VIPRS
+            components: 1
+          - key: viprsmix-k4
+            label: VIPRSMix(K=4)
+            components: 4
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Restore HEIGHT archive
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/viprs-benchmark-data/HEIGHT.tar.gz
+          key: height-sumstats-${{ env.HEIGHT_MD5 }}
+          fail-on-cache-miss: true
+
+      - name: Install VIPRS and cloud LD support
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libopenblas-dev pkg-config
+          python -m pip install --upgrade pip
+          python -m pip install --verbose --editable . huggingface_hub
+
+      - name: Extract HEIGHT summary statistics
+        run: |
+          mkdir -p "$RUNNER_TEMP/viprs-benchmark-data/height"
+          tar -xzf "$RUNNER_TEMP/viprs-benchmark-data/HEIGHT.tar.gz" \
+            -C "$RUNNER_TEMP/viprs-benchmark-data/height"
+
+      - name: Fit and evaluate five folds
+        env:
+          COMMIT_ID: ${{ github.sha }}
+          BENCHMARK_DATE: ${{ needs.prepare-data.outputs.benchmark_date }}
+          MODEL_KEY: ${{ matrix.model.key }}
+          MODEL_LABEL: ${{ matrix.model.label }}
+          N_COMPONENTS: ${{ matrix.model.components }}
+        run: |
+          set -euo pipefail
+          result_file="$RUNNER_TEMP/${MODEL_KEY}-folds.csv"
+
+          for fold in 1 2 3 4 5; do
+            train_dir=$(find "$RUNNER_TEMP/viprs-benchmark-data/height" \
+              -type d -path "*/train/fold_${fold}" -print -quit)
+            test_dir=$(find "$RUNNER_TEMP/viprs-benchmark-data/height" \
+              -type d -path "*/test/fold_${fold}" -print -quit)
+            test -n "$train_dir"
+            test -n "$test_dir"
+
+            fold_dir="$RUNNER_TEMP/viprs-work/${MODEL_KEY}/fold_${fold}"
+            mkdir -p "$fold_dir/fit" "$fold_dir/evaluate" "$fold_dir/temp"
+
+            viprs_fit \
+              --ld-panel "$LD_PANEL" \
+              --sumstats "$train_dir" \
+              --sumstats-format plink2 \
+              --output-dir "$fold_dir/fit" \
+              --temp-dir "$fold_dir/temp" \
+              --n-components "$N_COMPONENTS" \
+              --output-profiler-metrics
+
+            viprs_evaluate \
+              --ld-dir "$LD_PANEL" \
+              --sumstats "$test_dir" \
+              --sumstats-format plink2 \
+              --fit-files "$fold_dir/fit/*.fit.gz" \
+              --temp-dir "$fold_dir/temp" \
+              --metrics Pseudo_R2 \
+              --output-file "$fold_dir/evaluate/test"
+
+            model_file_prefix=VIPRS
+            if [ "$N_COMPONENTS" -gt 1 ]; then
+              model_file_prefix=VIPRSMix
+            fi
+
+            python benchmarks/cli_benchmark.py record \
+              --commit "$COMMIT_ID" \
+              --date "$BENCHMARK_DATE" \
+              --model "$MODEL_LABEL" \
+              --phenotype height \
+              --sumstats-url "$HEIGHT_URL" \
+              --ld-url "$LD_URL" \
+              --fold "$fold" \
+              --evaluation-file "$fold_dir/evaluate/test.eval" \
+              --profile-file "$fold_dir/fit/${model_file_prefix}_EM.prof" \
+              --output "$result_file"
+          done
+
+      - name: Upload fold results
+        uses: actions/upload-artifact@v4
+        with:
+          name: continuous-benchmark-${{ matrix.model.key }}
+          path: ${{ runner.temp }}/${{ matrix.model.key }}-folds.csv
+          if-no-files-found: error
+          retention-days: 30
+
+  summarize:
+    name: Summarize benchmark
+    needs: benchmark
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download fold results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: continuous-benchmark-*
+          path: ${{ runner.temp }}/fold-results
+          merge-multiple: true
+
+      - name: Build benchmark table
+        run: |
+          python benchmarks/cli_benchmark.py summarize \
+            --input-dir "$RUNNER_TEMP/fold-results" \
+            --history-csv benchmarks/results.csv \
+            --output-csv "$RUNNER_TEMP/benchmark-results/results.csv" \
+            --output-markdown "$RUNNER_TEMP/benchmark-results/results.md" \
+            --repository "$GITHUB_REPOSITORY"
+          cat "$RUNNER_TEMP/benchmark-results/results.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload benchmark table
+        uses: actions/upload-artifact@v4
+        with:
+          name: continuous-benchmark-results
+          path: ${{ runner.temp }}/benchmark-results
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    name: Publish benchmark history
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs: summarize
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download benchmark table
+        uses: actions/download-artifact@v4
+        with:
+          name: continuous-benchmark-results
+          path: ${{ runner.temp }}/benchmark-results
+
+      - name: Commit benchmark history
+        env:
+          BENCHMARK_COMMIT: ${{ github.sha }}
+        run: |
+          cp "$RUNNER_TEMP/benchmark-results/results.csv" benchmarks/results.csv
+          cp "$RUNNER_TEMP/benchmark-results/results.md" benchmarks/results.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/results.csv benchmarks/results.md
+          if ! git diff --cached --quiet; then
+            git commit -m "Update benchmarks for ${BENCHMARK_COMMIT:0:7} [skip ci]"
+            git push
+          fi

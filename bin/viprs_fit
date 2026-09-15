@@ -36,6 +36,12 @@ import time
 logger = logging.getLogger(__name__)
 
 
+def get_model_name(n_components):
+    """Return the model implied by the requested number of mixture components."""
+
+    return "VIPRSMix" if n_components > 1 else "VIPRS"
+
+
 def check_args(args):
     """
     Check the validity, consistency, and completeness of the commandline arguments.
@@ -43,10 +49,17 @@ def check_args(args):
 
     from magenpy.utils.system_utils import get_filenames, is_path_writable
 
+    def get_ld_store_files(path):
+        if path.startswith("hf://"):
+            from magenpy.utils.system_utils import glob_hf_path
+
+            return glob_hf_path(path)
+        return get_filenames(path, extension=".zgroup")
+
     # ----------------------------------------------------------
     # Check that the inputs data files/directories are valid:
     # TODO: Update this check once LD matrices are on AWS s3
-    ld_store_files = get_filenames(args.ld_dir, extension=".zgroup")
+    ld_store_files = get_ld_store_files(args.ld_dir)
     if len(ld_store_files) < 1:
         raise FileNotFoundError(
             f"No valid LD matrix files were found at: {args.ld_dir}"
@@ -67,11 +80,8 @@ def check_args(args):
         raise PermissionError(f"Temporary directory ({args.temp_dir}) is not writable.")
 
     # Check the model parameters:
-    if args.model == "VIPRSMix":
-        if args.n_components < 1:
-            raise ValueError(
-                "The number of components for the VIPRSMix model must be at least 1."
-            )
+    if args.n_components < 1:
+        raise ValueError("The number of mixture components must be at least 1.")
 
     # Check the residual variance parameter (if provided):
     if args.fix_sigma_epsilon is not None:
@@ -80,16 +90,15 @@ def check_args(args):
         )
 
     # Check that lambda_min is non-negative (if provided):
-    if args.lambda_min is not None:
-        if args.lambda_min != "infer":
-            try:
-                lm_min = float(args.lambda_min)
-                if lm_min < 0.0:
-                    raise ValueError(
-                        "The lambda_min parameter must be a non-negative number."
-                    )
-            except ValueError:
-                "The lambda_min parameter must be set to 'infer' or non-negative number."
+    if args.lambda_min is not None and args.lambda_min != "infer":
+        try:
+            lm_min = float(args.lambda_min)
+            if lm_min < 0.0:
+                raise ValueError(
+                    "The lambda_min parameter must be a non-negative number."
+                )
+        except ValueError:
+            "The lambda_min parameter must be set to 'infer' or non-negative number."
 
     # Check the arguments for validation/pseudo validation when performing
     # grid search or Bayesian optimization for hyperparameter tuning:
@@ -133,9 +142,7 @@ def check_args(args):
                 args.validation_ld_panel is not None
                 and args.validation_sumstats_path is not None
             ):
-                ld_store_files = get_filenames(
-                    args.validation_ld_panel, extension=".zgroup"
-                )
+                ld_store_files = get_ld_store_files(args.validation_ld_panel)
                 if len(ld_store_files) < 1:
                     raise FileNotFoundError(
                         f"No valid LD matrix files for the "
@@ -154,24 +161,23 @@ def check_args(args):
                     f"training and validation sets (training proportion: {args.prop_train})."
                 )
 
-    if args.hyp_search in ("GS", "BMA"):
+    if args.hyp_search in ("GS", "BMA") and all(
+        [
+            args.pi_grid is None,
+            args.pi_steps is None,
+            args.sigma_epsilon_grid is None,
+            args.sigma_epsilon_steps is None,
+        ]
+    ):
         # If the hyperparameter strategy is grid search or Bayesian model averaging,
         # then ensure that we can generate a grid, given the user's selection of inputs:
 
-        if all(
-            [
-                args.pi_grid is None,
-                args.pi_steps is None,
-                args.sigma_epsilon_grid is None,
-                args.sigma_epsilon_steps is None,
-            ]
-        ):
-            raise ValueError(
-                "For grid search (GS) or Bayesian model averaging (BMA), you need to "
-                "provide either a grid or the number of steps for the hyperparameter "
-                "search over the hyperparameters of interest. See --pi-grid, --pi-steps, "
-                "--sigma-epsilon-grid, and --sigma-epsilon-steps."
-            )
+        raise ValueError(
+            "For grid search (GS) or Bayesian model averaging (BMA), you need to "
+            "provide either a grid or the number of steps for the hyperparameter "
+            "search over the hyperparameters of interest. See --pi-grid, --pi-steps, "
+            "--sigma-epsilon-grid, and --sigma-epsilon-steps."
+        )
 
 
 def init_data(args):
@@ -318,7 +324,8 @@ def prepare_model(args):
     # Print information about the model details:
     logger.info("\n{:-^100}\n".format("  Model details  "))
 
-    logger.info(f"- Model:{args.model}")
+    model_name = get_model_name(args.n_components)
+    logger.info(f"- Model:{model_name}")
     hyp_map = {
         "GS": "Grid search",
         "BO": "Bayesian optimization",
@@ -348,7 +355,7 @@ def prepare_model(args):
         else:
             fix_params = None
 
-        if args.model == "VIPRS":
+        if model_name == "VIPRS":
             p_model = partial(
                 VIPRS,
                 float_precision=args.float_precision,
@@ -358,7 +365,7 @@ def prepare_model(args):
                 threads=args.threads,
                 fix_params=fix_params,
             )
-        elif args.model == "VIPRSMix":
+        else:
             p_model = partial(
                 VIPRSMix,
                 K=args.n_components,
@@ -556,8 +563,7 @@ def fit_model(model, data_dict, args):
 
                 # If the number of threads was reduced previously,
                 # reset it:
-                if m.threads < args.threads:
-                    m.threads = args.threads
+                m.threads = max(m.threads, args.threads)
 
                 fit_start_time = time.time()
                 m = fit_func()
@@ -778,16 +784,7 @@ def main():
         help=argparse.SUPPRESS,
     )
 
-    # Arguments for the model type / parameters:
-    parser.add_argument(
-        "-m",
-        "--model",
-        dest="model",
-        type=str,
-        default="VIPRS",
-        help="The type of PRS model to fit to the GWAS data",
-        choices={"VIPRS", "VIPRSMix"},
-    )
+    # Arguments for model parameters:
     parser.add_argument(
         "--float-precision",
         dest="float_precision",
@@ -829,9 +826,9 @@ def main():
         "--n-components",
         dest="n_components",
         type=int,
-        default=3,
-        help="The number of non-null Gaussian mixture components to use with the VIPRSMix model "
-        "(i.e. excluding the spike component).",
+        default=1,
+        help="The number of non-null Gaussian mixture components (excluding the spike "
+        "component). Values greater than 1 automatically select the VIPRSMix model.",
     )
     parser.add_argument(
         "--max-iter",
@@ -1014,8 +1011,9 @@ def main():
     # Create the output directory:
     makedir(osp.abspath(args.output_dir))
     # Set the output prefix:
+    model_name = get_model_name(args.n_components)
     output_prefix = osp.join(
-        args.output_dir, args.output_prefix + args.model + "_" + args.hyp_search
+        args.output_dir, args.output_prefix + model_name + "_" + args.hyp_search
     )
 
     # Clear the log file:
