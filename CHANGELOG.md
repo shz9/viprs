@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-10-07
+
+### Added
+
+- Added a summary-statistics evaluation mode to `viprs_evaluate`, with support for independent GWAS
+summary statistics, LD reference panels, fitted VIPRS effect sizes, custom summary-statistic formats,
+and the `Pseudo_Pearson_R` and `Pseudo_R2` metrics.
+- Added a continuous benchmarking workflow that fits VIPRS and VIPRSMix across five folds, records
+prediction accuracy, runtime, and peak memory usage, and publishes CSV and Markdown benchmark histories.
+- Added a reusable CLI benchmark utility and regression tests for benchmark result recording and aggregation.
+- Added PGS Catalog scoring-file format 2.0 import and export, including metadata validation, compressed
+output, selectable effect columns, and `viprs_fit --output-format pgs_catalog` support.
+- Added `LDPredInfGrid`, which tunes the LDpred-inf penalty using PUMAS summary-statistic splitting and
+pseudo-validation, then optionally refits the selected model on the full GWAS.
+- Added allele-frequency-dependent priors to LDpred-inf through the `alpha` parameter, with optional joint
+search over alpha values and penalty factors in `LDPredInfGrid`.
+- Added CLI documentation for `viprs_fit`, `viprs_evaluate`, and `viprs_score`, plus an FAQ covering required
+summary-statistic fields, allele conventions, genome builds, variant matching, and VIPRSMix selection.
+- Added broader unit and integration coverage for VIPRSMix, E-step implementations, CLI argument handling,
+summary-statistics evaluation, PGS Catalog files, and LDpred-inf model fitting and selection.
+
+### Changed
+
+- Reparameterized effect-size quantities during VIPRS optimization using a sample-size-based scale to improve
+numerical stability, while restoring parameters to their original scale after fitting and in public outputs.
+- Simplified model selection in `viprs_fit`: `--n-components 1` selects VIPRS, while values greater than one
+select VIPRSMix, removing the need for a separate model flag.
+- Refactored `viprs_evaluate` into explicit individual-level and summary-statistics workflows with stricter
+input validation and support for multiple fitted models in one effect-size table.
+- Updated VIPRSMix initialization, fixed-parameter handling, component precision updates, prior summaries,
+posterior moment calculations, and theta-table reporting to consistently support scalar, vector-valued,
+and chromosome-indexed parameters.
+- Optimized mixed-precision E-step operations to avoid temporary converted arrays and skip negligible
+posterior-mean updates.
+- Updated continuous benchmarks to download their input archives directly instead of depending on
+Hugging Face, and refreshed the recorded benchmark results.
+- Reimplemented `LDPredInf` using standardized marginal effects, chromosome-wise MINRES solves, current
+`magenpy` LD interfaces, solver convergence checks, and scalar or chromosome-specific heritability.
+- Extended Hugging Face LD-path handling to CLI preflight validation and validation LD panels.
+- Included chromosome and position columns in inferred parameter tables to support portable scoring-file
+formats and position-based harmonization.
+- Improved error logging when writing inferred parameters and hyperparameter tables.
+
+### Fixed
+
+- Fixed VIPRSMix prior initialization and heritability accounting, including component precision ratios,
+mixture probabilities, null probabilities, average prior variance, and chromosome-specific parameters.
+- Fixed VIPRSMix E-step calculations for the null component and regularization terms, including vector-valued
+`lambda_min` inputs and cached variational precisions.
+- Fixed numerical precision loss in VIPRSMix posterior second-moment calculations by accumulating in
+double precision.
+- Fixed LDpred-inf compatibility with current `magenpy`, use of unstandardized GWAS effects, unchecked solver
+termination, unsupported chromosome-specific heritability, and unnecessary genome-wide block matrices.
+- Fixed Windows compatibility in CLI evaluation tests.
+
 ## [0.1.4] - 2026-07-04
 
 ### Added

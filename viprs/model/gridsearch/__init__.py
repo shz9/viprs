@@ -1,5 +1,6 @@
 
 from .HyperparameterGrid import HyperparameterGrid
+from .LDPredInfGrid import LDPredInfGrid
 from .VIPRSGrid import VIPRSGrid
 
 from .grid_utils import (

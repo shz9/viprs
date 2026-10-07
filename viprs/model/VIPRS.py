@@ -948,6 +948,7 @@ class VIPRS(BayesPRSModel):
         try:
             self.to_theta_table().to_csv(f_name, sep=sep, index=False)
         except Exception as e:
+            logger.error(f'Failed to write theta table: {e}')
             raise e
 
     def update_theta_history(self):
@@ -1043,7 +1044,7 @@ class VIPRS(BayesPRSModel):
         """
         A convenience method to fit the model using the Variational EM algorithm.
 
-        :param max_iter: Maximum number of iterations. 
+        :param max_iter: Maximum number of iterations.
         :param theta_0: A dictionary of values to initialize the hyperparameters
         :param param_0: A dictionary of values to initialize the variational parameters
         :param continued: If true, continue the model fitting for more iterations from current parameters

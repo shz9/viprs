@@ -1,9 +1,12 @@
+import os.path as osp
+from os import PathLike
+
 import numpy as np
 import pandas as pd
-import os.path as osp
 
 from magenpy import GWADataLoader
 from ..utils.compute_utils import expand_column_names, dict_max
+from ..utils.data_utils import read_pgs_catalog_scoring_file, write_pgs_catalog_scoring_file
 
 # Set up the logger:
 import logging
@@ -276,7 +279,7 @@ class BayesPRSModel:
             parameter_table = {c: parameter_table.loc[parameter_table['CHR'] == c, ]
                                for c in parameter_table['CHR'].unique()}
 
-        snp_tables = gdl.to_snp_table(col_subset=['SNP', 'A1', 'A2'],
+        snp_tables = gdl.to_snp_table(col_subset=['CHR', 'SNP', 'POS', 'A1', 'A2'],
                                       per_chromosome=True)
 
         pip = {}
@@ -411,33 +414,42 @@ class BayesPRSModel:
 
     def set_model_parameters(self, parameter_table):
         """
-        Parses a pandas dataframe with model parameters and assigns them 
-        to the corresponding class attributes. 
-        
-        For example: 
+        Parses a pandas dataframe with model parameters and assigns them
+        to the corresponding class attributes.
+
+        For example:
             * Columns with `BETA`, will be assigned to `self.post_mean_beta`.
             * Columns with `PIP` will be assigned to `self.pip`.
             * Columns with `VAR_BETA`, will be assigned to `self.post_var_beta`.
-        
+
         :param parameter_table: A pandas table or dataframe.
         """
 
         self.pip, self.post_mean_beta, self.post_var_beta = self.harmonize_data(parameter_table=parameter_table)
 
-    def read_inferred_parameters(self, f_names, sep=r"\s+"):
+    def read_inferred_parameters(self, f_names, input_format="viprs", sep="\t"):
         """
         Read a file with the inferred parameters.
+
         :param f_names: A path (or list of paths) to the file with the effect sizes.
+        :param input_format: Input format. Either ``"viprs"`` for native parameter
+            tables or ``"pgs_catalog"`` for PGS Catalog scoring files.
         :param sep: The delimiter for the file(s).
         """
 
-        if isinstance(f_names, str):
+        if input_format not in ('viprs', 'pgs_catalog'):
+            raise ValueError("`input_format` must be either 'viprs' or 'pgs_catalog'.")
+
+        if isinstance(f_names, (str, PathLike)):
             f_names = [f_names]
 
         param_table = []
 
         for f_name in f_names:
-            param_table.append(pd.read_csv(f_name, sep=sep))
+            if input_format == 'pgs_catalog':
+                param_table.append(read_pgs_catalog_scoring_file(f_name))
+            else:
+                param_table.append(pd.read_csv(f_name, sep=sep))
 
         if len(param_table) > 0:
             param_table = pd.concat(param_table)
@@ -445,34 +457,72 @@ class BayesPRSModel:
         else:
             raise FileNotFoundError
 
-    def write_inferred_parameters(self, f_name, per_chromosome=False, sep="\t"):
+    def write_inferred_parameters(
+        self,
+        f_name,
+        output_format="viprs",
+        per_chromosome=False,
+        sep="\t",
+        pgs_metadata=None,
+        effect_column="BETA"):
         """
         A convenience method to write the inferred posterior for the effect sizes to file.
 
-        TODO:
-            * Support outputting scoring files compatible with PGS catalog format:
-            https://www.pgscatalog.org/downloads/#dl_scoring_files
-
         :param f_name: The filename (or directory) where to write the effect sizes
+        :param output_format: Output format. Either ``"viprs"`` for the native parameter
+            table or ``"pgs_catalog"`` for a PGS Catalog scoring file (format 2.0).
         :param per_chromosome: If True, write a file for each chromosome separately.
         :param sep: The delimiter for the file (tab by default).
+        :param pgs_metadata: Metadata for a PGS Catalog scoring file. ``genome_build``
+            is required and must be either ``"GRCh37"`` or ``"GRCh38"``. Other supported
+            keys are ``pgs_id``, ``pgs_name``, ``trait_reported``, ``trait_mapped``,
+            ``trait_efo``, ``weight_type``, ``pgp_id``, ``citation``, and ``license``.
+            Syntactically valid placeholders are used for omitted fields.
+        :param effect_column: Column from :meth:`to_table` to use as ``effect_weight``
+            in PGS Catalog output. This is useful for fits containing multiple models,
+            whose effect columns are named ``BETA_0``, ``BETA_1``, etc.
         """
 
-        tables = self.to_table(per_chromosome=per_chromosome)
+        if output_format not in ('viprs', 'pgs_catalog'):
+            raise ValueError("`output_format` must be either 'viprs' or 'pgs_catalog'.")
 
-        if '.fit' not in f_name:
-            ext = '.fit'
-        else:
-            ext = ''
-
-        if per_chromosome:
-            for c, tab in tables.items():
-                try:
-                    tab.to_csv(osp.join(f_name, f'chr_{c}.fit'), sep=sep, index=False)
-                except Exception as e:
-                    raise e
-        else:
+        if output_format == 'pgs_catalog':
+            if per_chromosome:
+                raise ValueError("PGS Catalog output must contain the complete score in one file; "
+                                 "`per_chromosome=True` is not supported.")
+            if sep != "\t":
+                raise ValueError("PGS Catalog scoring files must be tab-delimited (`sep='\\t'`).")
+            table = self.to_table(per_chromosome=False)
             try:
-                tables.to_csv(f_name + ext, sep=sep, index=False)
+                write_pgs_catalog_scoring_file(
+                    table,
+                    f_name,
+                    metadata=pgs_metadata,
+                    effect_column=effect_column,
+                )
             except Exception as e:
-                raise e
+                logger.error(f'Failed to write PGS Catalog scoring file: {e}')
+                raise
+
+        else:
+
+            tables = self.to_table(per_chromosome=per_chromosome)
+
+            if '.fit' not in f_name:
+                ext = '.fit'
+            else:
+                ext = ''
+
+            if per_chromosome:
+                for c, tab in tables.items():
+                    try:
+                        tab.to_csv(osp.join(f_name, f'chr_{c}.fit'), sep=sep, index=False)
+                    except Exception as e:
+                        logger.error(f'Failed to write chromosome {c} effect sizes: {e}')
+                        raise e
+            else:
+                try:
+                    tables.to_csv(f_name + ext, sep=sep, index=False)
+                except Exception as e:
+                    logger.error(f'Failed to write effect sizes: {e}')
+                    raise e

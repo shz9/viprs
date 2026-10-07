@@ -80,6 +80,26 @@ matched by `CHR` and `POS`; lift coordinates from other genome builds before fit
 Matching by rsID can reduce dependence on positions, but the alleles and variant
 definitions must still agree with the LD reference.
 
+### PGS Catalog output
+
+Use `--output-format pgs_catalog` to write the fitted effects as a compressed PGS
+Catalog format 2.0 scoring file. Supply metadata in one comma-separated argument;
+the genome build is required and other omitted fields receive placeholders:
+
+```bash
+viprs_fit \
+    --ld-panel "ld/chr_*" \
+    --sumstats sumstats.txt \
+    --output-dir output \
+    --output-format pgs_catalog \
+    --pgs-metadata 'genome_build=GRCh37,pgs_name=VIPRS_height,trait_reported=Height'
+```
+
+This writes `<prefix>VIPRS_EM.txt.gz`. Native `<prefix>VIPRS_EM.fit.gz` output
+remains the default. Supported metadata keys are `genome_build`, `pgs_id`,
+`pgs_name`, `trait_reported`, `trait_mapped`, `trait_efo`, `weight_type`,
+`pgp_id`, `citation`, and `license`.
+
 ## Choosing between VIPRS and VIPRSMix
 
 The default `VIPRS` model uses a spike-and-slab prior with one non-null Gaussian

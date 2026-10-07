@@ -11,6 +11,7 @@
     * [grid_utils](model/gridsearch/grid_utils.md): Utilities for performing model selection/averaging.
 * **Baseline Models**:
     * [LDPredInf](model/LDPredInf.md): Implementation of the LDPred-inf model.
+    * [LDPredInfGrid](model/LDPredInfGrid.md): LDpred-inf with penalty selection by summary-statistic splitting.
 
 ## Model Evaluation
 

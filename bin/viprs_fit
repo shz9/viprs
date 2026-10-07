@@ -42,6 +42,23 @@ def get_model_name(n_components):
     return "VIPRSMix" if n_components > 1 else "VIPRS"
 
 
+def write_effect_sizes(parameter_table, output_prefix, args):
+    """Write fitted effect sizes in the requested output format."""
+
+    if args.output_format == "pgs_catalog":
+        from viprs.utils.data_utils import write_pgs_catalog_scoring_file
+
+        return write_pgs_catalog_scoring_file(
+            parameter_table,
+            f"{output_prefix}.txt.gz",
+            metadata=args.pgs_metadata,
+        )
+
+    output_file = f"{output_prefix}.fit.gz"
+    parameter_table.to_csv(output_file, sep="\t", index=False)
+    return output_file
+
+
 def check_args(args):
     """
     Check the validity, consistency, and completeness of the commandline arguments.
@@ -82,6 +99,11 @@ def check_args(args):
     # Check the model parameters:
     if args.n_components < 1:
         raise ValueError("The number of mixture components must be at least 1.")
+
+    if getattr(args, "output_format", "viprs") == "pgs_catalog":
+        from viprs.utils.data_utils import prepare_pgs_catalog_metadata
+
+        prepare_pgs_catalog_metadata(getattr(args, "pgs_metadata", None))
 
     # Check the residual variance parameter (if provided):
     if args.fix_sigma_epsilon is not None:
@@ -655,6 +677,18 @@ def main():
         help="A prefix to append to the names of the output files (optional).",
     )
     parser.add_argument(
+        "--output-format",
+        type=str.lower,
+        default="viprs",
+        choices={"viprs", "pgs_catalog"},
+        help="Effect-size output format (default: viprs).",
+    )
+    parser.add_argument(
+        "--pgs-metadata",
+        help="Comma-separated PGS Catalog metadata as key=value pairs. "
+        "genome_build=GRCh37 or genome_build=GRCh38 is required for PGS Catalog output.",
+    )
+    parser.add_argument(
         "--temp-dir",
         dest="temp_dir",
         type=str,
@@ -1111,7 +1145,6 @@ def main():
             )
         except KeyError:
             valid_tables = None
-            pass
 
         profm_table = pd.concat(
             [
@@ -1126,7 +1159,7 @@ def main():
         profm_table["Peak_Memory_MB"] = round(peak_mem.get_peak_memory(), 2)
 
         if len(eff_tables) > 0:
-            eff_tables.to_csv(f"{output_prefix}.fit.gz", sep="\t", index=False)
+            write_effect_sizes(eff_tables, output_prefix, args)
 
         if len(hyp_tables) > 0:
             hyp_tables.to_csv(f"{output_prefix}.hyp", sep="\t", index=False)

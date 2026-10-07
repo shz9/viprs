@@ -1,5 +1,5 @@
 from ._version import __release_date__, __version__
-from .model import VIPRS
+from .model import LDPredInf, LDPredInfGrid, VIPRS
 from .utils.data_utils import *
 
 
