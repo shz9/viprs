@@ -18,15 +18,15 @@ a { color: var(--green); text-underline-offset: 4px; }
 button, input, select, textarea { font: inherit; }
 main { max-width: 1220px; margin: auto; padding: 0 32px 24px; }
 
-.hero { display: grid; grid-template-columns: minmax(0,1fr) minmax(380px,1.12fr); align-items: center; gap: 48px; padding: 48px 0 40px; }
+.hero { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(330px,1fr); align-items: center; gap: 40px; padding: 40px 0 36px; }
 .wordmark { margin: 0 0 18px; color: var(--green); font-size: 18px; font-weight: 650; line-height: 1; letter-spacing: .12em; }
-h1 { margin: 0; font-size: clamp(32px,3.4vw,43px); font-weight: 500; line-height: 1.13; letter-spacing: -.035em; }
-.intro { max-width: 465px; margin: 18px 0 0; color: var(--muted); font-size: 15px; line-height: 1.7; text-wrap: pretty; }
-nav { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 22px; font-size: 12px; font-weight: 500; }
-nav a { text-decoration: none; }
-nav a:hover { text-decoration: underline; }
+h1 { margin: 0; max-width: 650px; font-size: clamp(32px,3.4vw,43px); font-weight: 500; line-height: 1.16; letter-spacing: -.035em; text-wrap: balance; }
+.intro { max-width: 510px; margin: 18px 0 0; color: var(--muted); font-size: 15px; line-height: 1.7; text-wrap: pretty; }
+.resource-links { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 22px; }
+.resource-links a { padding: 8px 10px; border: 1px solid #cbd3c5; border-radius: 7px; background: #fffdf766; color: var(--green); font-size: 11px; line-height: 1.4; font-weight: 600; text-decoration: none; }
+.resource-links a:hover { background: #e7eee9; border-color: #a3b6a5; }
 
-.genetics-figure { margin: 0; padding: 19px 16px 14px; min-width: 0; border: 1px solid #c8d6c9; border-radius: 14px; background: linear-gradient(135deg, #fffdf7b3, #e8eee1b3); }
+.genetics-figure { width: 100%; max-width: 480px; justify-self: end; margin: 0; padding: 14px 12px 11px; min-width: 0; border: 1px solid #c8d6c9; border-radius: 14px; background: linear-gradient(135deg, #fffdf7b3, #e8eee1b3); }
 .genetics-figure svg { display: block; width: 100%; height: auto; }
 .plot-title { fill: var(--green); font-size: 13px; font-weight: 600; }
 .plot-grid { fill: none; stroke: #dce2d5; stroke-width: .7; }
@@ -50,6 +50,10 @@ nav a:hover { text-decoration: underline; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.025em; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+.panel-title { display: flex; align-items: center; gap: 11px; }
+.panel-icon { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; border: 1px solid #d5e0cf; border-radius: 9px; background: #edf2e8; color: var(--green); }
+.panel-icon svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.panel-icon circle { fill: #edf2e8; }
 label { display: block; margin: 17px 0 7px; font-size: 12px; font-weight: 600; }
 input, select, textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #cdd4c8; border-radius: 7px; outline: none; background: #fffefa; color: var(--ink); font-size: 13px; line-height: 1.4; }
 input:hover, select:hover, textarea:hover { border-color: #96ac9a; }
@@ -114,20 +118,20 @@ footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16
 @keyframes rotate { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: no-preference) { .activity.running span:first-child { animation: rotate 1.25s linear infinite; }.activity.running span:nth-child(2) { animation: rotate 1.8s linear infinite reverse; }button, a, input, select, textarea { transition: border-color .15s,color .15s,background .15s; } }
 @media (max-width: 1000px) {
-  .hero { gap: 28px; grid-template-columns: minmax(0,1fr) minmax(330px,1.12fr); }
+  .hero { gap: 28px; grid-template-columns: minmax(0,1.2fr) minmax(300px,1fr); }
   .configuration-panels { gap: 18px; }
   .card { padding: 22px; }.example-box { grid-template-columns: 30px 1fr; }.example-links { grid-column: 2; }
 }
 @media (max-width: 760px) {
   .hero { padding-top: 36px; grid-template-columns: 1fr; gap: 28px; }.hero-copy { max-width: 600px; }
-  .genetics-figure { width: 100%; max-width: 560px; }
+  .genetics-figure { max-width: 480px; justify-self: start; }
   .configuration-panels { grid-template-columns: 1fr; gap: 0; }
   .monitor { grid-template-columns: minmax(0,1fr); }
   .monitor > .runtime-area { grid-column: 1; grid-row: auto; border-top: 1px solid var(--line); justify-content: space-between; }
 }
 @media (max-width: 480px) {
   main { padding: 0 17px 20px; }h1 { font-size: 32px; }.intro { font-size: 14px; }.wordmark { font-size: 16px; margin-bottom: 16px; }
-  nav { gap: 22px; }.hero { padding-bottom: 28px; }.genetics-figure { padding: 14px 8px 12px; }
+  .hero { padding-bottom: 28px; }.genetics-figure { padding: 14px 8px 12px; }
   .card { padding: 21px 18px; }.two-columns { grid-template-columns: 1fr; }.privacy { align-items: flex-start; }.privacy svg { margin-top: 2px; }
   .primary { min-width: 0; flex: 1; }.run-placeholder { gap: 16px; }.monitor { column-gap: 0; }
   .results { padding: 22px 18px; }.results-heading { flex-direction: column; align-items: stretch; }.downloads .button { flex: 1; }.result-toolbar .hint { width: 100%; margin-left: 0; }

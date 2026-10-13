@@ -72,17 +72,18 @@ fields accept one URL per line. Select one or more LD ZIPs containing complete
 all chunks. Both an archive containing a store directory and a store at archive root
 are accepted. The default LD archive already has this structure.
 
-All selected chromosomes are fitted together with shared model hyperparameters.
-Each chromosome must have exactly one LD store and summary statistics in exactly
-one selected file. A combined summary-statistics file and ZIP containing multiple
-chromosome stores also work. Duplicate chromosomes are rejected to prevent silent
-overwriting. Every selected LD chromosome needs matching variants; extra summary
-chromosomes without selected LD are excluded and listed in the report.
+Chromosomes retained by GWADataLoader are fitted together with shared model
+hyperparameters. Summary-statistics files and extracted LD stores are passed jointly
+to its constructor, which handles reading, chromosome matching, and harmonization.
+A combined summary-statistics file and ZIP containing multiple chromosome stores
+also work. The browser adapter uses the loader's input-handling behavior.
 
 Choose **VIPRS** for a spike-and-slab prior or **VIPRSMix** for a sparse Gaussian
 mixture. VIPRSMix exposes the number of non-null components (1–10), in addition to
 the point mass at zero. Optimization settings include the maximum iteration count,
-convergence tolerance, and random seed.
+convergence tolerance, and random seed. Defaults are 1,000 iterations, as in
+`viprs_fit`, and a tolerance of `1e-6` for both parameters and ELBO, as in
+`VIPRS.fit`.
 
 The worker stages inputs in its in-memory filesystem, extracts the LD archives,
 and makes one uninterrupted `fit()` call. For example, with a combined summary file:
@@ -98,7 +99,7 @@ gdl = GWADataLoader(
     threads=1,
 )
 model = VIPRS(gdl, threads=1, float_precision="float64")
-model.fit(max_iter=200, x_abs_tol=1e-6, f_abs_tol=1e-6, disable_pbar=True)
+model.fit(max_iter=1000, x_abs_tol=1e-6, f_abs_tol=1e-6, disable_pbar=True)
 weights = model.to_table()
 ```
 

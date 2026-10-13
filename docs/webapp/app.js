@@ -144,7 +144,6 @@ function showResult(result) {
   $("iterations").textContent = report.iterations;
   $("timing-summary").textContent = `Input preparation ${report.timings.preparation_seconds.toFixed(1)}s · Model fitting ${report.timings.fit_seconds.toFixed(1)}s. Runtime initialization is excluded.`;
   $("result-summary").textContent = `${report.model}${report.model === "VIPRSMix" ? ` · ${report.components} non-null components` : ""} · ${report.variants.toLocaleString()} variants across ${report.chromosomes.length} chromosome(s). ${report.message}`;
-  if (report.excluded_sumstats_chromosomes.length) $("result-summary").textContent += ` Summary-statistics chromosomes without selected LD were excluded: ${report.excluded_sumstats_chromosomes.join(", ")}.`;
   $("results").hidden = $("metrics").hidden = $("timing-summary").hidden = false;
   $("elapsed").textContent = `${report.timings.run_seconds.toFixed(1)}s`;
   status(report.converged ? "Converged" : "Iteration limit", "Analysis complete", report.message);

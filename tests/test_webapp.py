@@ -6,6 +6,7 @@ import hashlib
 from urllib.parse import urlsplit
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,17 +14,26 @@ ASSETS = Path(__file__).resolve().parents[1] / "docs" / "webapp"
 spec = importlib.util.spec_from_file_location("viprs_browser", ASSETS / "inference.py")
 browser = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(browser)
-OPTIONS = {"max_iter": 200, "tolerance": 1e-6}
+OPTIONS = {}
 
 
 @pytest.mark.parametrize("member", ["../outside", "/outside", "dir/../../outside", "dir\\outside"])
-def test_archive_traversal_rejected(tmp_path, member):
+@pytest.mark.parametrize("zip_separator", ["/", "\\"])
+def test_archive_traversal_rejected(tmp_path, member, zip_separator, monkeypatch):
+    # Exercise ZipInfo's Windows and POSIX name normalization on either host.
+    monkeypatch.setattr(zipfile, "os", SimpleNamespace(**{**vars(os), "sep": zip_separator}))
     archive = tmp_path / "bad.zip"
+    info = zipfile.ZipInfo(member)
+    # Bypass writer normalization to construct the deliberately malformed ZIP.
+    info.filename = member
     with zipfile.ZipFile(archive, "w") as handle:
-        handle.writestr(member, "bad")
+        handle.writestr(info, "bad")
+    with zipfile.ZipFile(archive) as handle:
+        assert handle.infolist()[0].orig_filename == member
     with pytest.raises(ValueError, match="unsafe"):
         browser.unpack_ld(archive, tmp_path / "out")
     assert not (tmp_path / "outside").exists()
+    assert not (tmp_path / "out").exists()
 
 
 def test_archive_store_discovery(tmp_path):
@@ -99,12 +109,32 @@ def test_multi_chromosome_fit(model, multichrom_inputs):
     assert all(str(row["CHR"]) == key for key, records in output["chromosome_rows"].items() for row in records)
 
 
-def test_duplicate_and_missing_chromosomes_fail(multichrom_inputs):
+@pytest.mark.parametrize("model_name", ["VIPRS", "VIPRSMix"])
+def test_matches_direct_loader_and_fit(multichrom_inputs, tmp_path, model_name):
+    from magenpy import GWADataLoader
+    from viprs.model import VIPRS, VIPRSMix
+    import numpy as np
+
     summaries, archives, _, _ = multichrom_inputs
-    options = dict(OPTIONS, sumstats_format="magenpy")
-    with pytest.raises(ValueError, match="More than one LD store"):
-        browser.native_fit(summaries, [archives[0], archives[0]], options)
-    with pytest.raises(ValueError, match="overlap on chromosome"):
-        browser.native_fit([summaries[0], summaries[0]], archives, options)
-    with pytest.raises(ValueError, match="missing for LD chromosome"):
-        browser.native_fit([summaries[0]], archives, options)
+    options = dict(OPTIONS, model=model_name, components=3, sumstats_format="magenpy")
+    rows, report = browser.native_fit(summaries, archives, options)
+    roots = [root for i, archive in enumerate(archives)
+             for root in browser.unpack_ld(archive, tmp_path / f"direct-{i}")]
+    gdl = GWADataLoader(sumstats_files=list(map(str, summaries)), ld_store_files=roots,
+                       sumstats_format="magenpy", temp_dir=str(tmp_path / "temp"), threads=1)
+    model = (VIPRSMix(gdl, K=3, threads=1, float_precision="float64")
+             if model_name == "VIPRSMix" else VIPRS(gdl, threads=1, float_precision="float64"))
+    np.random.seed(0)
+    model.fit(disable_pbar=True)
+    assert rows == json.loads(model.to_table().to_json(orient="records", double_precision=15))
+    assert report["elbo"] == model.history["ELBO"]
+
+
+def test_optimization_defaults_match_viprs():
+    import inspect
+    from viprs.model import VIPRS
+
+    defaults = inspect.signature(VIPRS.fit).parameters
+    iterations, tolerance = browser.validate_options({})
+    assert iterations == defaults["max_iter"].default == 1000
+    assert tolerance == defaults["x_abs_tol"].default == defaults["f_abs_tol"].default

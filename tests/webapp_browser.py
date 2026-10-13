@@ -130,10 +130,10 @@ def main():
             combined_report = report_download(page, ARTIFACTS / "multi-combined.json")
             assert combined_report["elbo"] == multi_report["elbo"]
             # A worker-side input failure also leaves the runtime usable.
-            page.locator("#sumstats-file").set_input_files(multi / "chr21.tsv")
+            page.locator("#ld-file").set_input_files(multi / "chr21.tsv")
             page.locator("#run").click()
             page.wait_for_function("document.querySelector('#status-badge').textContent === 'Error'")
-            assert "22" in page.locator("#status").inner_text()
+            assert "zip" in page.locator("#status").inner_text().lower()
             assert len(workers) == 1
             page.locator("#model").select_option("VIPRS")
             page.locator("#sumstats-format").select_option("fastGWA")
