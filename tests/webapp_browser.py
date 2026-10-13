@@ -64,6 +64,8 @@ def main():
             report = report_download(page, ARTIFACTS / "run.json")
             assert report["variants"] > 10000
             assert report["model"] == "VIPRS"
+            assert report["converged"], report["message"]
+            assert report["iterations"] < report["options"]["max_iter"]
             assert not report["runtime_reused"]
             assert report["timings"]["fit_seconds"] > 0
             assert all("wasm32-emscripten.so" in path for path in report["extensions"].values())
@@ -103,6 +105,14 @@ def main():
                 assert upload_report["runtime_reused"]
             assert len(workers) == 1
             assert sum(url.endswith("/runtime.json") for url in requests) == 1
+            # The full example must converge for the mixture model too.
+            page.locator("#source").select_option("example")
+            page.locator("#model").select_option("VIPRSMix")
+            page.locator("#run").click()
+            wait_for_run(page)
+            mixture_report = report_download(page, ARTIFACTS / "chr22-mixture.json")
+            assert mixture_report["converged"], mixture_report["message"]
+            assert mixture_report["variants"] == report["variants"]
             # Exercise both models across two chromosomes using real Zarr fixtures.
             multi = data_dir / "multi"
             assert multi.exists(), "Generate fixtures with: .venv/bin/python tests/webapp_fixtures.py"
@@ -151,6 +161,20 @@ def main():
             assert url_report["elbo"] == report["elbo"]
             assert len(workers) == 2
             assert not url_report["runtime_reused"]
+            # A display failure must not leave a completed fit spinning forever.
+            page.evaluate("""() => {
+                const create = URL.createObjectURL;
+                URL.createObjectURL = function(...args) {
+                    URL.createObjectURL = create;
+                    throw new Error("Simulated download allocation failure");
+                };
+            }""")
+            page.locator("#run").click()
+            page.wait_for_function("document.querySelector('#status-badge').textContent === 'Error'")
+            assert "Fitting completed" in page.locator("#status").inner_text()
+            assert page.locator("#run").is_enabled()
+            assert "running" not in page.locator("#activity").get_attribute("class")
+            assert page.locator("#results").is_hidden()
             # Initialization failures surface before a run and can be retried.
             retry_page = browser.new_page()
             retry_page.route("**/runtime.json", lambda route: route.fulfill(status=503, body="Unavailable"))

@@ -99,6 +99,19 @@ self.onmessage = async ({data}) => {
     runsStarted += 1;
     const runStart = performance.now();
     emit("phase", {id: data.id, message: "Preparing inputs", started: true});
+    const {expandDataURL} = await import("./sources.mjs");
+    for (const kind of ["sumstats", "ld"]) {
+      const expanded = new Map();
+      for (const source of data[kind]) {
+        if (source.file) expanded.set(source.file.webkitRelativePath || source.file.name, source);
+        else {
+          emit("phase", {id: data.id, message: "Resolving input paths", detail: "Finding matching files before download."});
+          for (const url of await expandDataURL(source.url, self.location.href)) expanded.set(url, {url});
+        }
+        if (expanded.size > 64) throw new Error("Patterns match more than 64 " + kind + " files. Narrow the selection.");
+      }
+      data[kind] = [...expanded.values()];
+    }
     workPath = `/runs/run-${runsStarted}`;
     pyodide.FS.mkdirTree(workPath);
     const request = {options: data.options, sumstats_paths: [], ld_paths: []};
@@ -107,12 +120,19 @@ self.onmessage = async ({data}) => {
     for (const kind of ["sumstats", "ld"]) {
       for (let index = 0; index < data[kind].length; index++) {
         const path = `${workPath}/${kind}-${index}`;
+        const source = data[kind][index];
+        emit("phase", {
+          id: data.id,
+          message: `${source.file ? "Reading" : "Downloading"} ${kind === "ld" ? "LD reference" : "summary statistics"}`,
+          detail: `File ${index + 1} of ${data[kind].length}. Model fitting has not started yet.`,
+        });
         await stageInput(data[kind][index], pyodide.FS, path);
         request[`${kind}_paths`].push(path);
       }
     }
     const downloadSeconds = (performance.now() - runStart) / 1000;
-    emit("phase", {id: data.id, message: `Fitting ${data.options.model || "VIPRS"}`});
+    emit("log", {id: data.id, message: `Inputs staged in ${downloadSeconds.toFixed(1)}s. Model: ${data.options.model}; components: ${data.options.components}; maximum iterations: ${data.options.max_iter}; tolerance: ${data.options.tolerance}; seed: ${data.options.seed}.`});
+    emit("phase", {id: data.id, message: `Fitting ${data.options.model || "VIPRS"}`, detail: "Harmonizing data and fitting variant effects across the selected chromosomes."});
     pyodide.globals.set("request_json", JSON.stringify(request));
     output = JSON.parse(await pyodide.runPythonAsync("run_request(request_json)"));
     output.report.pyodide_version = PYODIDE_VERSION;

@@ -1,10 +1,10 @@
-import {EXAMPLE, resolveDataURL} from "./sources.mjs";
+import {EXAMPLE, resolveDataURL, selectLocalFiles} from "./sources.mjs";
 const $ = (id) => document.getElementById(id);
 let worker = null, runtimeState = "loading", activeRun = null, nextRun = 0;
 let timer = null, startedAt = 0, downloadURLs = [], resultRows = {};
 
 function syncInputs() {
-  for (const source of ["example", "file", "url"]) {
+  for (const source of ["example", "file", "url", "folder"]) {
     $(source + "-inputs").hidden = $("source").value !== ({file: "files", url: "urls"}[source] || source);
   }
   $("sumstats-format").disabled = $("source").value === "example";
@@ -23,6 +23,15 @@ $("demo").addEventListener("click", () => { $("source").value = "example"; $("su
 for (const id of ["sumstats-file", "ld-file"]) $(id).addEventListener("change", () => {
   $("file-summary").textContent = `${$("sumstats-file").files.length} summary-statistics file(s) · ${$("ld-file").files.length} LD archive(s)`;
 });
+function updateFolderSummary() {
+  if (!$("data-folder").files.length) return;
+  try {
+    const counts = ["sumstats", "ld"].map(kind => selectLocalFiles($("data-folder").files, $(kind + "-pattern").value).length);
+    $("folder-summary").textContent = `${counts[0]} summary-statistics file(s) · ${counts[1]} LD archive(s) matched`;
+  } catch (error) { $("folder-summary").textContent = error.message; }
+}
+$("data-folder").addEventListener("change", updateFolderSummary);
+for (const kind of ["sumstats", "ld"]) $(kind + "-pattern").addEventListener("input", updateFolderSummary);
 
 function log(message) {
   const lines = $("log").textContent.split("\n");
@@ -33,6 +42,7 @@ function log(message) {
 function status(label, title, message, error = false) {
   $("status-badge").textContent = label;
   $("status-badge").dataset.state = error ? "error" : "normal";
+  $("activity").dataset.state = label.toLowerCase().replaceAll(" ", "-");
   $("activity-title").textContent = title;
   $("status").textContent = message;
 }
@@ -86,9 +96,16 @@ function startWorker() {
     if (data.id !== activeRun || activeRun === null) return;
     if (data.type === "phase") {
       if (data.started) beginTimer();
-      status("Running", data.message, "Fitting variant effects across the selected chromosomes.");
+      status("Running", data.message, data.detail || "Preparing inputs for inference.");
+      log(data.message + (data.detail ? ": " + data.detail : ""));
     }
-    if (data.type === "result") showResult(data.result);
+    if (data.type === "result") {
+      try { showResult(data.result); }
+      catch (error) {
+        releaseResults();
+        fail(`Fitting completed, but the results could not be displayed: ${error.message || error}`);
+      }
+    }
     if (data.type === "error") fail(data.message);
   };
   current.onerror = (event) => {
@@ -102,6 +119,12 @@ $("retry-runtime").addEventListener("click", () => { try { startWorker(); } catc
 
 function sourceInputs(kind) {
   if ($("source").value === "example") return [{url: resolveDataURL(EXAMPLE[kind], location.href)}];
+  if ($("source").value === "folder") {
+    if (!$("data-folder").files.length) throw new Error("Choose a local data folder first.");
+    const files = selectLocalFiles($("data-folder").files, $(kind + "-pattern").value);
+    if (files.some(file => !file.size)) throw new Error("Each input file must be nonempty.");
+    return files.map(file => ({file}));
+  }
   if ($("source").value === "files") {
     const files = Array.from($(kind + "-file").files);
     if (!files.length || files.length > 64) throw new Error(`Select 1–64 ${kind === "ld" ? "LD archives" : "summary-statistics files"}.`);
