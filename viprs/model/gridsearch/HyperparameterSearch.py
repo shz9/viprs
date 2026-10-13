@@ -1,15 +1,16 @@
-import pandas as pd
-import numpy as np
+import logging
 from multiprocessing import shared_memory
+
+import numpy as np
+import pandas as pd
 from joblib import Parallel, delayed
 
-from viprs.eval.continuous_metrics import r2
 from viprs.eval.binary_metrics import roc_auc
+from viprs.eval.continuous_metrics import r2
 from viprs.model.BayesPRSModel import BayesPRSModel
 from viprs.model.VIPRS import VIPRS
 
 # Set up the logger:
-import logging
 logger = logging.getLogger(__name__)
 
 
@@ -33,15 +34,14 @@ def fit_model_fixed_params(model, fixed_params, shm_data=None, **fit_kwargs):
     model.fix_params = fixed_params
 
     if shm_data is not None:
-
         model.ld_data = {}
 
         try:
-            ld_data_shm = shared_memory.SharedMemory(name=shm_data['shm_name'])
-            model.ld_data[shm_data['chromosome']] = np.ndarray(
-                shape=shm_data['shm_shape'],
-                dtype=shm_data['shm_dtype'],
-                buffer=ld_data_shm.buf
+            ld_data_shm = shared_memory.SharedMemory(name=shm_data["shm_name"])
+            model.ld_data[shm_data["chromosome"]] = np.ndarray(
+                shape=shm_data["shm_shape"],
+                dtype=shm_data["shm_dtype"],
+                buffer=ld_data_shm.buf,
             )
         except FileNotFoundError:
             raise Exception("LD data not found in shared memory.")
@@ -58,9 +58,9 @@ def fit_model_fixed_params(model, fixed_params, shm_data=None, **fit_kwargs):
 
     if model is not None:
         return {
-            'coef_table': model.to_table()[['CHR', 'SNP', 'POS', 'A1', 'A2', 'BETA']],
-            'hyp_table': model.to_theta_table(),
-            'training_objective': model.objective()
+            "coef_table": model.to_table()[["CHR", "SNP", "POS", "A1", "A2", "BETA"]],
+            "hyp_table": model.to_theta_table(),
+            "training_objective": model.objective(),
         }
 
 
@@ -73,12 +73,14 @@ class BaseHyperparamSearch(object):
 
     """
 
-    def __init__(self,
-                 gdl,
-                 model=None,
-                 criterion='training_objective',
-                 validation_gdl=None,
-                 n_jobs=1):
+    def __init__(
+        self,
+        gdl,
+        model=None,
+        criterion="training_objective",
+        validation_gdl=None,
+        n_jobs=1,
+    ):
         """
         A generic hyperparameter search class that implements common functionalities
         that may be required by hyperparameter search strategies.
@@ -96,7 +98,7 @@ class BaseHyperparamSearch(object):
         """
 
         # Sanity checking:
-        assert criterion in ('training_objective', 'validation', 'pseudo_validation')
+        assert criterion in ("training_objective", "validation", "pseudo_validation")
 
         self.gdl = gdl
         self.n_jobs = n_jobs
@@ -105,6 +107,7 @@ class BaseHyperparamSearch(object):
             self.model = VIPRS(gdl)
         else:
             import inspect
+
             if inspect.isclass(model):
                 self.model = model(gdl)
             else:
@@ -120,12 +123,12 @@ class BaseHyperparamSearch(object):
         self._training_objective = None
 
         # Sanity checks:
-        if self.criterion == 'training_objective':
-            assert hasattr(self.model, 'objective')
-        elif self.criterion == 'pseudo_validation':
+        if self.criterion == "training_objective":
+            assert hasattr(self.model, "objective")
+        elif self.criterion == "pseudo_validation":
             assert self._validation_gdl is not None
             assert self._validation_gdl.sumstats_table is not None
-        if self.criterion == 'validation':
+        if self.criterion == "validation":
             assert self._validation_gdl is not None
             assert self._validation_gdl.genotype is not None
             assert self._validation_gdl.sample_table.phenotype is not None
@@ -166,27 +169,30 @@ class BaseHyperparamSearch(object):
         assert self._training_objective is not None
         assert self._model_coefs is not None
 
-        if self.criterion == 'training_objective':
+        if self.criterion == "training_objective":
             metrics = self._training_objective
-        elif self.criterion == 'pseudo_validation':
+        elif self.criterion == "pseudo_validation":
             from viprs.eval.pseudo_metrics import pseudo_r2
 
             metrics = pseudo_r2(self._validation_gdl, self._model_coefs)
 
         else:
-
             prs_m = BayesPRSModel(self._validation_gdl)
             prs_m.set_model_parameters(self._model_coefs)
 
             prs = prs_m.predict(test_gdl=self._validation_gdl)
 
-            if self._validation_gdl.phenotype_likelihood == 'binomial':
+            if self._validation_gdl.phenotype_likelihood == "binomial":
                 eval_func = roc_auc
             else:
                 eval_func = r2
 
-            metrics = [eval_func(prs[:, i].flatten(), self._validation_gdl.sample_table.phenotype)
-                       for i in range(prs.shape[1])]
+            metrics = [
+                eval_func(
+                    prs[:, i].flatten(), self._validation_gdl.sample_table.phenotype
+                )
+                for i in range(prs.shape[1])
+            ]
 
         return metrics
 
@@ -199,14 +205,15 @@ class GridSearch(BaseHyperparamSearch):
     Hyperparameter search using Grid Search
     """
 
-    def __init__(self,
-                 gdl,
-                 grid,
-                 model=None,
-                 criterion='training_objective',
-                 validation_gdl=None,
-                 n_jobs=1):
-
+    def __init__(
+        self,
+        gdl,
+        grid,
+        model=None,
+        criterion="training_objective",
+        validation_gdl=None,
+        n_jobs=1,
+    ):
         """
         Perform hyperparameter search using grid search
         :param gdl: A GWADataLoader object containing the GWAS summary statistics for inference.
@@ -222,11 +229,13 @@ class GridSearch(BaseHyperparamSearch):
         :param n_jobs: The number of processes to use for the hyperparameters search.
         """
 
-        super().__init__(gdl,
-                         model=model,
-                         criterion=criterion,
-                         validation_gdl=validation_gdl,
-                         n_jobs=n_jobs)
+        super().__init__(
+            gdl,
+            model=model,
+            criterion=criterion,
+            validation_gdl=validation_gdl,
+            n_jobs=n_jobs,
+        )
 
         self.grid = grid
         self.model.threads = 1
@@ -258,7 +267,9 @@ class GridSearch(BaseHyperparamSearch):
             shm = shared_memory.SharedMemory(create=True, size=ld_data_arr.nbytes)
 
             # Create a NumPy array backed by the shared memory block
-            shared_array = np.ndarray(ld_data_arr.shape, dtype=ld_data_arr.dtype, buffer=shm.buf)
+            shared_array = np.ndarray(
+                ld_data_arr.shape, dtype=ld_data_arr.dtype, buffer=shm.buf
+            )
 
             np.copyto(shared_array, ld_data_arr)
 
@@ -266,10 +277,10 @@ class GridSearch(BaseHyperparamSearch):
             self.model.ld_data = None
 
             shm_args = {
-                'shm_name': shm.name,
-                'chromosome': self.model.chromosomes[0],
-                'shm_shape': shared_array.shape,
-                'shm_dtype': shared_array.dtype
+                "shm_name": shm.name,
+                "chromosome": self.model.chromosomes[0],
+                "shm_shape": shared_array.shape,
+                "shm_dtype": shared_array.dtype,
             }
 
         else:
@@ -280,20 +291,25 @@ class GridSearch(BaseHyperparamSearch):
 
         grid = self.grid.combine_grids()
 
-        parallel = Parallel(n_jobs=self.n_jobs, backend='multiprocessing')
+        parallel = Parallel(n_jobs=self.n_jobs, backend="multiprocessing")
 
         with parallel:
-
             fitted_models = parallel(
-                delayed(fit_model_fixed_params)(self.model, g, shm_args,
-                                                max_iter=max_iter,
-                                                f_abs_tol=f_abs_tol,
-                                                x_abs_tol=x_abs_tol)
+                delayed(fit_model_fixed_params)(
+                    self.model,
+                    g,
+                    shm_args,
+                    max_iter=max_iter,
+                    f_abs_tol=f_abs_tol,
+                    x_abs_tol=x_abs_tol,
+                )
                 for g in grid
             )
 
         # Clean up after performing model fit:
-        self.model.ld_data = None  # To minimize memory usage with validation/pseudo-validation
+        self.model.ld_data = (
+            None  # To minimize memory usage with validation/pseudo-validation
+        )
 
         # Close and unlink shared memory objects:
         if shm_args is not None:
@@ -303,14 +319,22 @@ class GridSearch(BaseHyperparamSearch):
         # --------------------------------------------------------------------
         # Post-process the results and determine the best model:
 
-        assert not all([fm is None for fm in fitted_models]), "None of the models converged successfully."
+        assert not all([fm is None for fm in fitted_models]), (
+            "None of the models converged successfully."
+        )
 
         # 1) Extract the data from the trained models:
         from viprs.utils.compute_utils import combine_coefficient_tables
 
-        self._model_coefs = combine_coefficient_tables([fm['coef_table'] for fm in fitted_models if fm is not None])
-        self._model_hyperparams = [fm['hyp_table'] for fm in fitted_models if fm is not None]
-        self._training_objective = [fm['training_objective'] for fm in fitted_models if fm is not None]
+        self._model_coefs = combine_coefficient_tables(
+            [fm["coef_table"] for fm in fitted_models if fm is not None]
+        )
+        self._model_hyperparams = [
+            fm["hyp_table"] for fm in fitted_models if fm is not None
+        ]
+        self._training_objective = [
+            fm["training_objective"] for fm in fitted_models if fm is not None
+        ]
 
         # 2) Perform evaluation on the models that converged:
         eval_metrics = self._evaluate_models()
@@ -323,15 +347,15 @@ class GridSearch(BaseHyperparamSearch):
 
         for i, vr in enumerate(grid):
             if fitted_models[i] is not None:
-                vr['Converged'] = True
-                vr['training_objective'] = self._training_objective[success_counter]
-                if self.criterion != 'training_objective':
+                vr["Converged"] = True
+                vr["training_objective"] = self._training_objective[success_counter]
+                if self.criterion != "training_objective":
                     vr[self.criterion] = eval_metrics[success_counter]
                 success_counter += 1
             else:
-                vr['Converged'] = False
-                vr['training_objective'] = np.NaN
-                if self.criterion != 'training_objective':
+                vr["Converged"] = False
+                vr["training_objective"] = np.NaN
+                if self.criterion != "training_objective":
                     vr[self.criterion] = np.NaN
 
             self.validation_result.append(vr)
@@ -346,6 +370,6 @@ class GridSearch(BaseHyperparamSearch):
 
         self.model.fix_params = grid[best_idx]
         self.model.initialize()
-        self.model.set_model_parameters(fitted_models[best_idx]['coef_table'])
+        self.model.set_model_parameters(fitted_models[best_idx]["coef_table"])
 
         return self.model

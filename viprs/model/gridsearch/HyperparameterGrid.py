@@ -1,9 +1,10 @@
-import numpy as np
-import pandas as pd
 import itertools
 
+import numpy as np
+import pandas as pd
 
-class HyperparameterGrid(object):
+
+class HyperparameterGrid:
     """
     A utility class to facilitate generating grids for the
     hyperparameters of the standard `VIPRS` models. It is designed to
@@ -27,18 +28,20 @@ class HyperparameterGrid(object):
 
     """
 
-    def __init__(self,
-                 sigma_epsilon_grid=None,
-                 sigma_epsilon_steps=None,
-                 tau_beta_grid=None,
-                 tau_beta_steps=None,
-                 pi_grid=None,
-                 pi_steps=None,
-                 lambda_min_grid=None,
-                 lambda_min_steps=None,
-                 h2_est=None,
-                 h2_se=None,
-                 n_snps=1e6):
+    def __init__(
+        self,
+        sigma_epsilon_grid=None,
+        sigma_epsilon_steps=None,
+        tau_beta_grid=None,
+        tau_beta_steps=None,
+        pi_grid=None,
+        pi_steps=None,
+        lambda_min_grid=None,
+        lambda_min_steps=None,
+        h2_est=None,
+        h2_se=None,
+        n_snps=1e6,
+    ):
         """
 
         Create a hyperparameter grid for the standard VIPRS model with the
@@ -82,28 +85,28 @@ class HyperparameterGrid(object):
         # Initialize the grid for sigma_epsilon:
         self.sigma_epsilon = sigma_epsilon_grid
         if self.sigma_epsilon is not None:
-            self._search_params.append('sigma_epsilon')
+            self._search_params.append("sigma_epsilon")
         elif sigma_epsilon_steps is not None:
             self.generate_sigma_epsilon_grid(steps=sigma_epsilon_steps)
 
         # Initialize the grid for the tau_beta:
         self.tau_beta = tau_beta_grid
         if self.tau_beta is not None:
-            self._search_params.append('tau_beta')
+            self._search_params.append("tau_beta")
         elif tau_beta_steps is not None:
             self.generate_tau_beta_grid(steps=tau_beta_steps)
 
         # Initialize the grid for pi:
         self.pi = pi_grid
         if self.pi is not None:
-            self._search_params.append('pi')
+            self._search_params.append("pi")
         elif pi_steps is not None:
             self.generate_pi_grid(steps=pi_steps)
 
         # Initialize the grid for lambda_min:
         self.lambda_min = lambda_min_grid
         if self.lambda_min is not None:
-            self._search_params.append('lambda_min')
+            self._search_params.append("lambda_min")
         elif lambda_min_steps is not None:
             self.generate_lambda_min_grid(steps=lambda_min_steps)
 
@@ -135,7 +138,7 @@ class HyperparameterGrid(object):
             h2_se = self.h2_se
 
         # Sanity checking steps:
-        assert 0. < self.h2_est < 1.
+        assert 0.0 < self.h2_est < 1.0
         assert h2_se > 0
 
         from scipy.stats import norm
@@ -144,11 +147,14 @@ class HyperparameterGrid(object):
         # invalid values for the heritability grid:
 
         percentile_start = max(0.1, norm.cdf(1e-5, loc=self.h2_est, scale=h2_se))
-        percentile_stop = min(0.9, norm.cdf(1. - 1e-5, loc=self.h2_est, scale=h2_se))
+        percentile_stop = min(0.9, norm.cdf(1.0 - 1e-5, loc=self.h2_est, scale=h2_se))
 
         # Generate the heritability grid:
-        return norm.ppf(np.linspace(percentile_start, percentile_stop, steps),
-                        loc=self.h2_est, scale=h2_se)
+        return norm.ppf(
+            np.linspace(percentile_start, percentile_stop, steps),
+            loc=self.h2_est,
+            scale=h2_se,
+        )
 
     def generate_sigma_epsilon_grid(self, steps=5):
         """
@@ -160,10 +166,10 @@ class HyperparameterGrid(object):
         assert steps > 0
 
         h2_grid = self._generate_h2_grid(steps)
-        self.sigma_epsilon = 1. - h2_grid
+        self.sigma_epsilon = 1.0 - h2_grid
 
-        if 'sigma_epsilon' not in self._search_params:
-            self._search_params.append('sigma_epsilon')
+        if "sigma_epsilon" not in self._search_params:
+            self._search_params.append("sigma_epsilon")
 
     def generate_tau_beta_grid(self, steps=5):
         """
@@ -176,10 +182,10 @@ class HyperparameterGrid(object):
 
         h2_grid = self._generate_h2_grid(steps)
         # Assume ~1% of SNPs are causal:
-        self.tau_beta = 0.01*self.n_snps / h2_grid
+        self.tau_beta = 0.01 * self.n_snps / h2_grid
 
-        if 'tau_beta' not in self._search_params:
-            self._search_params.append('tau_beta')
+        if "tau_beta" not in self._search_params:
+            self._search_params.append("tau_beta")
 
     def generate_pi_grid(self, steps=5, max_pi=0.2):
         """
@@ -190,7 +196,7 @@ class HyperparameterGrid(object):
 
         assert steps > 0
 
-        min_pi = np.log10(max(10./self.n_snps, 1e-5))
+        min_pi = np.log10(max(10.0 / self.n_snps, 1e-5))
         # For now, we impose a limit of 10k causal variants
         # Need to figure out better ways to determine the maximum
         # value here.
@@ -198,14 +204,10 @@ class HyperparameterGrid(object):
 
         assert min_pi < max_pi
 
-        self.pi = np.logspace(
-            min_pi,
-            max_pi,
-            steps
-        )
+        self.pi = np.logspace(min_pi, max_pi, steps)
 
-        if 'pi' not in self._search_params:
-            self._search_params.append('pi')
+        if "pi" not in self._search_params:
+            self._search_params.append("pi")
 
     def generate_lambda_min_grid(self, steps=5, emp_lambda_min=None):
         """
@@ -217,13 +219,13 @@ class HyperparameterGrid(object):
 
         assert steps > 0
 
-        self.lambda_min = np.concatenate([[0.], np.logspace(-4, 1., steps - 1)])
+        self.lambda_min = np.concatenate([[0.0], np.logspace(-4, 1.0, steps - 1)])
 
         if emp_lambda_min is not None:
             self.lambda_min *= emp_lambda_min
 
-        if 'lambda_min' not in self._search_params:
-            self._search_params.append('lambda_min')
+        if "lambda_min" not in self._search_params:
+            self._search_params.append("lambda_min")
 
     def combine_grids(self):
         """
@@ -235,12 +237,20 @@ class HyperparameterGrid(object):
         :raises ValueError: If all the grids are empty.
 
         """
-        hyp_names = [name for name, value in self.__dict__.items()
-                     if value is not None and name in self._search_params]
+        hyp_names = [
+            name
+            for name, value in self.__dict__.items()
+            if value is not None and name in self._search_params
+        ]
 
         if len(hyp_names) > 0:
-            hyp_values = itertools.product(*[hyp_grid for hyp_name, hyp_grid in self.__dict__.items()
-                                             if hyp_grid is not None and hyp_name in hyp_names])
+            hyp_values = itertools.product(
+                *[
+                    hyp_grid
+                    for hyp_name, hyp_grid in self.__dict__.items()
+                    if hyp_grid is not None and hyp_name in hyp_names
+                ]
+            )
 
             return [dict(zip(hyp_names, hyp_v)) for hyp_v in hyp_values]
         else:

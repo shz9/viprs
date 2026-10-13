@@ -1,0 +1,4 @@
+pyodide-build==0.30.7
+pyodide-cli==0.5.0
+typer==0.15.4
+click==8.1.8

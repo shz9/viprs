@@ -1,35 +1,48 @@
 name: Build Docs
+
+# Called only after the matching WASM bundle has passed its tests.
 on:
-  push:
-    branches:
-      - master
-      - main
+  workflow_call:
+    inputs:
+      wasm-artifact:
+        description: Tested WASM bundle artifact from this workflow run
+        required: true
+        type: string
+
 permissions:
   contents: write
+
+concurrency:
+  group: viprs-docs-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-
       - uses: actions/checkout@v4
 
-      - name: Configure Git Credentials
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.wasm-artifact }}
+          path: dist/wasm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the tested web application into the documentation
+        run: |
+          (cd dist/wasm && sha256sum --check viprs-webapp-wasm.sha256)
+          python -m zipfile -e dist/wasm/viprs-webapp-wasm.zip docs
+
+      - name: Configure Git credentials
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.12
-
-      - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
-
-      - uses: actions/cache@v4
-        with:
-          key: mkdocs-material-${{ env.cache_id }}
-          path: .cache
-          restore-keys: |
-            mkdocs-material-
-
-      - run: python -m pip install -v -e .[docs]
-      - run: mkdocs gh-deploy --force
+      - name: Install and deploy documentation
+        run: |
+          python -m pip install -v -e ".[docs]"
+          mkdocs gh-deploy --force

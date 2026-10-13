@@ -47,3 +47,11 @@ pip-delete-this-directory.txt
 *.log
 *.DS_Store
 **/temp
+
+# Static browser inference prototype
+!docs/webapp/index.html
+
+# WASM outputs are delivered by Actions, Releases, and the documentation deployment.
+/docs/webapp/wheels/
+/docs/webapp/runtime.json
+/docs/webapp/build-info.json

@@ -1,15 +1,19 @@
+
+import logging
 import os.path as osp
 from os import PathLike
 
 import numpy as np
 import pandas as pd
-
 from magenpy import GWADataLoader
-from ..utils.compute_utils import expand_column_names, dict_max
-from ..utils.data_utils import read_pgs_catalog_scoring_file, write_pgs_catalog_scoring_file
+
+from ..utils.compute_utils import dict_max, expand_column_names
+from ..utils.data_utils import (
+    read_pgs_catalog_scoring_file,
+    write_pgs_catalog_scoring_file,
+)
 
 # Set up the logger:
-import logging
 logger = logging.getLogger(__name__)
 
 
@@ -37,9 +41,7 @@ class BayesPRSModel:
     :ivar post_var_beta: The posterior variance for the effect sizes.
     """
 
-    def __init__(self,
-                 gdl: GWADataLoader,
-                 float_precision='float32'):
+    def __init__(self, gdl: GWADataLoader, float_precision="float32"):
         """
         Initialize the Bayesian PRS model.
         :param gdl: An instance of `GWADataLoader`. Must contain either GWAS summary statistics
@@ -49,9 +51,13 @@ class BayesPRSModel:
 
         # ------------------- Sanity checks -------------------
 
-        assert isinstance(gdl, GWADataLoader), "The `gdl` object must be an instance of GWASDataLoader."
+        assert isinstance(gdl, GWADataLoader), (
+            "The `gdl` object must be an instance of GWASDataLoader."
+        )
 
-        assert gdl.genotype is not None or (gdl.ld is not None and gdl.sumstats_table is not None), (
+        assert gdl.genotype is not None or (
+            gdl.ld is not None and gdl.sumstats_table is not None
+        ), (
             "The GWADataLoader object must contain either genotype data or summary statistics and LD matrices."
         )
 
@@ -133,14 +139,18 @@ class BayesPRSModel:
         logger.debug("> Initializing the input data arrays (marginal statistics).")
 
         try:
-            self.n_per_snp = {c: ss.n_per_snp
-                              for c, ss in self.gdl.sumstats_table.items()}
-            self.std_beta = {c: ss.get_snp_pseudo_corr().astype(self.float_precision)
-                             for c, ss in self.gdl.sumstats_table.items()}
+            self.n_per_snp = {
+                c: ss.n_per_snp for c, ss in self.gdl.sumstats_table.items()
+            }
+            self.std_beta = {
+                c: ss.get_snp_pseudo_corr().astype(self.float_precision)
+                for c, ss in self.gdl.sumstats_table.items()
+            }
         except AttributeError:
             # If not provided, use the overall sample size:
-            self.n_per_snp = {c: np.repeat(self.gdl.n, c_size)
-                              for c, c_size in self.shapes.items()}
+            self.n_per_snp = {
+                c: np.repeat(self.gdl.n, c_size) for c, c_size in self.shapes.items()
+            }
 
         self.validation_std_beta = None
 
@@ -151,10 +161,7 @@ class BayesPRSModel:
         """
         raise NotImplementedError
 
-    def split_gwas_sumstats(self,
-                            prop_train=0.8,
-                            seed=None,
-                            **kwargs):
+    def split_gwas_sumstats(self, prop_train=0.8, seed=None, **kwargs):
         """
         Split the GWAS summary statistics into training and validation sets, using the
         PUMAS procedure outlined in Zhao et al. (2021).
@@ -166,26 +173,24 @@ class BayesPRSModel:
 
         from magenpy.utils.model_utils import sumstats_train_test_split
 
-        logger.debug("> Splitting the GWAS summary statistics into training and validation sets. "
-                     f"Training proportion: {prop_train}")
+        logger.debug(
+            "> Splitting the GWAS summary statistics into training and validation sets. "
+            f"Training proportion: {prop_train}"
+        )
 
-        split_sumstats = sumstats_train_test_split(self.gdl,
-                                                   prop_train=prop_train,
-                                                   seed=seed,
-                                                   **kwargs)
+        split_sumstats = sumstats_train_test_split(
+            self.gdl, prop_train=prop_train, seed=seed, **kwargs
+        )
 
         self.std_beta = {
-            c: split_sumstats[c]['train_beta'].astype(self.float_precision)
+            c: split_sumstats[c]["train_beta"].astype(self.float_precision)
             for c in self.chromosomes
         }
 
-        self.n_per_snp = {
-            c: self.n_per_snp[c]*prop_train
-            for c in self.chromosomes
-        }
+        self.n_per_snp = {c: self.n_per_snp[c] * prop_train for c in self.chromosomes}
 
         self.validation_std_beta = {
-            c: split_sumstats[c]['test_beta'].astype(self.float_precision)
+            c: split_sumstats[c]["test_beta"].astype(self.float_precision)
             for c in self.chromosomes
         }
 
@@ -241,10 +246,14 @@ class BayesPRSModel:
         """
 
         if self.post_mean_beta is None:
-            raise ValueError("The posterior means for BETA are not set. Call `.fit()` first.")
+            raise ValueError(
+                "The posterior means for BETA are not set. Call `.fit()` first."
+            )
 
         if test_gdl is None:
-            assert self.gdl.genotype is not None, "The GWADataLoader object must contain genotype data."
+            assert self.gdl.genotype is not None, (
+                "The GWADataLoader object must contain genotype data."
+            )
             test_gdl = self.gdl
             post_mean_beta = self.post_mean_beta
         else:
@@ -276,53 +285,72 @@ class BayesPRSModel:
         if parameter_table is None:
             parameter_table = self.to_table(per_chromosome=True)
         else:
-            parameter_table = {c: parameter_table.loc[parameter_table['CHR'] == c, ]
-                               for c in parameter_table['CHR'].unique()}
+            parameter_table = {
+                c: parameter_table.loc[parameter_table["CHR"] == c,]
+                for c in parameter_table["CHR"].unique()
+            }
 
-        snp_tables = gdl.to_snp_table(col_subset=['CHR', 'SNP', 'POS', 'A1', 'A2'],
-                                      per_chromosome=True)
+        snp_tables = gdl.to_snp_table(
+            col_subset=["CHR", "SNP", "POS", "A1", "A2"], per_chromosome=True
+        )
 
         pip = {}
         post_mean_beta = {}
         post_var_beta = {}
 
-        common_chroms = sorted(list(set(snp_tables.keys()).intersection(set(parameter_table.keys()))))
+        common_chroms = sorted(
+            list(set(snp_tables.keys()).intersection(set(parameter_table.keys())))
+        )
 
         from magenpy.utils.model_utils import merge_snp_tables
 
         for c in common_chroms:
-
             try:
-                post_mean_cols = expand_column_names('BETA', self.post_mean_beta[c].shape)
-                pip_cols = expand_column_names('PIP', self.post_mean_beta[c].shape)
-                post_var_cols = expand_column_names('VAR_BETA', self.post_mean_beta[c].shape)
+                post_mean_cols = expand_column_names(
+                    "BETA", self.post_mean_beta[c].shape
+                )
+                pip_cols = expand_column_names("PIP", self.post_mean_beta[c].shape)
+                post_var_cols = expand_column_names(
+                    "VAR_BETA", self.post_mean_beta[c].shape
+                )
 
             except (TypeError, KeyError):
-                pip_cols = [col for col in parameter_table[c].columns if 'PIP' in col]
-                post_var_cols = [col for col in parameter_table[c].columns if 'VAR_BETA' in col]
-                post_mean_cols = [col for col in parameter_table[c].columns
-                                  if 'BETA' in col and col not in post_var_cols]
+                pip_cols = [col for col in parameter_table[c].columns if "PIP" in col]
+                post_var_cols = [
+                    col for col in parameter_table[c].columns if "VAR_BETA" in col
+                ]
+                post_mean_cols = [
+                    col
+                    for col in parameter_table[c].columns
+                    if "BETA" in col and col not in post_var_cols
+                ]
 
             # Merge the effect table with the GDL SNP table:
-            c_df = merge_snp_tables(snp_tables[c], parameter_table[c], how='left',
-                                    signed_statistics=post_mean_cols)
+            c_df = merge_snp_tables(
+                snp_tables[c],
+                parameter_table[c],
+                how="left",
+                signed_statistics=post_mean_cols,
+            )
 
             if len(c_df) < len(snp_tables[c]):
-                raise ValueError("The parameter table could not aligned with the reference SNP table. This may due to "
-                                 "conflicts/errors in use of reference vs. alternative alleles.")
+                raise ValueError(
+                    "The parameter table could not aligned with the reference SNP table. This may due to "
+                    "conflicts/errors in use of reference vs. alternative alleles."
+                )
 
             # Obtain the values for the posterior mean:
-            c_df[post_mean_cols] = c_df[post_mean_cols].fillna(0.)
+            c_df[post_mean_cols] = c_df[post_mean_cols].fillna(0.0)
             post_mean_beta[c] = c_df[post_mean_cols].values
 
             # Obtain the values for the posterior inclusion probability:
             if len(set(pip_cols).intersection(set(c_df.columns))) > 0:
-                c_df[pip_cols] = c_df[pip_cols].fillna(0.)
+                c_df[pip_cols] = c_df[pip_cols].fillna(0.0)
                 pip[c] = c_df[pip_cols].values
 
             # Obtain the values for the posterior variance:
             if len(set(post_var_cols).intersection(set(c_df.columns))) > 0:
-                c_df[post_var_cols] = c_df[post_var_cols].fillna(0.)
+                c_df[post_var_cols] = c_df[post_var_cols].fillna(0.0)
                 post_var_beta[c] = c_df[post_var_cols].values
 
         if len(pip) < 1:
@@ -333,7 +361,9 @@ class BayesPRSModel:
 
         return pip, post_mean_beta, post_var_beta
 
-    def to_table(self, col_subset=('CHR', 'SNP', 'POS', 'A1', 'A2'), per_chromosome=False):
+    def to_table(
+        self, col_subset=("CHR", "SNP", "POS", "A1", "A2"), per_chromosome=False
+    ):
         """
         Output the posterior estimates for the effect sizes to a pandas dataframe.
         :param col_subset: The subset of columns to include in the tables (in addition to the effect sizes).
@@ -343,29 +373,38 @@ class BayesPRSModel:
         """
 
         if self.post_mean_beta is None:
-            raise Exception("The posterior means for BETA are not set. Call `.fit()` first.")
+            raise Exception(
+                "The posterior means for BETA are not set. Call `.fit()` first."
+            )
 
         tables = self.gdl.to_snp_table(col_subset=col_subset, per_chromosome=True)
 
         for c in self.chromosomes:
-
             cols_to_add = []
 
-            mean_beta_df = pd.DataFrame(self.post_mean_beta[c],
-                                        columns=expand_column_names('BETA', self.post_mean_beta[c].shape),
-                                        index=tables[c].index)
+            mean_beta_df = pd.DataFrame(
+                self.post_mean_beta[c],
+                columns=expand_column_names("BETA", self.post_mean_beta[c].shape),
+                index=tables[c].index,
+            )
             cols_to_add.append(mean_beta_df)
 
             if self.pip is not None:
-                pip_df = pd.DataFrame(self.pip[c],
-                                      columns=expand_column_names('PIP', self.pip[c].shape),
-                                      index=tables[c].index)
+                pip_df = pd.DataFrame(
+                    self.pip[c],
+                    columns=expand_column_names("PIP", self.pip[c].shape),
+                    index=tables[c].index,
+                )
                 cols_to_add.append(pip_df)
 
             if self.post_var_beta is not None:
-                var_beta_df = pd.DataFrame(self.post_var_beta[c],
-                                           columns=expand_column_names('VAR_BETA', self.post_var_beta[c].shape),
-                                           index=tables[c].index)
+                var_beta_df = pd.DataFrame(
+                    self.post_var_beta[c],
+                    columns=expand_column_names(
+                        "VAR_BETA", self.post_var_beta[c].shape
+                    ),
+                    index=tables[c].index,
+                )
                 cols_to_add.append(var_beta_df)
 
             tables[c] = pd.concat([tables[c]] + cols_to_add, axis=1)
@@ -384,10 +423,12 @@ class BayesPRSModel:
         :return: The pseudo-R^2 metric.
         """
 
-        from ..eval.pseudo_metrics import pseudo_r2, _streamlined_pseudo_r2
+        from ..eval.pseudo_metrics import _streamlined_pseudo_r2, pseudo_r2
         from ..utils.compute_utils import dict_concat
 
-        assert self.post_mean_beta is not None, "The posterior means for BETA are not set. Call `.fit()` first."
+        assert self.post_mean_beta is not None, (
+            "The posterior means for BETA are not set. Call `.fit()` first."
+        )
         assert self.validation_std_beta is not None or test_gdl is not None, (
             "Must provide a GWADataLoader object with validation sumstats or initialize the standardized "
             "betas inside the model."
@@ -396,9 +437,8 @@ class BayesPRSModel:
         if test_gdl is not None:
             return pseudo_r2(test_gdl, self.to_table(per_chromosome=False))
         else:
-
             # Check if q is an attribute of the model:
-            if hasattr(self, 'q'):
+            if hasattr(self, "q"):
                 ldw_prs = {c: self.q[c] + self.post_mean_beta[c] for c in self.shapes}
             else:
                 # Compute LD-weighted PRS weights first:
@@ -409,7 +449,7 @@ class BayesPRSModel:
             return _streamlined_pseudo_r2(
                 dict_concat(self.validation_std_beta),
                 dict_concat(self.post_mean_beta),
-                dict_concat(ldw_prs)
+                dict_concat(ldw_prs),
             )
 
     def set_model_parameters(self, parameter_table):
@@ -425,7 +465,9 @@ class BayesPRSModel:
         :param parameter_table: A pandas table or dataframe.
         """
 
-        self.pip, self.post_mean_beta, self.post_var_beta = self.harmonize_data(parameter_table=parameter_table)
+        self.pip, self.post_mean_beta, self.post_var_beta = self.harmonize_data(
+            parameter_table=parameter_table
+        )
 
     def read_inferred_parameters(self, f_names, input_format="viprs", sep="\t"):
         """
@@ -437,7 +479,7 @@ class BayesPRSModel:
         :param sep: The delimiter for the file(s).
         """
 
-        if input_format not in ('viprs', 'pgs_catalog'):
+        if input_format not in ("viprs", "pgs_catalog"):
             raise ValueError("`input_format` must be either 'viprs' or 'pgs_catalog'.")
 
         if isinstance(f_names, (str, PathLike)):
@@ -446,7 +488,7 @@ class BayesPRSModel:
         param_table = []
 
         for f_name in f_names:
-            if input_format == 'pgs_catalog':
+            if input_format == "pgs_catalog":
                 param_table.append(read_pgs_catalog_scoring_file(f_name))
             else:
                 param_table.append(pd.read_csv(f_name, sep=sep))
@@ -464,7 +506,8 @@ class BayesPRSModel:
         per_chromosome=False,
         sep="\t",
         pgs_metadata=None,
-        effect_column="BETA"):
+        effect_column="BETA",
+    ):
         """
         A convenience method to write the inferred posterior for the effect sizes to file.
 
@@ -483,15 +526,19 @@ class BayesPRSModel:
             whose effect columns are named ``BETA_0``, ``BETA_1``, etc.
         """
 
-        if output_format not in ('viprs', 'pgs_catalog'):
+        if output_format not in ("viprs", "pgs_catalog"):
             raise ValueError("`output_format` must be either 'viprs' or 'pgs_catalog'.")
 
-        if output_format == 'pgs_catalog':
+        if output_format == "pgs_catalog":
             if per_chromosome:
-                raise ValueError("PGS Catalog output must contain the complete score in one file; "
-                                 "`per_chromosome=True` is not supported.")
+                raise ValueError(
+                    "PGS Catalog output must contain the complete score in one file; "
+                    "`per_chromosome=True` is not supported."
+                )
             if sep != "\t":
-                raise ValueError("PGS Catalog scoring files must be tab-delimited (`sep='\\t'`).")
+                raise ValueError(
+                    "PGS Catalog scoring files must be tab-delimited (`sep='\\t'`)."
+                )
             table = self.to_table(per_chromosome=False)
             try:
                 write_pgs_catalog_scoring_file(
@@ -501,28 +548,31 @@ class BayesPRSModel:
                     effect_column=effect_column,
                 )
             except Exception as e:
-                logger.error(f'Failed to write PGS Catalog scoring file: {e}')
+                logger.error(f"Failed to write PGS Catalog scoring file: {e}")
                 raise
 
         else:
-
             tables = self.to_table(per_chromosome=per_chromosome)
 
-            if '.fit' not in f_name:
-                ext = '.fit'
+            if ".fit" not in f_name:
+                ext = ".fit"
             else:
-                ext = ''
+                ext = ""
 
             if per_chromosome:
                 for c, tab in tables.items():
                     try:
-                        tab.to_csv(osp.join(f_name, f'chr_{c}.fit'), sep=sep, index=False)
+                        tab.to_csv(
+                            osp.join(f_name, f"chr_{c}.fit"), sep=sep, index=False
+                        )
                     except Exception as e:
-                        logger.error(f'Failed to write chromosome {c} effect sizes: {e}')
+                        logger.error(
+                            f"Failed to write chromosome {c} effect sizes: {e}"
+                        )
                         raise e
             else:
                 try:
                     tables.to_csv(f_name + ext, sep=sep, index=False)
                 except Exception as e:
-                    logger.error(f'Failed to write effect sizes: {e}')
+                    logger.error(f"Failed to write effect sizes: {e}")
                     raise e

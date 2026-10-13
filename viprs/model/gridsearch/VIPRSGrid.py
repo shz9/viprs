@@ -1,14 +1,14 @@
+import copy
+import logging
+
 import numpy as np
 import pandas as pd
-import copy
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from ..VIPRS import VIPRS
-from ...utils.exceptions import OptimizationDivergence
 
 # Set up the logger:
-import logging
 logger = logging.getLogger(__name__)
 
 
@@ -30,10 +30,7 @@ class VIPRSGrid(VIPRS):
 
     """
 
-    def __init__(self,
-                 gdl,
-                 grid,
-                 **kwargs):
+    def __init__(self, gdl, grid, **kwargs):
         """
         Initialize the `VIPRS` model with a grid of hyperparameters.
 
@@ -125,9 +122,7 @@ class VIPRSGrid(VIPRS):
         # Reset the OptimizeResult objects:
         self.optim_results = []
 
-    def fit(self,
-            pathwise=True,
-            **fit_kwargs):
+    def fit(self, pathwise=True, **fit_kwargs):
         """
         Fit the VIPRS model to the data using a grid of hyperparameters.
         The method fits multiple models with different hyperparameters and compares their performance
@@ -148,14 +143,22 @@ class VIPRSGrid(VIPRS):
         # -----------------------------------------------------------------------
         # Setup the parameters that need to be tracked:
 
-        var_gamma = {c: np.empty((size, self.n_models), dtype=self.float_precision)
-                     for c, size in self.shapes.items()}
-        var_mu = {c: np.empty((size, self.n_models), dtype=self.float_precision)
-                  for c, size in self.shapes.items()}
-        var_tau = {c: np.empty((size, self.n_models), dtype=self.float_precision)
-                   for c, size in self.shapes.items()}
-        q = {c: np.empty((size, self.n_models), dtype=self.float_precision)
-             for c, size in self.shapes.items()}
+        var_gamma = {
+            c: np.empty((size, self.n_models), dtype=self.float_precision)
+            for c, size in self.shapes.items()
+        }
+        var_mu = {
+            c: np.empty((size, self.n_models), dtype=self.float_precision)
+            for c, size in self.shapes.items()
+        }
+        var_tau = {
+            c: np.empty((size, self.n_models), dtype=self.float_precision)
+            for c, size in self.shapes.items()
+        }
+        q = {
+            c: np.empty((size, self.n_models), dtype=self.float_precision)
+            for c, size in self.shapes.items()
+        }
 
         sigma_epsilon = np.empty(self.n_models, dtype=self.float_precision)
         pi = np.empty(self.n_models, dtype=self.float_precision)
@@ -167,7 +170,7 @@ class VIPRSGrid(VIPRS):
         # -----------------------------------------------------------------------
 
         # Get a list of fixed hyperparameters from the grid table:
-        params = self.grid_table.to_dict(orient='records')
+        params = self.grid_table.to_dict(orient="records")
         orig_threads = self.threads
         optim_results = []
         history = []
@@ -180,26 +183,26 @@ class VIPRSGrid(VIPRS):
         else:
             desc = None
 
-        disable_pbar = fit_kwargs.pop('disable_pbar', False)
+        disable_pbar = fit_kwargs.pop("disable_pbar", False)
         restart = not pathwise
 
         with logging_redirect_tqdm(loggers=[logger]):
-
             # Set up the progress bar for grid search:
-            pbar = tqdm(range(self.n_models),
-                        total=self.n_models,
-                        disable=disable_pbar,
-                        desc=desc)
+            pbar = tqdm(
+                range(self.n_models),
+                total=self.n_models,
+                disable=disable_pbar,
+                desc=desc,
+            )
 
             for i in pbar:
-
                 # Fix the new set of hyperparameters:
                 self.set_fixed_params(params[i])
 
                 # Perform model fit:
-                super().fit(continued=i > 0 and not restart,
-                            disable_pbar=True,
-                            **fit_kwargs)
+                super().fit(
+                    continued=i > 0 and not restart, disable_pbar=True, **fit_kwargs
+                )
 
                 # Save the optimization result:
                 optim_results.append(copy.deepcopy(self.optim_result))
@@ -207,10 +210,14 @@ class VIPRSGrid(VIPRS):
                 self.optim_result.reset()
                 self.threads = orig_threads
 
-                elbos[i] = self.history['ELBO'][-1]
+                elbos[i] = self.history["ELBO"][-1]
 
-                pbar.set_postfix({'ELBO': f"{self.history['ELBO'][-1]:.4f}",
-                                  'Models Terminated': f"{i+1}/{self.n_models}"})
+                pbar.set_postfix(
+                    {
+                        "ELBO": f"{self.history['ELBO'][-1]:.4f}",
+                        "Models Terminated": f"{i + 1}/{self.n_models}",
+                    }
+                )
 
                 # Update the saved parameters:
                 for c in self.shapes:
@@ -251,8 +258,10 @@ class VIPRSGrid(VIPRS):
 
         # Population the validation result:
         self.validation_result = self.grid_table.copy()
-        self.validation_result['ELBO'] = elbos
-        self.validation_result['Converged'] = self.converged_models
-        self.validation_result['Optimization_message'] = [optr.message for optr in self.optim_results]
+        self.validation_result["ELBO"] = elbos
+        self.validation_result["Converged"] = self.converged_models
+        self.validation_result["Optimization_message"] = [
+            optr.message for optr in self.optim_results
+        ]
 
         return self

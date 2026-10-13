@@ -1,0 +1,159 @@
+name: Build WASM
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# PR builds, including forks, never receive publishing permissions.
+permissions:
+  contents: read
+
+concurrency:
+  group: wasm-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      artifact: ${{ steps.artifact.outputs.name }}
+    env:
+      PYODIDE_XBUILDENV_PATH: ${{ github.workspace }}/build/wasm/xbuildenv
+      VIPRS_REQUIRE_WASM: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            tools/wasm/requirements-build.txt
+            pyproject.toml
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install cross-build tools
+        run: python -m pip install -r tools/wasm/requirements-build.txt
+
+      # Cache only the pinned SDK, never compiled VIPRS or magenpy outputs.
+      - uses: actions/cache@v4
+        with:
+          path: build/wasm/emsdk
+          key: wasm-emsdk-${{ runner.os }}-${{ runner.arch }}-4.0.9-v1
+
+      - name: Install the matching Pyodide and Emscripten toolchains
+        run: |
+          pyodide xbuildenv install 0.28.3
+          if [ ! -d build/wasm/emsdk ]; then
+            git clone --depth 1 --branch 4.0.9 https://github.com/emscripten-core/emsdk.git build/wasm/emsdk
+          fi
+          build/wasm/emsdk/emsdk install 4.0.9
+          build/wasm/emsdk/emsdk activate 4.0.9
+
+      - name: Build VIPRS and reuse magenpy release WASM (build if absent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          source build/wasm/emsdk/emsdk_env.sh
+          python tools/wasm/build.py
+
+      - name: Install native test dependencies and Chromium
+        run: |
+          python -m pip install -e ".[test]" -r build/wasm/native-test-requirements.txt playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Validate wheels and run native and URL tests
+        run: |
+          python -m pytest tests/test_webapp.py tests/test_wasm_package.py tests/test_magenpy_release.py -q
+          node --test tests/webapp_sources.mjs tests/webapp_worker.mjs
+          python tests/webapp_fixtures.py
+
+      - name: Package the web application
+        run: |
+          python tools/wasm/package.py
+          python -m zipfile -e dist/wasm/viprs-webapp-wasm.zip build/wasm/package-test
+
+      - name: Test the packaged application in Chromium
+        env:
+          VIPRS_WEBAPP_ROOT: ${{ github.workspace }}/build/wasm/package-test
+        run: python tests/webapp_browser.py
+
+      - name: Name this build artifact
+        id: artifact
+        run: echo "name=viprs-wasm-${GITHUB_SHA}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: dist/wasm/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Save browser reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-browser-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/wasm/browser-test/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  release-assets:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: dist/wasm
+
+      - name: Check assets prepared before an immutable release was published
+        if: github.event.release.immutable == true
+        run: |
+          python - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          release = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())["release"]
+          names = {asset["name"] for asset in release["assets"]}
+          required = {"viprs-webapp-wasm.zip", "viprs-webapp-wasm.sha256"}
+          if not required.issubset(names):
+              raise SystemExit("Immutable release: upload the tested WASM bundle to the draft before publishing. See docs/web_application.md.")
+          print("The WASM assets were attached before publication; leaving immutable assets unchanged.")
+          PYTHON
+
+      - name: Verify and attach the bundle to this GitHub Release
+        if: github.event.release.immutable != true
+        working-directory: dist/wasm
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          sha256sum --check viprs-webapp-wasm.sha256
+          gh release upload "$RELEASE_TAG" viprs-webapp-wasm.zip viprs-webapp-wasm.sha256 --clobber
+
+  deploy-docs:
+    # A release/PR must never replace the default-branch documentation deployment.
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs: build
+    permissions:
+      contents: write
+    uses: ./.github/workflows/ci-docs.yml
+    with:
+      wasm-artifact: ${{ needs.build.outputs.artifact }}
