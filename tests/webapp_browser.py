@@ -55,7 +55,8 @@ def main():
             assert "Select your inputs" in page.locator("#status").inner_text()
             assert not any("chr_22.zip" in url or "fastGWA.gz" in url for url in requests)
             page.screenshot(path=str(ARTIFACTS / "initial.png"), full_page=True)
-            print("Running the default chromosome 22 data through VIPRS WASM…", flush=True)
+            page.locator("#demo").click()
+            print("Running the example chromosome 22 data through VIPRS WASM…", flush=True)
             page.locator("#run").click()
             assert page.locator("#metrics").is_hidden()
             assert "running" in page.locator("#activity").get_attribute("class")
@@ -87,7 +88,8 @@ def main():
             page.screenshot(path=str(ARTIFACTS / "mobile.png"), full_page=True)
             page.set_viewport_size({"width": 1440, "height": 1000})
             # Missing inputs clear old results and preserve the initialized worker.
-            page.locator("#source").select_option("files")
+            page.locator("#sumstats-source").select_option("files")
+            page.locator("#ld-source").select_option("files")
             page.locator("#run").click()
             page.wait_for_function("document.querySelector('#status-badge').textContent === 'Error'")
             assert page.locator("#status-badge").text_content() == "Error"
@@ -106,7 +108,7 @@ def main():
             assert len(workers) == 1
             assert sum(url.endswith("/runtime.json") for url in requests) == 1
             # The full example must converge for the mixture model too.
-            page.locator("#source").select_option("example")
+            page.locator("#demo").click()
             page.locator("#model").select_option("VIPRSMix")
             page.locator("#run").click()
             wait_for_run(page)
@@ -116,7 +118,8 @@ def main():
             # Exercise both models across two chromosomes using real Zarr fixtures.
             multi = data_dir / "multi"
             assert multi.exists(), "Generate fixtures with: .venv/bin/python tests/webapp_fixtures.py"
-            page.locator("#source").select_option("files")
+            page.locator("#sumstats-source").select_option("files")
+            page.locator("#ld-source").select_option("files")
             page.locator("#sumstats-format").select_option("magenpy")
             page.locator("#sumstats-file").set_input_files([multi / "chr21.tsv", multi / "chr22.tsv"])
             page.locator("#ld-file").set_input_files([multi / "chr21.zip", multi / "chr22.zip"])
@@ -148,7 +151,8 @@ def main():
             page.locator("#model").select_option("VIPRS")
             page.locator("#sumstats-format").select_option("fastGWA")
             # Explicit hf:// and GitHub blob URL inputs use the same full datasets.
-            page.locator("#source").select_option("urls")
+            page.locator("#sumstats-source").select_option("urls")
+            page.locator("#ld-source").select_option("urls")
             page.locator("#sumstats-url").fill("https://github.com/shz9/magenpy/blob/master/magenpy/data/ukb_height_chr22.fastGWA.gz")
             page.locator("#ld-url").fill("hf://datasets/shz9/ukb-ld/EUR/chr_22.zip")
             page.locator("#run").click()

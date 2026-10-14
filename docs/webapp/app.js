@@ -4,11 +4,18 @@ let worker = null, runtimeState = "loading", activeRun = null, nextRun = 0;
 let timer = null, startedAt = 0, downloadURLs = [], resultRows = {};
 
 function syncInputs() {
-  for (const source of ["example", "file", "url", "folder"]) {
-    $(source + "-inputs").hidden = $("source").value !== ({file: "files", url: "urls"}[source] || source);
+  for (const kind of ["ld", "sumstats"]) {
+    for (const source of ["hosted", "example", "files", "urls", "folder"]) {
+      const panel = $(kind + "-" + source + "-inputs");
+      if (panel) panel.hidden = $(kind + "-source").value !== source;
+    }
   }
-  $("sumstats-format").disabled = $("source").value === "example";
+  $("sumstats-format").disabled = $("sumstats-source").value === "example";
 }
+function syncHostedLD() {
+  $("ld-hosted-path").value = `hf://datasets/shz9/ukb-ld/${$("ld-ancestry").value}/chr_*.zip`;
+}
+$("ld-ancestry").addEventListener("change", syncHostedLD);
 function syncModel() {
   const mixture = $("model").value === "VIPRSMix";
   $("mixture-settings").hidden = !mixture;
@@ -17,21 +24,31 @@ function syncModel() {
     ? "A point mass at zero with multiple Gaussian effect-size components."
     : "A point mass at zero and one Gaussian component for nonzero effects.";
 }
-$("source").addEventListener("change", syncInputs);
 $("model").addEventListener("change", syncModel);
-$("demo").addEventListener("click", () => { $("source").value = "example"; $("sumstats-format").value = "fastGWA"; syncInputs(); });
-for (const id of ["sumstats-file", "ld-file"]) $(id).addEventListener("change", () => {
-  $("file-summary").textContent = `${$("sumstats-file").files.length} summary-statistics file(s) · ${$("ld-file").files.length} LD archive(s)`;
+$("demo").addEventListener("click", () => {
+  for (const kind of ["ld", "sumstats"]) $(kind + "-source").value = "example";
+  $("sumstats-format").value = "fastGWA";
+  syncInputs();
 });
-function updateFolderSummary() {
-  if (!$("data-folder").files.length) return;
-  try {
-    const counts = ["sumstats", "ld"].map(kind => selectLocalFiles($("data-folder").files, $(kind + "-pattern").value).length);
-    $("folder-summary").textContent = `${counts[0]} summary-statistics file(s) · ${counts[1]} LD archive(s) matched`;
-  } catch (error) { $("folder-summary").textContent = error.message; }
+for (const kind of ["ld", "sumstats"]) {
+  $(kind + "-source").addEventListener("change", syncInputs);
+  $(kind + "-file").addEventListener("change", () => {
+    $(kind + "-file-summary").textContent = `${$(kind + "-file").files.length} file(s) selected`;
+  });
+  const updateFolderSummary = () => {
+    const files = $(kind + "-folder").files;
+    if (!files.length) {
+      $(kind + "-folder-summary").textContent = "Choose a folder to see matching file counts.";
+      return;
+    }
+    try {
+      const count = selectLocalFiles(files, $(kind + "-pattern").value).length;
+      $(kind + "-folder-summary").textContent = `${count} file(s) matched`;
+    } catch (error) { $(kind + "-folder-summary").textContent = error.message; }
+  };
+  $(kind + "-folder").addEventListener("change", updateFolderSummary);
+  $(kind + "-pattern").addEventListener("input", updateFolderSummary);
 }
-$("data-folder").addEventListener("change", updateFolderSummary);
-for (const kind of ["sumstats", "ld"]) $(kind + "-pattern").addEventListener("input", updateFolderSummary);
 
 function log(message) {
   const lines = $("log").textContent.split("\n");
@@ -62,7 +79,7 @@ function releaseResults() {
 function finish() {
   activeRun = null; clearInterval(timer); timer = null;
   $("activity").classList.remove("running");
-  $("controls").disabled = false;
+  $("controls").disabled = false; $("demo").disabled = false;
   $("run").disabled = runtimeState === "error"; $("cancel").disabled = true;
 }
 function fail(message) {
@@ -118,14 +135,16 @@ function startWorker() {
 $("retry-runtime").addEventListener("click", () => { try { startWorker(); } catch (error) { runtimeStatus("error", "Runtime unavailable"); fail(error.message); } });
 
 function sourceInputs(kind) {
-  if ($("source").value === "example") return [{url: resolveDataURL(EXAMPLE[kind], location.href)}];
-  if ($("source").value === "folder") {
-    if (!$("data-folder").files.length) throw new Error("Choose a local data folder first.");
-    const files = selectLocalFiles($("data-folder").files, $(kind + "-pattern").value);
+  const source = $(kind + "-source").value;
+  if (kind === "ld" && source === "hosted") return [{url: resolveDataURL($("ld-hosted-path").value, location.href)}];
+  if (source === "example") return [{url: resolveDataURL(EXAMPLE[kind], location.href)}];
+  if (source === "folder") {
+    if (!$(kind + "-folder").files.length) throw new Error(`Choose a local ${kind} folder first.`);
+    const files = selectLocalFiles($(kind + "-folder").files, $(kind + "-pattern").value);
     if (files.some(file => !file.size)) throw new Error("Each input file must be nonempty.");
     return files.map(file => ({file}));
   }
-  if ($("source").value === "files") {
+  if (source === "files") {
     const files = Array.from($(kind + "-file").files);
     if (!files.length || files.length > 64) throw new Error(`Select 1–64 ${kind === "ld" ? "LD archives" : "summary-statistics files"}.`);
     if (files.some((file) => !file.size)) throw new Error("Each input file must be nonempty.");
@@ -183,10 +202,10 @@ $("inference-form").addEventListener("submit", (event) => {
     const request = {
       type: "run", id: ++nextRun,
       sumstats: sourceInputs("sumstats"), ld: sourceInputs("ld"),
-      options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("source").value === "example" ? "fastGWA" : $("sumstats-format").value},
+      options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "example" ? "fastGWA" : $("sumstats-format").value},
     };
     activeRun = request.id;
-    $("controls").disabled = true; $("run").disabled = true; $("cancel").disabled = false;
+    $("controls").disabled = true; $("demo").disabled = true; $("run").disabled = true; $("cancel").disabled = false;
     $("elapsed-line").hidden = true;
     $("activity").classList.add("running");
     status(runtimeState === "ready" ? "Running" : "Queued", runtimeState === "ready" ? "Preparing inputs" : "Waiting for runtime", "You can cancel this run at any time.");
@@ -199,7 +218,7 @@ $("cancel").addEventListener("click", () => {
   try { startWorker(); } catch (error) { runtimeStatus("error", "Runtime unavailable"); fail(error.message); }
 });
 $("protocol-warning").hidden = location.protocol !== "file:";
-syncInputs(); syncModel();
+syncInputs(); syncModel(); syncHostedLD();
 if (location.protocol !== "file:") {
   try { startWorker(); } catch (error) { runtimeStatus("error", "Runtime unavailable"); fail(error.message); }
 } else { runtimeStatus("error", "HTTP server required"); $("retry-runtime").hidden = true; }

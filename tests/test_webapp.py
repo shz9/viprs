@@ -122,8 +122,8 @@ def test_matches_direct_loader_and_fit(multichrom_inputs, tmp_path, model_name):
              for root in browser.unpack_ld(archive, tmp_path / f"direct-{i}")]
     gdl = GWADataLoader(sumstats_files=list(map(str, summaries)), ld_store_files=roots,
                        sumstats_format="magenpy", temp_dir=str(tmp_path / "temp"), threads=1)
-    model = (VIPRSMix(gdl, K=3, threads=1, float_precision="float64")
-             if model_name == "VIPRSMix" else VIPRS(gdl, threads=1, float_precision="float64"))
+    model = (VIPRSMix(gdl, K=3, threads=1)
+             if model_name == "VIPRSMix" else VIPRS(gdl, threads=1))
     np.random.seed(0)
     model.fit(disable_pbar=True)
     assert rows == json.loads(model.to_table().to_json(orient="records", double_precision=15))
@@ -138,3 +138,26 @@ def test_optimization_defaults_match_viprs():
     iterations, tolerance = browser.validate_options({})
     assert iterations == defaults["max_iter"].default == 1000
     assert tolerance == defaults["x_abs_tol"].default == defaults["f_abs_tol"].default
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_staged_sumstats_are_read_without_copying(multichrom_inputs, tmp_path, monkeypatch, compressed):
+    import gzip
+    import shutil
+
+    _, _, combined, combined_ld = multichrom_inputs
+    options = dict(OPTIONS, sumstats_format="magenpy")
+    expected_rows, _ = browser.native_fit(combined, combined_ld, options)
+    staged = tmp_path / ("sumstats-0.tsv.gz" if compressed else "sumstats-0.tsv")
+    contents = combined.read_bytes()
+    staged.write_bytes(gzip.compress(contents) if compressed else contents)
+    before = staged.stat()
+
+    def forbid_copy(*args, **kwargs):
+        pytest.fail("Staged summary statistics must not be copied")
+
+    monkeypatch.setattr(shutil, "copyfile", forbid_copy)
+    rows, _ = browser.native_fit(staged, combined_ld, options)
+    assert rows == expected_rows
+    assert staged.stat().st_ino == before.st_ino
+    assert staged.stat().st_mtime_ns == before.st_mtime_ns

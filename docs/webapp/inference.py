@@ -4,7 +4,6 @@ import csv
 import io
 import json
 import math
-import shutil
 import stat
 import tempfile
 import time
@@ -100,19 +99,9 @@ def native_fit(sumstats_paths, ld_paths, options):
             for index, path in enumerate(ld_paths)
             for root in unpack_ld(path, Path(work) / f"ld-{index}")
         ]
-        # Browser-staged files have no suffix. Restore it for pandas compression
-        # inference, then let GWADataLoader read and harmonize all inputs jointly.
-        summaries = []
-        for index, path in enumerate(sumstats_paths):
-            with open(path, "rb") as handle:
-                gzipped = handle.read(2) == b"\x1f\x8b"
-            suffix = ".tsv.gz" if gzipped else ".tsv"
-            summary_path = Path(work) / f"sumstats-{index}{suffix}"
-            shutil.copyfile(path, summary_path)
-            summaries.append(str(summary_path))
-
+        # The worker assigns compression-aware suffixes while staging inputs.
         gdl = GWADataLoader(
-            sumstats_files=summaries,
+            sumstats_files=[str(path) for path in sumstats_paths],
             sumstats_format=options.get("sumstats_format", "fastGWA"),
             ld_store_files=roots,
             temp_dir=str(Path(work) / "temp"),
@@ -125,10 +114,9 @@ def native_fit(sumstats_paths, ld_paths, options):
                 gdl,
                 K=int(options.get("components", 3)),
                 threads=1,
-                float_precision="float64",
             )
             if model_name == "VIPRSMix"
-            else VIPRS(gdl, threads=1, float_precision="float64")
+            else VIPRS(gdl, threads=1)
         )
         seed = int(options.get("seed", 0))
         np.random.seed(seed)

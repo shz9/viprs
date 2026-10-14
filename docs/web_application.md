@@ -1,6 +1,15 @@
 # VIPRS in the browser
 
-[Launch the VIPRS browser application](webapp/index.html)
+Run VIPRS right in your browser—no local installation required. Your analysis runs on your
+device, so your input data is not uploaded to a remote server.
+
+<a class="md-button md-button--primary" href="webapp/index.html">🚀 Launch VIPRS in your browser</a>
+
+---
+
+!!! info "For developers"
+    The information below is for developers who want to build, test, or modify the app from
+    source. You don't need it to use VIPRS in the browser.
 
 The application runs the actual `VIPRS` and `VIPRSMix` interfaces in a Pyodide Web Worker.
 Each build compiles VIPRS from the checked-out source and uses the latest published
@@ -43,9 +52,16 @@ and the default data downloads. Use HTTP(S); opening `index.html` with `file://`
 not support the worker and asset requests. The application documentation links point
 to the built MkDocs site.
 
-## Default test data
+## Hosted references and example data
 
-The default example uses the complete supplied chromosome 22 datasets:
+LD and summary statistics have independent source selectors. The initial selection
+is hosted UK Biobank LD plus local summary statistics. The hosted LD card selects
+an ancestry and shows the all-chromosome glob,
+`hf://datasets/shz9/ukb-ld/EUR/chr_*.zip` by default. Archives are downloaded before
+fitting; use custom URLs or globs to select fewer chromosomes. Each input also
+supports its own local files, local folder and patterns, or hosted URLs.
+
+The **Try chr22 example** button beside the top resource links selects both of these supplied chromosome 22 datasets:
 
 - LD: `hf://datasets/shz9/ukb-ld/EUR/chr_22.zip`, fetched from
   [Hugging Face](https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip).
@@ -70,7 +86,7 @@ statistics file, or select several files with distinct chromosomes. Hosted input
 fields accept one URL per line. Select one or more LD ZIPs containing complete
 **magenpy Zarr v2 stores**, preserving `.zgroup`, `.zattrs`, `matrix/`, metadata, and
 all chunks. Both an archive containing a store directory and a store at archive root
-are accepted. The default LD archive already has this structure.
+are accepted. The hosted LD archives already have this structure.
 
 Chromosomes retained by GWADataLoader are fitted together with shared model
 hyperparameters. Summary-statistics files and extracted LD stores are passed jointly
@@ -85,8 +101,10 @@ convergence tolerance, and random seed. Defaults are 1,000 iterations, as in
 `viprs_fit`, and a tolerance of `1e-6` for both parameters and ELBO, as in
 `VIPRS.fit`.
 
-The worker stages inputs in its in-memory filesystem, extracts the LD archives,
-and makes one uninterrupted `fit()` call. For example, with a combined summary file:
+The worker streams inputs into its in-memory filesystem. For summary statistics,
+it detects gzip from the first two bytes and renames the staged file with the
+appropriate suffix, without copying its contents. Python reads that same file,
+extracts the LD archives, and makes one uninterrupted `fit()` call. For example, with a combined summary file:
 
 ```python
 from magenpy import GWADataLoader
@@ -98,7 +116,7 @@ gdl = GWADataLoader(
     ld_store_files=extracted_ld_store_paths,
     threads=1,
 )
-model = VIPRS(gdl, threads=1, float_precision="float64")
+model = VIPRS(gdl, threads=1)
 model.fit(max_iter=1000, x_abs_tol=1e-6, f_abs_tol=1e-6, disable_pbar=True)
 weights = model.to_table()
 ```
@@ -312,7 +330,12 @@ python -m pytest tests/test_webapp.py tests/test_wasm_package.py tests/test_mage
 node --test tests/webapp_sources.mjs tests/webapp_worker.mjs
 python tests/webapp_fixtures.py
 uv run --no-project --with playwright python tests/webapp_browser.py
+uv run --no-project --with playwright python tests/webapp_ui.py
 ```
+
+The UI-only browser check uses a stub worker to verify all 20 combinations of
+independent input sources, ancestry selection, local folder matching, the example
+shortcut, the threshold hover animation, responsive layouts, and reduced motion.
 
 The Python checks validate archive extraction, options, wheel hashes, WebAssembly
 magic bytes, the bundled VIPRS/VIPRSMix source, and joint inference on two chromosomes

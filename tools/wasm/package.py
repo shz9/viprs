@@ -1,15 +1,22 @@
 """Validate and archive the exact static application and its manifest-listed wheels."""
+
 import argparse
 import hashlib
 import json
+import zipfile
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
-import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 STATIC_FILES = (
-    "index.html", "app.css", "app.js", "worker.js", "inference.py", "sources.mjs",
-    "runtime.json", "build-info.json",
+    "index.html",
+    "app.css",
+    "app.js",
+    "worker.js",
+    "inference.py",
+    "sources.mjs",
+    "runtime.json",
+    "build-info.json",
 )
 
 
@@ -18,14 +25,22 @@ def package(assets, destination):
     manifest = json.loads((assets / "runtime.json").read_text())
     provenance = json.loads((assets / "build-info.json").read_text())
     if manifest["pyodide_version"] != provenance["pyodide_version"]:
-        raise ValueError("Runtime and build provenance have different Pyodide versions.")
+        raise ValueError(
+            "Runtime and build provenance have different Pyodide versions."
+        )
     files = list(STATIC_FILES)
     checksums, modules = {}, []
     for url in manifest["wheels"]:
         parsed = urlsplit(url)
         path = PurePosixPath(parsed.path)
-        if (parsed.scheme or parsed.netloc or parsed.query or len(path.parts) != 2
-                or path.parts[0] != "wheels" or path.suffix != ".whl"):
+        if (
+            parsed.scheme
+            or parsed.netloc
+            or parsed.query
+            or len(path.parts) != 2
+            or path.parts[0] != "wheels"
+            or path.suffix != ".whl"
+        ):
             raise ValueError(f"Expected a local wheels/*.whl path: {url}")
         if path.name in checksums:
             raise ValueError(f"Duplicate wheel: {path.name}")
@@ -37,7 +52,10 @@ def package(assets, destination):
         with zipfile.ZipFile(wheel_path) as wheel:
             for name in wheel.namelist():
                 if name.endswith(".so"):
-                    if not name.endswith("cpython-313-wasm32-emscripten.so") or wheel.read(name)[:4] != b"\0asm":
+                    if (
+                        not name.endswith("cpython-313-wasm32-emscripten.so")
+                        or wheel.read(name)[:4] != b"\0asm"
+                    ):
                         raise ValueError(f"Expected a WebAssembly extension: {name}")
                     modules.append(name)
         files.append(path.as_posix())

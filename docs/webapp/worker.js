@@ -46,7 +46,7 @@ const ready = initialize().catch((error) => {
   return null;
 });
 
-async function stageInput(source, FS, path) {
+async function stageInput(source, FS, path, inferCompression = false) {
   let stream;
   if (source.file) {
     if (!source.file.size) throw new Error("An input is empty.");
@@ -64,11 +64,18 @@ async function stageInput(source, FS, path) {
   const reader = stream.getReader();
   let handle;
   let size = 0;
+  const header = new Uint8Array(2);
+  let headerSize = 0;
   try {
     handle = FS.open(path, "w");
     while (true) {
       const {done, value} = await reader.read();
       if (done) break;
+      if (inferCompression && headerSize < header.length) {
+        const prefix = value.subarray(0, header.length - headerSize);
+        header.set(prefix, headerSize);
+        headerSize += prefix.length;
+      }
       const written = FS.write(handle, value, 0, value.length, size);
       if (written !== value.length) throw new Error("Could not write the complete input to browser memory.");
       size += written;
@@ -81,6 +88,15 @@ async function stageInput(source, FS, path) {
     reader.releaseLock();
     if (handle !== undefined) FS.close(handle);
   }
+  if (inferCompression) {
+    // pandas infers compression from the path. Sniff actual streamed bytes,
+    // including a gzip header split across chunks, then rename without copying.
+    const suffix = headerSize === 2 && header[0] === 0x1f && header[1] === 0x8b ? ".tsv.gz" : ".tsv";
+    const renamed = path + suffix;
+    FS.rename(path, renamed);
+    return renamed;
+  }
+  return path;
 }
 
 self.onmessage = async ({data}) => {
@@ -126,8 +142,8 @@ self.onmessage = async ({data}) => {
           message: `${source.file ? "Reading" : "Downloading"} ${kind === "ld" ? "LD reference" : "summary statistics"}`,
           detail: `File ${index + 1} of ${data[kind].length}. Model fitting has not started yet.`,
         });
-        await stageInput(data[kind][index], pyodide.FS, path);
-        request[`${kind}_paths`].push(path);
+        const stagedPath = await stageInput(source, pyodide.FS, path, kind === "sumstats");
+        request[`${kind}_paths`].push(stagedPath);
       }
     }
     const downloadSeconds = (performance.now() - runStart) / 1000;

@@ -15,12 +15,12 @@
         <p class="wordmark">VIPRS</p>
         <h1 id="page-title">Variational Inference of Polygenic Risk Scores</h1>
         <p class="intro">Estimate genetic variant effects from GWAS summary statistics and an LD reference, directly in your browser.</p>
+        <button type="button" class="example-button" id="demo">Try it on GWAS data for human height <span aria-hidden="true">→</span></button>
         <nav class="resource-links" aria-label="Documentation and resources">
-          <a href="../web_application/">User guide</a>
-          <a href="https://doi.org/10.1016/j.ajhg.2023.03.009">Methods paper <span aria-hidden="true">↗</span></a>
-          <a href="https://github.com/shz9/viprs">GitHub <span aria-hidden="true">↗</span></a>
-          <a href="https://shz9.github.io/viprs/commandline/viprs_fit/#standard-column-names">Command-line interface <span aria-hidden="true">↗</span></a>
-          <a href="https://shz9.github.io/viprs/download_ld/">Download LD reference <span aria-hidden="true">↗</span></a>
+          <a href="https://doi.org/10.1016/j.ajhg.2023.03.009" target="_blank" rel="noopener noreferrer">Methods paper <span aria-hidden="true">↗</span></a>
+          <a href="https://github.com/shz9/viprs" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+          <a href="https://shz9.github.io/viprs/commandline/viprs_fit/#standard-column-names" target="_blank" rel="noopener noreferrer">Command-line interface <span aria-hidden="true">↗</span></a>
+          <a href="https://shz9.github.io/viprs/download_ld/" target="_blank" rel="noopener noreferrer">Download LD reference <span aria-hidden="true">↗</span></a>
         </nav>
       </div>
       <figure class="genetics-figure">
@@ -70,14 +70,15 @@
           <text class="axis-label" x="36" y="256">Downstream scoring</text>
           <text class="axis-label" x="36" y="270">with individual genotypes</text>
           <path class="prs-area" d="M166,282.87 L168,282.84 L170,282.81 L172,282.77 L174,282.72 L176,282.66 L178,282.59 L180,282.50 L182,282.41 L184,282.29 L186,282.15 L188,282.00 L190,281.81 L192,281.60 L194,281.35 L196,281.07 L198,280.75 L200,280.39 L202,279.97 L204,279.51 L206,278.98 L208,278.39 L210,277.74 L212,277.01 L214,276.20 L216,275.31 L218,274.34 L220,273.27 L222,272.12 L224,270.86 L226,269.51 L228,268.06 L230,266.51 L232,264.87 L234,263.13 L236,261.29 L238,259.37 L240,257.37 L242,255.30 L244,253.16 L246,250.96 L248,248.73 L250,246.46 L252,244.18 L254,241.90 L256,239.64 L258,237.41 L260,235.23 L262,233.11 L264,231.09 L266,229.17 L268,227.37 L270,225.71 L272,224.20 L274,222.86 L276,221.71 L278,220.75 L280,219.99 L282,219.44 L284,219.11 L286,219.00 L288,219.11 L290,219.44 L292,219.99 L294,220.75 L296,221.71 L298,222.86 L300,224.20 L302,225.71 L304,227.37 L306,229.17 L308,231.09 L310,233.11 L312,235.23 L314,237.41 L316,239.64 L318,241.90 L320,244.18 L322,246.46 L324,248.73 L326,250.96 L328,253.16 L330,255.30 L332,257.37 L334,259.37 L336,261.29 L338,263.13 L340,264.87 L342,266.51 L344,268.06 L346,269.51 L348,270.86 L350,272.12 L352,273.27 L354,274.34 L356,275.31 L358,276.20 L360,277.01 L362,277.74 L364,278.39 L366,278.98 L368,279.51 L370,279.97 L372,280.39 L374,280.75 L376,281.07 L378,281.35 L380,281.60 L382,281.81 L384,282.00 L386,282.15 L388,282.29 L390,282.41 L392,282.50 L394,282.59 L396,282.66 L398,282.72 L400,282.77 L402,282.81 L404,282.84 L406,282.87 L406,283H166Z"/>
-          <path class="prs-tail" d="M330,283 L330,255.30 L332,257.37 L334,259.37 L336,261.29 L338,263.13 L340,264.87 L342,266.51 L344,268.06 L346,269.51 L348,270.86 L350,272.12 L352,273.27 L354,274.34 L356,275.31 L358,276.20 L360,277.01 L362,277.74 L364,278.39 L366,278.98 L368,279.51 L370,279.97 L372,280.39 L374,280.75 L376,281.07 L378,281.35 L380,281.60 L382,281.81 L384,282.00 L386,282.15 L388,282.29 L390,282.41 L392,282.50 L394,282.59 L396,282.66 L398,282.72 L400,282.77 L402,282.81 L404,282.84 L406,282.87 L406,283Z"/>
+          <defs><clipPath id="tail-clip"><rect id="tail-window" x="330" y="210" width="100" height="80"/></clipPath></defs>
+          <path class="prs-tail" clip-path="url(#tail-clip)" d="M166,282.87 L168,282.84 L170,282.81 L172,282.77 L174,282.72 L176,282.66 L178,282.59 L180,282.50 L182,282.41 L184,282.29 L186,282.15 L188,282.00 L190,281.81 L192,281.60 L194,281.35 L196,281.07 L198,280.75 L200,280.39 L202,279.97 L204,279.51 L206,278.98 L208,278.39 L210,277.74 L212,277.01 L214,276.20 L216,275.31 L218,274.34 L220,273.27 L222,272.12 L224,270.86 L226,269.51 L228,268.06 L230,266.51 L232,264.87 L234,263.13 L236,261.29 L238,259.37 L240,257.37 L242,255.30 L244,253.16 L246,250.96 L248,248.73 L250,246.46 L252,244.18 L254,241.90 L256,239.64 L258,237.41 L260,235.23 L262,233.11 L264,231.09 L266,229.17 L268,227.37 L270,225.71 L272,224.20 L274,222.86 L276,221.71 L278,220.75 L280,219.99 L282,219.44 L284,219.11 L286,219.00 L288,219.11 L290,219.44 L292,219.99 L294,220.75 L296,221.71 L298,222.86 L300,224.20 L302,225.71 L304,227.37 L306,229.17 L308,231.09 L310,233.11 L312,235.23 L314,237.41 L316,239.64 L318,241.90 L320,244.18 L322,246.46 L324,248.73 L326,250.96 L328,253.16 L330,255.30 L332,257.37 L334,259.37 L336,261.29 L338,263.13 L340,264.87 L342,266.51 L344,268.06 L346,269.51 L348,270.86 L350,272.12 L352,273.27 L354,274.34 L356,275.31 L358,276.20 L360,277.01 L362,277.74 L364,278.39 L366,278.98 L368,279.51 L370,279.97 L372,280.39 L374,280.75 L376,281.07 L378,281.35 L380,281.60 L382,281.81 L384,282.00 L386,282.15 L388,282.29 L390,282.41 L392,282.50 L394,282.59 L396,282.66 L398,282.72 L400,282.77 L402,282.81 L404,282.84 L406,282.87 L406,283H166Z"/>
           <path class="prs-curve" d="M166,282.87 L168,282.84 L170,282.81 L172,282.77 L174,282.72 L176,282.66 L178,282.59 L180,282.50 L182,282.41 L184,282.29 L186,282.15 L188,282.00 L190,281.81 L192,281.60 L194,281.35 L196,281.07 L198,280.75 L200,280.39 L202,279.97 L204,279.51 L206,278.98 L208,278.39 L210,277.74 L212,277.01 L214,276.20 L216,275.31 L218,274.34 L220,273.27 L222,272.12 L224,270.86 L226,269.51 L228,268.06 L230,266.51 L232,264.87 L234,263.13 L236,261.29 L238,259.37 L240,257.37 L242,255.30 L244,253.16 L246,250.96 L248,248.73 L250,246.46 L252,244.18 L254,241.90 L256,239.64 L258,237.41 L260,235.23 L262,233.11 L264,231.09 L266,229.17 L268,227.37 L270,225.71 L272,224.20 L274,222.86 L276,221.71 L278,220.75 L280,219.99 L282,219.44 L284,219.11 L286,219.00 L288,219.11 L290,219.44 L292,219.99 L294,220.75 L296,221.71 L298,222.86 L300,224.20 L302,225.71 L304,227.37 L306,229.17 L308,231.09 L310,233.11 L312,235.23 L314,237.41 L316,239.64 L318,241.90 L320,244.18 L322,246.46 L324,248.73 L326,250.96 L328,253.16 L330,255.30 L332,257.37 L334,259.37 L336,261.29 L338,263.13 L340,264.87 L342,266.51 L344,268.06 L346,269.51 L348,270.86 L350,272.12 L352,273.27 L354,274.34 L356,275.31 L358,276.20 L360,277.01 L362,277.74 L364,278.39 L366,278.98 L368,279.51 L370,279.97 L372,280.39 L374,280.75 L376,281.07 L378,281.35 L380,281.60 L382,281.81 L384,282.00 L386,282.15 L388,282.29 L390,282.41 L392,282.50 L394,282.59 L396,282.66 L398,282.72 L400,282.77 L402,282.81 L404,282.84 L406,282.87"/>
           <path class="plot-axis" d="M160 283h255"/>
           <path class="prs-threshold" d="M330 225v58"/>
           <text class="threshold-label" x="338" y="230">Threshold</text>
           <text class="axis-label" x="286" y="301" text-anchor="middle">Standardized PRS</text>
         </svg>
-        <figcaption>Summary statistics + LD → effect weights → PRS <span>Illustrative data and threshold</span></figcaption>
+        <figcaption id="illustration-note">Summary statistics + LD → effect weights → PRS <span>Illustrative data and threshold</span></figcaption>
       </figure>
     </header>
 
@@ -87,34 +88,35 @@
     <div class="workspace">
       <form id="inference-form">
         <fieldset id="controls" class="configuration-panels">
-          <section class="card input-card">
-            <div class="section-heading"><h2 class="panel-title"><svg class="panel-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M10 9v12M4 15h16"/></svg>Data</h2><button type="button" class="text-button" id="demo">Restore example</button></div>
-            <label for="source">Input source</label>
-            <select id="source"><option value="example">Example · UK Biobank height, chromosome 22</option><option value="files">Local files</option><option value="folder">Local folder · glob patterns</option><option value="urls">Hosted URLs · files or globs</option></select>
-            <div id="example-inputs" class="example-box">
-              <span class="chromosome" aria-hidden="true"><i></i><b>22</b><i></i></span>
-              <div class="example-copy"><strong>UK Biobank height</strong><span>fastGWA · European LD · 14,518 variants · 4.6 MB</span></div>
-              <div class="example-links"><a href="https://raw.githubusercontent.com/shz9/magenpy/master/magenpy/data/ukb_height_chr22.fastGWA.gz" title="Download summary statistics">GWAS ↗</a><a href="https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip" title="Download LD reference">LD ↗</a></div>
+          <section class="card input-card" aria-labelledby="ld-heading">
+            <div class="section-heading"><div><p class="section-kicker">01 · Reference data</p><h2 id="ld-heading">LD reference</h2></div><span class="source-badge">Local + cloud</span></div>
+            <label for="ld-source">LD source</label>
+            <select id="ld-source"><option value="hosted">Hosted UK Biobank matrices</option><option value="files">Local ZIP archives</option><option value="folder">Local folder · glob patterns</option><option value="urls">Custom URLs · files or globs</option><option value="example">Example · European LD, chromosome 22</option></select>
+            <div id="ld-hosted-inputs" class="hosted-source-card">
+              <div class="hosted-heading"><strong>UK Biobank LD reference</strong><span class="source-badge">HapMap3</span></div>
+              <p class="hint">Choose the ancestry matching your GWAS. The hosted pattern selects all chromosomes.</p>
+              <label for="ld-ancestry">Ancestry</label>
+              <select id="ld-ancestry"><option value="EUR">EUR · European</option><option value="AFR">AFR · African</option><option value="AMR">AMR · Admixed American</option><option value="CSA">CSA · Central/South Asian</option><option value="EAS">EAS · East Asian</option><option value="MID">MID · Middle Eastern</option></select>
+              <label for="ld-hosted-path">All-chromosome path</label><output id="ld-hosted-path" class="hosted-path" for="ld-ancestry">hf://datasets/shz9/ukb-ld/EUR/chr_*.zip</output>
+              <p class="hint">Archives are downloaded before fitting. To select fewer chromosomes, use custom URLs or globs.</p>
+              <details class="reference-details"><summary>Dataset details</summary><p class="hint">LD between HapMap3 variants from imputed UK Biobank genotypes, with approximately independent LD blocks. <a href="https://huggingface.co/datasets/shz9/ukb-ld" target="_blank" rel="noopener noreferrer">View dataset ↗</a></p></details>
             </div>
-            <div id="file-inputs" hidden>
-              <label for="sumstats-file">Summary statistics</label><input id="sumstats-file" type="file" accept=".tsv,.txt,.gz,.fastGWA" multiple><p class="hint">One combined file or one file per chromosome; plain text or gzip.</p>
-              <label for="ld-file">LD reference</label><input id="ld-file" type="file" accept=".zip" multiple><p class="hint">ZIP archives containing magenpy Zarr stores.</p><p id="file-summary" class="selection-summary"></p>
-            </div>
-            <div id="url-inputs" hidden>
-              <label for="sumstats-url">Summary statistics URLs or globs</label><textarea id="sumstats-url" rows="3" placeholder="One URL or pattern per line" spellcheck="false"></textarea>
-              <label for="ld-url">LD reference URLs or globs</label><textarea id="ld-url" rows="3" placeholder="hf://datasets/shz9/ukb-ld/EUR/chr_*.zip" spellcheck="false"></textarea>
-              <p class="hint">Globs: public Hugging Face datasets and GitHub repositories. Other HTTP hosts and relative URLs require explicit file paths. Supports *, **, and ranges such as [1-9].</p>
-            </div>
-            <div id="folder-inputs" hidden>
-              <label for="data-folder">Data folder</label><input id="data-folder" type="file" webkitdirectory multiple>
-              <p class="hint">Choose a folder containing your data. Files stay local; patterns below are relative to this folder.</p>
-              <label for="sumstats-pattern">Summary statistics pattern</label><textarea id="sumstats-pattern" rows="2" spellcheck="false">**/*.tsv</textarea>
-              <label for="ld-pattern">LD archive pattern</label><textarea id="ld-pattern" rows="2" spellcheck="false">**/chr_*.zip</textarea>
-              <p class="hint">One pattern per line. * matches a filename; ** includes subfolders. LD inputs must be ZIP archives.</p>
-              <p id="folder-summary" class="selection-summary" role="status">Choose a folder to see matching file counts.</p>
-            </div>
+            <div id="ld-files-inputs" hidden><label for="ld-file">LD archives</label><input id="ld-file" type="file" accept=".zip" multiple><p class="hint">ZIP archives containing magenpy Zarr stores. Files stay on your computer.</p><p id="ld-file-summary" class="selection-summary" role="status"></p></div>
+            <div id="ld-folder-inputs" hidden><label for="ld-folder">LD folder</label><input id="ld-folder" type="file" webkitdirectory multiple><label for="ld-pattern">LD archive patterns</label><textarea id="ld-pattern" rows="2" spellcheck="false">**/chr_*.zip</textarea><p class="hint">One pattern per line, relative to this folder. ** includes subfolders.</p><p id="ld-folder-summary" class="selection-summary" role="status">Choose a folder to see matching file counts.</p></div>
+            <div id="ld-urls-inputs" hidden><label for="ld-url">LD reference URLs or globs</label><textarea id="ld-url" rows="3" placeholder="hf://datasets/shz9/ukb-ld/EUR/chr_*.zip" spellcheck="false"></textarea><p class="hint">One ZIP URL or pattern per line. Globs are supported for public Hugging Face datasets and GitHub repositories; other HTTP hosts require explicit URLs and CORS access.</p></div>
+            <div id="ld-example-inputs" class="example-box" hidden><span class="chromosome" aria-hidden="true"><b>22</b></span><div class="example-copy"><strong>UK Biobank · European LD</strong><span>Chromosome 22 · HapMap3 variants</span></div><div class="example-links"><a href="https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip" target="_blank" rel="noopener noreferrer">LD ↗</a></div></div>
+          </section>
+
+          <section class="card input-card" aria-labelledby="sumstats-heading">
+            <div class="section-heading"><div><p class="section-kicker">02 · GWAS data</p><h2 id="sumstats-heading">Summary statistics</h2></div></div>
+            <label for="sumstats-source">Summary statistics source</label>
+            <select id="sumstats-source"><option value="files">Local files</option><option value="folder">Local folder · glob patterns</option><option value="urls">Hosted URLs · files or globs</option><option value="example">Example · UK Biobank height, chromosome 22</option></select>
+            <div id="sumstats-files-inputs"><label for="sumstats-file">Summary statistics files</label><input id="sumstats-file" type="file" accept=".tsv,.txt,.gz,.fastGWA" multiple><p class="hint">One combined file or one file per chromosome; plain text or gzip. Files stay on your computer.</p><p id="sumstats-file-summary" class="selection-summary" role="status"></p></div>
+            <div id="sumstats-folder-inputs" hidden><label for="sumstats-folder">Summary statistics folder</label><input id="sumstats-folder" type="file" webkitdirectory multiple><label for="sumstats-pattern">Summary statistics patterns</label><textarea id="sumstats-pattern" rows="2" spellcheck="false">**/*.tsv</textarea><p class="hint">One pattern per line, relative to this folder. ** includes subfolders.</p><p id="sumstats-folder-summary" class="selection-summary" role="status">Choose a folder to see matching file counts.</p></div>
+            <div id="sumstats-urls-inputs" hidden><label for="sumstats-url">Summary statistics URLs or globs</label><textarea id="sumstats-url" rows="3" placeholder="One URL or pattern per line" spellcheck="false"></textarea><p class="hint">Globs are supported for public Hugging Face datasets and GitHub repositories. Other HTTP hosts and relative URLs require explicit paths; remote hosts must allow CORS access.</p></div>
+            <div id="sumstats-example-inputs" class="example-box" hidden><span class="chromosome" aria-hidden="true"><b>22</b></span><div class="example-copy"><strong>UK Biobank height</strong><span>fastGWA · chromosome 22</span></div><div class="example-links"><a href="https://raw.githubusercontent.com/shz9/magenpy/master/magenpy/data/ukb_height_chr22.fastGWA.gz" target="_blank" rel="noopener noreferrer">GWAS ↗</a></div></div>
             <label for="sumstats-format">Summary statistics format</label><select id="sumstats-format"><option>fastGWA</option><option>magenpy</option><option>plink1.9</option><option>plink2</option><option>COJO</option><option>SAIGE</option></select>
-            <p class="data-rule">One or multiple chromosomes. Variants are matched to the LD reference before fitting.</p>
+            <p class="data-rule">Choose summary statistics independently of your LD source. Variants are matched to the reference before fitting.</p>
           </section>
 
           <section class="card model-card">
@@ -143,11 +145,14 @@
       <div class="section-heading results-heading"><div><p class="section-kicker">Results</p><h2>Posterior effect estimates</h2></div><div class="downloads"><a id="download" class="button" download="viprs-weights.tsv">Download weights <span aria-hidden="true">↓</span></a><a id="download-report" class="button" download="viprs-run.json">Run report <span aria-hidden="true">↓</span></a></div></div>
       <p id="result-summary" class="result-summary"></p>
       <div class="result-toolbar"><label for="chromosome-filter">Chromosome</label><select id="chromosome-filter"><option value="">All chromosomes</option></select><span id="table-caption" class="hint"></span></div>
-      <div class="table-scroll"><table><thead><tr><th>Variant</th><th>Chr</th><th>Effect allele</th><th>Other allele</th><th>PIP</th><th>Posterior mean β</th><th>Posterior variance</th></tr></thead><tbody id="result-rows"></tbody></table></div>
-      <p class="table-note">Top 20 variants by posterior inclusion probability. Downloads contain the complete fitted result.</p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Posterior effect estimates"><table><thead><tr><th scope="col">SNP</th><th scope="col">CHR</th><th scope="col">A1</th><th scope="col">A2</th><th scope="col">PIP</th><th scope="col">BETA</th><th scope="col">VAR_BETA</th></tr></thead><tbody id="result-rows"></tbody></table></div>
+      <p class="table-note">Top 20 variants by posterior inclusion probability (PIP). A1 is the effect allele; BETA and VAR_BETA are the posterior mean and variance. Downloads contain the complete fitted result.</p>
     </section>
 
-    <footer><span>VIPRS · Variational Inference of Polygenic Risk Scores</span><a href="https://shz9.github.io/ld_browser/">Explore the LD reference with LD Browser ↗</a></footer>
+    <footer>
+      <p>VIPRS Browser <span aria-hidden="true">•</span> Built with Codex <span aria-hidden="true">•</span> Maintained by: <a href="https://shz9.github.io/" target="_blank" rel="noopener noreferrer">Shadi Zabad</a>, University of Oxford</p>
+      <p><a href="https://shz9.github.io/ld_browser/" target="_blank" rel="noopener noreferrer">Explore the LD reference with LD Browser ↗</a><span aria-hidden="true"> · </span><a href="https://github.com/shz9/viprs/issues" target="_blank" rel="noopener noreferrer">Report an issue ↗</a></p>
+    </footer>
   </main>
 </body>
 </html>

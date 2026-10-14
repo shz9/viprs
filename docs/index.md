@@ -1,5 +1,8 @@
 # Variational Inference of Polygenic Risk Scores (VIPRS)
 
+!!! tip "VIPRS on the web ✨"
+    Try the [VIPRS web app](https://shz9.github.io/viprs/webapp/) for a new way to perform PRS inference right in your browser.
+
 This site contains documentation, tutorials, and examples for using the `viprs` package for the purposes of 
 inferring polygenic risk scores (PRS) from GWAS summary statistics. The `viprs` package is a python package
 that uses variational inference to estimate the posterior distribution of variant effect sizes conditional 
@@ -19,6 +22,7 @@ The American Journal of Human Genetics, 110(5), 741–761. https://doi.org/10.10
 * [API Reference](api/overview.md)
 * [Installation](installation.md)
 * [Getting Started](getting_started.md)
+* [VIPRS web app](https://shz9.github.io/viprs/webapp/)
 * [Command Line Scripts](commandline/overview.md)
 * [Download Reference LD matrices](download_ld.md)
 * [Project homepage on `GitHub`](https://github.com/shz9/viprs)

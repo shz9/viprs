@@ -34,6 +34,8 @@ Grid search, Bayesian optimization, Bayesian model averaging.
 
 - [Documentation](https://shz9.github.io/viprs/)
 - [Continuous benchmark results](./benchmarks/results.md)
+- [VIPRS web app](https://shz9.github.io/viprs/webapp/)
+- [Sister package `magenpy`](https://github.com/shz9/magenpy)
 - [Citation / BibTeX records](./CITATION.md)
 - [Report issues/bugs](https://github.com/shz9/viprs/issues)
 

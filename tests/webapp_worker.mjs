@@ -97,3 +97,43 @@ test("empty inputs and HTTP errors remain actionable", async () => {
   await assert.rejects(empty.stageInput({url: "https://data.example/empty"}, FS, "/input"), /empty/);
   assert.equal(FS.state.closed, 1);
 });
+
+
+test("summary staging detects compression across chunk boundaries and renames without rewriting", async () => {
+  for (const local of [true, false]) {
+    for (const bytes of [[0x1f, 0x8b, 8, 0], [67, 72, 82, 9], [0x1f]]) {
+      const stream = new ReadableStream({start(controller) {
+        controller.enqueue(new Uint8Array());
+        for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
+        controller.close();
+      }});
+      const received = [], renames = [];
+      const FS = filesystem(chunk => { received.push(...chunk); return chunk.length; });
+      FS.rename = (from, to) => {
+        assert.equal(FS.state.closed, 1);
+        renames.push([from, to]);
+      };
+      const context = worker(() => ({ok: true, body: stream}));
+      // Neither a misleading upload name nor an extensionless URL controls compression.
+      const source = local ? {file: {name: "misleading.gz", size: bytes.length, stream: () => stream}}
+        : {url: "https://data.example/download?id=123"};
+      const expected = "/sumstats-0" + (bytes[1] === 0x8b ? ".tsv.gz" : ".tsv");
+      assert.equal(await context.stageInput(source, FS, "/sumstats-0", true), expected);
+      assert.deepEqual(received, bytes);
+      assert.deepEqual(renames, [["/sumstats-0", expected]]);
+      assert.equal(FS.state.opened, 1);
+      assert.equal(FS.state.bytes, bytes.length);
+      assert.equal(stream.locked, false);
+    }
+  }
+});
+
+test("failed summary staging does not rename a partial input", async () => {
+  const stream = new ReadableStream({start(controller) {
+    controller.enqueue(new Uint8Array([0x1f, 0x8b]));
+    controller.close();
+  }});
+  const FS = filesystem(() => { throw new Error("Out of memory"); });
+  FS.rename = () => assert.fail("must not rename after failed staging");
+  await assert.rejects(worker().stageInput({file: {size: 2, stream: () => stream}}, FS, "/sumstats-0", true), /Out of memory/);
+});
