@@ -1,0 +1,1463 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../getting_started/">
+      
+      
+        <link rel="next" href="../download_ld/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Browser Application - Variational Inference of Polygenic Risk Scores (VIPRS)</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#viprs-in-the-browser" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Variational Inference of Polygenic Risk Scores (VIPRS)" class="md-header__button md-logo" aria-label="Variational Inference of Polygenic Risk Scores (VIPRS)" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Variational Inference of Polygenic Risk Scores (VIPRS)
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Browser Application
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7a5 5 0 0 0-5 5 5 5 0 0 0 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1M8 13h8v-2H8zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4a5 5 0 0 0 5-5 5 5 0 0 0-5-5"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 7H7a5 5 0 0 0-5 5 5 5 0 0 0 5 5h10a5 5 0 0 0 5-5 5 5 0 0 0-5-5m0 8a3 3 0 0 1-3-3 3 3 0 0 1 3-3 3 3 0 0 1 3 3 3 3 0 0 1-3 3"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 7H7a5 5 0 0 0-5 5 5 5 0 0 0 5 5h10a5 5 0 0 0 5-5 5 5 0 0 0-5-5M7 15a3 3 0 0 1-3-3 3 3 0 0 1 3-3 3 3 0 0 1 3 3 3 3 0 0 1-3 3"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/shz9/viprs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    viprs
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Variational Inference of Polygenic Risk Scores (VIPRS)" class="md-nav__button md-logo" aria-label="Variational Inference of Polygenic Risk Scores (VIPRS)" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Variational Inference of Polygenic Risk Scores (VIPRS)
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/shz9/viprs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    viprs
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting_started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Browser Application
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Browser Application
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#run-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hosted-references-and-example-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hosted references and example data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inputs-and-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inputs and results
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bundled-artifacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundled artifacts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#continuous-builds-and-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuous builds and storage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rebuild-the-wasm-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rebuild the WASM bundle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publishing-magenpy-wasm-independently" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Publishing magenpy WASM independently
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#browser-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browser limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../download_ld/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Download LD Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Line Scripts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Command Line Scripts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../commandline/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../commandline/viprs_fit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    viprs_fit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../commandline/viprs_score/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    viprs_score
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../commandline/viprs_evaluate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    viprs_evaluate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/shz9/viprs/issues" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Report issues/bugs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../citation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Citation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#run-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hosted-references-and-example-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hosted references and example data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inputs-and-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inputs and results
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bundled-artifacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundled artifacts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#continuous-builds-and-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuous builds and storage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rebuild-the-wasm-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rebuild the WASM bundle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publishing-magenpy-wasm-independently" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Publishing magenpy WASM independently
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#browser-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browser limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/shz9/viprs/edit/master/docs/web_application.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+    
+      
+    
+    <a href="https://github.com/shz9/viprs/raw/master/docs/web_application.md" title="View source of this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 18c.56 0 1 .44 1 1s-.44 1-1 1-1-.44-1-1 .44-1 1-1m0-3c-2.73 0-5.06 1.66-6 4 .94 2.34 3.27 4 6 4s5.06-1.66 6-4c-.94-2.34-3.27-4-6-4m0 6.5a2.5 2.5 0 0 1-2.5-2.5 2.5 2.5 0 0 1 2.5-2.5 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5M9.27 20H6V4h7v5h5v4.07c.7.08 1.36.25 2 .49V8l-6-6H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h4.5a8.2 8.2 0 0 1-1.23-2"/></svg>
+    </a>
+  
+
+
+<h1 id="viprs-in-the-browser">VIPRS in the browser<a class="headerlink" href="#viprs-in-the-browser" title="Permanent link">&para;</a></h1>
+<p>Run VIPRS right in your browser—no local installation required. Your analysis runs on your
+device, so your input data is not uploaded to a remote server.</p>
+<p><a class="md-button md-button--primary" href="https://shz9.github.io/viprs/webapp/">🚀 Launch VIPRS in your browser</a></p>
+<hr />
+<div class="admonition info">
+<p class="admonition-title">For developers</p>
+<p>The information below is for developers who want to build, test, or modify the app from
+source. You don't need it to use VIPRS in the browser.</p>
+</div>
+<p>The application runs the actual <code>VIPRS</code> and <code>VIPRSMix</code> interfaces in a Pyodide Web Worker.
+Each build compiles VIPRS from the checked-out source and uses the latest published
+magenpy release, plus pinned Zarr storage dependencies. A compatible magenpy WASM
+release asset is reused; if absent, its released source is compiled. Exact versions,
+commits, and the magenpy wheel's origin are recorded in the generated build manifest.
+The Cython/C++ inference and LD kernels execute in WebAssembly on the user's device.</p>
+<h2 id="run-it">Run it<a class="headerlink" href="#run-it" title="Permanent link">&para;</a></h2>
+<p>The published documentation includes a tested WASM bundle. Source checkouts do
+<strong>not</strong> contain generated wheels or manifests. Before serving a fresh checkout,
+build the bundle below, or download <code>viprs-webapp-wasm.zip</code> and
+<code>viprs-webapp-wasm.sha256</code> from a <a href="https://github.com/shz9/viprs/releases">GitHub Release</a>
+that contains these assets. For example, replace <code>vX.Y.Z</code> with that release's tag:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>gh<span class="w"> </span>release<span class="w"> </span>download<span class="w"> </span>vX.Y.Z<span class="w"> </span>--repo<span class="w"> </span>shz9/viprs<span class="w"> </span>--pattern<span class="w"> </span><span class="s1">'viprs-webapp-wasm.*'</span><span class="w"> </span>--dir<span class="w"> </span>dist/wasm
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="o">(</span><span class="nb">cd</span><span class="w"> </span>dist/wasm<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>shasum<span class="w"> </span>-a<span class="w"> </span><span class="m">256</span><span class="w"> </span>-c<span class="w"> </span>viprs-webapp-wasm.sha256<span class="o">)</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>python<span class="w"> </span>-m<span class="w"> </span>zipfile<span class="w"> </span>-e<span class="w"> </span>dist/wasm/viprs-webapp-wasm.zip<span class="w"> </span>docs
+</span></code></pre></div>
+<p>This installs the complete app and wheels from that release together. Build locally
+instead when testing changes to the current source. Then, from the repository root:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>python<span class="w"> </span>-m<span class="w"> </span>http.server<span class="w"> </span><span class="m">8000</span><span class="w"> </span>--directory<span class="w"> </span>docs<span class="w"> </span>--bind<span class="w"> </span><span class="m">127</span>.0.0.1
+</span></code></pre></div>
+<p>Open <strong><a href="http://localhost:8000/webapp/">http://localhost:8000/webapp/</a></strong>. The runtime and packages initialize in the
+background immediately, while you configure inputs. Click <strong>Run inference</strong> to fit
+the selected model; if initialization is still in progress, the run waits for it.
+Completed runs reuse the same initialized worker. Visitors to the deployed site
+do not need a compiler or Python installed for inference.
+The local Python command above only serves static files. <code>mkdocs serve</code> also works,
+and <code>mkdocs build</code> copies the application and wheels into the published site.</p>
+<p>An internet connection is required for Pyodide's pinned scientific runtime packages
+and the default data downloads. Use HTTP(S); opening <code>index.html</code> with <code>file://</code> does
+not support the worker and asset requests. The application documentation links point
+to the built MkDocs site.</p>
+<h2 id="hosted-references-and-example-data">Hosted references and example data<a class="headerlink" href="#hosted-references-and-example-data" title="Permanent link">&para;</a></h2>
+<p>LD and summary statistics have independent source selectors. The initial selection
+is hosted UK Biobank LD plus local summary statistics. The hosted LD card selects
+an ancestry and shows the all-chromosome glob,
+<code>hf://datasets/shz9/ukb-ld/EUR/chr_*.zip</code> by default. Archives are downloaded before
+fitting; use custom URLs or globs to select fewer chromosomes. Each input also
+supports its own local files, local folder and patterns, or hosted URLs.</p>
+<p>The <strong>Try chr22 example</strong> button beside the top resource links selects both of these supplied chromosome 22 datasets:</p>
+<ul>
+<li>LD: <code>hf://datasets/shz9/ukb-ld/EUR/chr_22.zip</code>, fetched from
+  <a href="https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip">Hugging Face</a>.</li>
+<li>Summary statistics: <a href="https://github.com/shz9/magenpy/blob/master/magenpy/data/ukb_height_chr22.fastGWA.gz">UK Biobank height fastGWA</a>,
+  fetched as the <a href="https://raw.githubusercontent.com/shz9/magenpy/master/magenpy/data/ukb_height_chr22.fastGWA.gz">raw gzip file</a>.</li>
+</ul>
+<p>The compressed downloads total about 4.6 MB. The browser resolves <code>hf://datasets/…</code>
+and GitHub <code>blob</code> links into direct HTTPS downloads. It also accepts ordinary HTTP(S)
+URLs, relative web paths, or locally selected files.</p>
+<p>In prototype verification with VIPRS 0.1.5, seed zero, 200 maximum iterations,
+tolerance <code>1e-6</code>, and <code>fastGWA</code> format, the full browser test harmonized <strong>14,518 variants</strong> and converged
+in <strong>77 iterations</strong>. Exported posterior means and variances matched the native
+VIPRS run at the exported precision; the maximum PIP difference was approximately
+<code>7e-15</code>. These are verification results for the supplied data, rather than a general
+accuracy or performance guarantee.</p>
+<h2 id="inputs-and-results">Inputs and results<a class="headerlink" href="#inputs-and-results" title="Permanent link">&para;</a></h2>
+<p>Select your summary-statistics format and supply a plain-text or gzipped summary
+statistics file, or select several files with distinct chromosomes. Hosted input
+fields accept one URL per line. Select one or more LD ZIPs containing complete
+<strong>magenpy Zarr v2 stores</strong>, preserving <code>.zgroup</code>, <code>.zattrs</code>, <code>matrix/</code>, metadata, and
+all chunks. Both an archive containing a store directory and a store at archive root
+are accepted. The hosted LD archives already have this structure.</p>
+<p>Chromosomes retained by GWADataLoader are fitted together with shared model
+hyperparameters. Summary-statistics files and extracted LD stores are passed jointly
+to its constructor, which handles reading, chromosome matching, and harmonization.
+A combined summary-statistics file and ZIP containing multiple chromosome stores
+also work. The browser adapter uses the loader's input-handling behavior.</p>
+<p>Choose <strong>VIPRS</strong> for a spike-and-slab prior or <strong>VIPRSMix</strong> for a sparse Gaussian
+mixture. VIPRSMix exposes the number of non-null components (1–10), in addition to
+the point mass at zero. Optimization settings include the maximum iteration count,
+convergence tolerance, and random seed. Defaults are 1,000 iterations, as in
+<code>viprs_fit</code>, and a tolerance of <code>1e-6</code> for both parameters and ELBO, as in
+<code>VIPRS.fit</code>.</p>
+<p>The worker streams inputs into its in-memory filesystem. For summary statistics,
+it detects gzip from the first two bytes and renames the staged file with the
+appropriate suffix, without copying its contents. Python reads that same file,
+extracts the LD archives, and makes one uninterrupted <code>fit()</code> call. For example, with a combined summary file:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">magenpy</span><span class="w"> </span><span class="kn">import</span> <span class="n">GWADataLoader</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">viprs</span><span class="w"> </span><span class="kn">import</span> <span class="n">VIPRS</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">gdl</span> <span class="o">=</span> <span class="n">GWADataLoader</span><span class="p">(</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">sumstats_files</span><span class="o">=</span><span class="n">sumstats_path</span><span class="p">,</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">sumstats_format</span><span class="o">=</span><span class="s2">"fastGWA"</span><span class="p">,</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">ld_store_files</span><span class="o">=</span><span class="n">extracted_ld_store_paths</span><span class="p">,</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">threads</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="p">)</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="n">model</span> <span class="o">=</span> <span class="n">VIPRS</span><span class="p">(</span><span class="n">gdl</span><span class="p">,</span> <span class="n">threads</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">max_iter</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">x_abs_tol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span> <span class="n">f_abs_tol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span> <span class="n">disable_pbar</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="n">weights</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">to_table</span><span class="p">()</span>
+</span></code></pre></div>
+<p>magenpy handles harmonization; VIPRS learns its hyperparameters through variational
+EM. Model equations and inference kernels are the repository implementation.
+There are no per-iteration UI callbacks: a rotating activity indicator stays visible
+until fitting completes, then results and the complete ELBO history become available.
+The random seed defaults to zero. Initialization, downloads, data preparation, and
+model fitting are timed separately in the report; the displayed run timer excludes
+runtime initialization.</p>
+<p>Download the complete posterior table as TSV (<code>BETA</code>, <code>PIP</code>, <code>VAR_BETA</code> and variant
+metadata), or a JSON run report including convergence status, ELBO history, options,
+package versions, loaded extension paths, input locations, and wheel checksums.
+The table displays the 20 variants with highest posterior inclusion probability,
+with an optional chromosome filter. Downloads include all fitted variants.
+An iteration-limited run is labeled separately from a converged run.</p>
+<p>The output is the unmodified <code>VIPRS.to_table()</code> result. Individual polygenic scores
+still require target genotypes and the appropriate genotype scaling; the application
+currently fits variant weights only.</p>
+<h2 id="bundled-artifacts">Bundled artifacts<a class="headerlink" href="#bundled-artifacts" title="Permanent link">&para;</a></h2>
+<p><code>docs/webapp/runtime.json</code> defines the exact Pyodide version, its required built-in
+packages, and the local wheel URLs with SHA-256 hashes. <code>docs/webapp/build-info.json</code>
+records the source commit and hashes, the resolved magenpy release and commit, compiled modules,
+and build tools.
+The application installs these explicit wheel files without resolving packages from
+PyPI at run time. Standard scientific packages are loaded from the pinned Pyodide CDN.</p>
+<p>The five compiled extension modules are:</p>
+<ul>
+<li><code>viprs.model.vi.e_step_cpp</code></li>
+<li><code>viprs.utils.math_utils</code></li>
+<li><code>magenpy.stats.ld.c_utils</code></li>
+<li><code>magenpy.stats.score.score_cpp</code></li>
+<li><code>magenpy.stats.variant.variant_cpp</code></li>
+</ul>
+<p>They have the Python 3.13 / <code>pyodide_2025_0_wasm32</code> wheel tag and contain WebAssembly
+binary modules, despite Python's <code>.so</code> extension naming convention. The runtime is
+Pyodide <strong>0.28.3</strong>, with Python <strong>3.13.2</strong> and Emscripten <strong>4.0.9</strong>.</p>
+<h2 id="continuous-builds-and-storage">Continuous builds and storage<a class="headerlink" href="#continuous-builds-and-storage" title="Permanent link">&para;</a></h2>
+<p><a href="https://github.com/shz9/viprs/blob/master/.github/workflows/wasm.yml"><code>.github/workflows/wasm.yml</code></a>
+is the entry point for building, testing, and distributing the application.</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Build and test</th>
+<th>Destination</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Push or merge to <code>main</code> / <code>master</code></td>
+<td>Build VIPRS; reuse magenpy WASM or build its release source</td>
+<td>Actions artifact, retained for 30 days</td>
+</tr>
+<tr>
+<td>Pull request, including updates</td>
+<td>Same build and tests</td>
+<td>Actions artifact only; no deployment or release write access</td>
+</tr>
+<tr>
+<td>Published GitHub Release (including prereleases)</td>
+<td>Build the release tag</td>
+<td>Actions artifact plus assets attached to that release</td>
+</tr>
+<tr>
+<td>Manual <strong>Run workflow</strong></td>
+<td>Build the selected branch or tag</td>
+<td>Actions artifact only</td>
+</tr>
+<tr>
+<td>Successful default-branch push build</td>
+<td>Reuse the tested bundle</td>
+<td>Deploy documentation and application to <code>gh-pages</code></td>
+</tr>
+</tbody>
+</table>
+<p>A merge is already a push event; no separate merge trigger is needed. Feature
+branches are checked through pull requests or the manual trigger. All main/master
+pushes are built, including documentation-only changes, so documentation deployment
+always uses an app and bundle from the same commit. A newer push cancels a previous
+unfinished build on that branch. Release builds are not cancelled by newer pushes.
+Only the pinned Emscripten SDK and pip downloads are cached. VIPRS is rebuilt;
+magenpy is downloaded from its own release when a compatible wheel is available. The compiler configuration remains Python 3.13, Pyodide 0.28.3, and
+Emscripten 4.0.9.</p>
+<p>Before publication, CI checks wheel hashes and actual WASM extension bytes, compares
+bundled model source with the checkout, runs native adapter tests, and runs the real
+chromosome 22 and two-chromosome browser tests in Chromium. Browser reports and
+screenshots are retained for 14 days, including partial reports on failure. Tests
+need access to the Pyodide CDN and the public example data hosts.</p>
+<p>The distributable files are:</p>
+<ul>
+<li><strong><code>viprs-webapp-wasm.zip</code></strong>: the static <code>webapp/</code> directory, all manifest-listed
+  wheels, runtime and build manifests, license, and serving instructions.</li>
+<li><strong><code>viprs-webapp-wasm.sha256</code></strong>: a checksum for the archive. Each wheel also has
+  its own checksum in the runtime manifest and build provenance.</li>
+</ul>
+<p><code>python tools/wasm/package.py</code> creates these files under <code>dist/wasm/</code> after checking
+the bundle. It excludes stale, unlisted wheels. Actions artifacts are convenient
+for testing and transferring files between jobs, but expire; GitHub Release assets
+are the versioned distribution. The app serves wheels alongside its own static
+files on Pages, rather than fetching a moving "latest" release during initialization.
+Keep <code>docs/webapp/wheels/</code>, <code>runtime.json</code>, and <code>build-info.json</code> out of source control.
+The existing local builds are still usable; the ignore rules do not delete them.</p>
+<p>The docs workflow is now reusable and called by the WASM workflow after its tests
+pass. It verifies the downloaded archive, extracts it into <code>docs/</code>, and uses the
+existing <code>mkdocs gh-deploy</code> publishing mechanism. Keep GitHub Pages configured to
+serve the <code>gh-pages</code> branch. It is intentionally not deployed from PRs, releases,
+or manual builds. A failed build leaves the previous site in place.</p>
+<p>The normal PyPI release workflow remains separate. These browser wheels are shipped
+as GitHub Release assets, not mixed into native PyPI wheel uploads. Release attachment
+uses the repository's built-in <code>GITHUB_TOKEN</code> with <code>contents: write</code>; no new secret
+is needed. Rerunning the release workflow replaces only the two named WASM assets.
+Actions must be enabled and repository rules must permit release uploads and the
+existing <code>gh-pages</code> push. A release tag must include the workflow and WASM sources.</p>
+<p>If the repository enables <strong>immutable releases</strong>, assets must be uploaded while the
+release is still a draft; GitHub prohibits adding assets after publication. For
+that setting, run this workflow manually for the intended tag, download its tested
+artifact, and attach both files to the draft before publishing. The published-release job checks that both assets are already attached and leaves
+them unchanged for immutable releases. It fails with instructions if either asset
+is missing; it cannot repair an already-published immutable release.</p>
+<p>See GitHub's <a href="https://docs.github.com/en/actions/tutorials/store-and-share-data">artifact storage documentation</a>,
+<a href="https://cli.github.com/manual/gh_release_upload">release asset upload command</a>, and
+<a href="https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository">immutable release restrictions</a>.</p>
+<h2 id="rebuild-the-wasm-bundle">Rebuild the WASM bundle<a class="headerlink" href="#rebuild-the-wasm-bundle" title="Permanent link">&para;</a></h2>
+<p>Build wheels locally after changing VIPRS source, or let GitHub Actions build them.
+Generated wheels and manifests are ignored by Git; keep the build scripts and app
+source in the repository.
+The build script uses an isolated copy of the working tree under <code>build/wasm/</code>,
+preserves existing source edits, and resolves magenpy's latest stable GitHub release
+to an exact commit once per build. It looks for a matching
+<code>magenpy-VERSION-cp313-cp313-pyodide_2025_0_wasm32.whl</code> release asset. Native wheels,
+other Python/Pyodide ABIs, and wheels for another package version are not reused.</p>
+<p>A reused wheel is verified against GitHub's SHA-256 asset digest, or the adjacent
+<code>.whl.sha256</code> release asset when a digest is unavailable. Its internal package version,
+ABI metadata, and all three actual WASM extensions are also checked. Network,
+authentication, checksum, and corrupt-wheel errors fail the build; they do not
+silently trigger a source rebuild. Only absence of a compatible wheel triggers that
+fallback, using the selected release's commit rather than the development branch.
+The source archive checksum is recorded in build provenance.</p>
+<p>The selected release is recorded in <code>build/wasm/magenpy-release.json</code>. Native
+regression tests install the same release source using the generated
+<code>build/wasm/native-test-requirements.txt</code>, even when its WASM wheel is reused. The
+browser still loads its bundled local copy of the wheel, so "latest" is resolved
+at build time, never each time a visitor opens the app.</p>
+<p>For a repeatable release selection, pass <code>--magenpy-release v0.2.2</code> (or another
+published tag). The default is <code>--magenpy-release latest</code>, which excludes draft and
+prerelease releases. <code>build-info.json</code> records <code>magenpy.origin</code> as <code>release-asset</code>
+or <code>source-build</code>, along with the selected tag, commit, and checksums.</p>
+<p>Install <a href="https://docs.astral.sh/uv/">uv</a> and Git, then from the repository root run:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>--no-project<span class="w"> </span>--python<span class="w"> </span><span class="m">3</span>.13<span class="w"> </span>--with-requirements<span class="w"> </span>tools/wasm/requirements-build.txt<span class="w"> </span>pyodide<span class="w"> </span>xbuildenv<span class="w"> </span>install<span class="w"> </span><span class="m">0</span>.28.3
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># First-time compiler setup (skip the clone if this directory already exists):</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>--branch<span class="w"> </span><span class="m">4</span>.0.9<span class="w"> </span>https://github.com/emscripten-core/emsdk.git<span class="w"> </span>build/wasm/emsdk
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>build/wasm/emsdk/emsdk<span class="w"> </span>install<span class="w"> </span><span class="m">4</span>.0.9
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>build/wasm/emsdk/emsdk<span class="w"> </span>activate<span class="w"> </span><span class="m">4</span>.0.9
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="nb">source</span><span class="w"> </span>build/wasm/emsdk/emsdk_env.sh
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>uv<span class="w"> </span>run<span class="w"> </span>--no-project<span class="w"> </span>--python<span class="w"> </span><span class="m">3</span>.13<span class="w"> </span>--with-requirements<span class="w"> </span>tools/wasm/requirements-build.txt<span class="w"> </span>python<span class="w"> </span>tools/wasm/build.py
+</span></code></pre></div>
+<p>The build was exercised on macOS ARM64. It compiles the original <code>.pyx</code> and C++
+headers using the existing non-BLAS, single-threaded kernels. It avoids host BLAS
+and OpenMP probes by generating an Emscripten-specific setuptools configuration in
+the staging directory. The staged VIPRS package defers POSIX shared-memory imports
+until multiprocess grid search is requested, and omits the unused <code>psutil</code>
+requirement. Those features are outside the browser interface. The source tree's
+Python and C++ inference implementation is preserved.</p>
+<p>Tqdm's background monitor thread is disabled in the worker because this runtime
+uses a single thread. The worker sends initialization and run status messages;
+VIPRS completes optimization without per-iteration messages.</p>
+<p>The script writes the WASM wheels, pinned pure-Python wheels, runtime manifest, and
+build provenance into <code>docs/webapp/</code>. Use <code>--package viprs</code> to rebuild only VIPRS
+when a previous full build exists (keeping its already-selected magenpy wheel),
+<code>--package magenpy</code> to refresh magenpy's release selection, or <code>--bundle-only</code> to
+regenerate manifests from completed builds without querying releases.
+<code>--prepare-only</code> stages sources without compiling.</p>
+<p>See Pyodide's <a href="https://pyodide.org/en/0.28.3/development/building-packages.html">cross-build guide</a>
+and <a href="https://pyodide.org/en/0.28.3/usage/webworker.html">worker guide</a>.</p>
+<h2 id="publishing-magenpy-wasm-independently">Publishing magenpy WASM independently<a class="headerlink" href="#publishing-magenpy-wasm-independently" title="Permanent link">&para;</a></h2>
+<p>magenpy owns its standalone <code>.github/workflows/wasm.yml</code> and <code>tools/wasm/</code> build
+helpers in the magenpy repository. Its release workflow attaches three assets:</p>
+<ul>
+<li><code>magenpy-VERSION-cp313-cp313-pyodide_2025_0_wasm32.whl</code></li>
+<li>The same filename with <code>.sha256</code> appended</li>
+<li><code>magenpy-wasm.json</code> with version, source and compiler provenance</li>
+</ul>
+<p>It tests real imports and LD matrix operations in Pyodide before publishing. This
+workflow does not depend on VIPRS or build a VIPRS application. PR/push builds retain
+Actions artifacts; published releases attach the wheel to that release. There is a
+manual <code>release_tag</code> + <code>publish</code> option for adding WASM to an existing release using
+its tagged source and the new build helpers from the selected workflow branch.</p>
+<p>Once the magenpy workflow has been committed and pushed, an existing release can
+be backfilled without changing its tag, for example:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>gh<span class="w"> </span>workflow<span class="w"> </span>run<span class="w"> </span>wasm.yml<span class="w"> </span>--repo<span class="w"> </span>shz9/magenpy<span class="w"> </span>--ref<span class="w"> </span>master<span class="w"> </span>-f<span class="w"> </span><span class="nv">release_tag</span><span class="o">=</span>v0.2.2<span class="w"> </span>-f<span class="w"> </span><span class="nv">publish</span><span class="o">=</span><span class="nb">true</span>
+</span></code></pre></div>
+<p>Use the appropriate default branch if it differs. This command publishes assets;
+leave <code>publish=false</code> for an artifact-only test. A future VIPRS build will discover
+the attached wheel automatically. VIPRS does not upload its fallback build into the
+magenpy repository, and does not need credentials with cross-repository write access.
+If the two projects release simultaneously before the magenpy asset is attached,
+VIPRS safely uses the source-build fallback for that same release.</p>
+<h2 id="verification">Verification<a class="headerlink" href="#verification" title="Permanent link">&para;</a></h2>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_webapp.py<span class="w"> </span>tests/test_wasm_package.py<span class="w"> </span>tests/test_magenpy_release.py
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>node<span class="w"> </span>--test<span class="w"> </span>tests/webapp_sources.mjs<span class="w"> </span>tests/webapp_worker.mjs
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>python<span class="w"> </span>tests/webapp_fixtures.py
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>uv<span class="w"> </span>run<span class="w"> </span>--no-project<span class="w"> </span>--with<span class="w"> </span>playwright<span class="w"> </span>python<span class="w"> </span>tests/webapp_browser.py
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>uv<span class="w"> </span>run<span class="w"> </span>--no-project<span class="w"> </span>--with<span class="w"> </span>playwright<span class="w"> </span>python<span class="w"> </span>tests/webapp_ui.py
+</span></code></pre></div>
+<p>The UI-only browser check uses a stub worker to verify all 20 combinations of
+independent input sources, ancestry selection, local folder matching, the example
+shortcut, the threshold hover animation, responsive layouts, and reduced motion.</p>
+<p>The Python checks validate archive extraction, options, wheel hashes, WebAssembly
+magic bytes, the bundled VIPRS/VIPRSMix source, and joint inference on two chromosomes
+using separate and combined inputs. The JavaScript tests check HF/GitHub URL
+resolution, streamed input integrity, cleanup on failure, and acceptance above the
+old size thresholds with a simulated filesystem. The browser test runs the real chromosome 22 inference and asserts that
+WASM extension modules were loaded. It verifies eager initialization, runtime reuse,
+VIPRS and VIPRSMix with two chromosomes, downloads, cancellation, initialization
+retry, and mobile layout. Small generated fixtures are used only in integration tests;
+the application default remains the supplied chromosome 22 data. It writes reports, weights, and screenshots under
+<code>build/wasm/browser-test/</code>. If local copies of the supplied data are present under
+<code>build/wasm/test-data/</code>, it also checks file uploads against the default run.</p>
+<p>The compiled-bundle test skips on an ordinary source checkout without generated
+assets. CI sets <code>VIPRS_REQUIRE_WASM=1</code> so a missing bundle fails the WASM job.</p>
+<p>Install Playwright Chromium first, or set <code>VIPRS_BROWSER_EXECUTABLE</code> to an existing
+Chromium-based browser executable. The browser test needs network access to the
+runtime CDN and the two public data hosts, and starts its own loopback HTTP server.</p>
+<h2 id="browser-limits">Browser limits<a class="headerlink" href="#browser-limits" title="Permanent link">&para;</a></h2>
+<p>There is no application-imposed byte limit on input files or extracted LD data.
+The earlier 256 MiB per-file, 512 MiB combined, and 1 GiB extraction caps were
+conservative prototype guardrails, not VIPRS requirements. Local files and downloads
+are streamed into the virtual filesystem without assembling an extra full-file
+JavaScript buffer. Downloads have no fixed time limit; Cancel can stop a stalled transfer.
+This is still an in-memory application: staged files, extracted LD, and runtime arrays
+must fit in available browser memory. Arrays can occupy substantially more memory
+than the archives, especially with many mixture components. Multiple
+chromosomes are supported, but whole-genome memory use has not been validated.
+Up to 64 files per input type and 50,000 ZIP entries per archive are accepted.
+Archive traversal paths, symlinks, and duplicate paths are rejected.
+Streaming remote Zarr access, multiple worker threads,
+grid search, and genotype-based scoring are not implemented in the interface.</p>
+<p>Use file selection for local data: a typed filesystem path cannot grant a website
+access to your disk. Remote hosts must allow CORS. Data is fetched without credentials,
+and HTTPS pages require HTTPS input URLs. Cancel terminates the worker and releases
+its memory, then starts a new runtime in the background. Normal completed runs and
+input-validation failures reuse the initialized runtime; per-run staged files are
+removed after completion. Download results before leaving.
+Selected files are not sent to an inference server. Standard browser network caching
+still applies to runtime assets and hosted inputs.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../getting_started/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Getting Started">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Getting Started
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../download_ld/" class="md-footer__link md-footer__link--next" aria-label="Next: Download LD Reference">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Download LD Reference
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["announce.dismiss", "content.action.edit", "content.action.view", "content.code.annotate", "content.code.copy", "content.tooltips", "navigation.expand", "navigation.footer", "navigation.indexes", "navigation.tracking", "search.highlight", "search.share", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

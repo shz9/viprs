@@ -1,0 +1,21 @@
+{
+  "pyodide_version": "0.28.3",
+  "builtin_packages": [
+    "micropip",
+    "numpy",
+    "scipy",
+    "pandas",
+    "joblib",
+    "tqdm",
+    "scikit-learn",
+    "statsmodels",
+    "numcodecs",
+    "asciitree"
+  ],
+  "wheels": [
+    "./wheels/fasteners-0.20-py3-none-any.whl#sha256=9422c40d1e350e4259f509fb2e608d6bc43c0136f79a00db1b49046029d0b3b7",
+    "./wheels/magenpy-0.2.2-cp313-cp313-pyodide_2025_0_wasm32.whl#sha256=6c215837836336e6645e6a4916aaafa5d3cc1aa68d85ac7f637602636874098b",
+    "./wheels/viprs-0.1.5-cp313-cp313-pyodide_2025_0_wasm32.whl#sha256=e791181ab07cc169041693acb2c14d57e900697a1ced6f1e6b870dc0f2a6f3d7",
+    "./wheels/zarr-2.18.7-py3-none-any.whl#sha256=ac3dc4033e9ae4e9d7b5e27c97ea3eaf1003cc0a07f010bd83d5134bf8c4b223"
+  ]
+}

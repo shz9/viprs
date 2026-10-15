@@ -1,0 +1,42 @@
+{
+  "pyodide_version": "0.28.3",
+  "compiler": "Emscripten 4.0.9; single-threaded; C++ kernels without BLAS/OpenMP",
+  "magenpy_commit": "cb0f5575f06039bd63ffc96b817050d4d3bd8db3",
+  "magenpy": {
+    "version": "0.2.2",
+    "wheel": "magenpy-0.2.2-cp313-cp313-pyodide_2025_0_wasm32.whl",
+    "wheel_sha256": "6c215837836336e6645e6a4916aaafa5d3cc1aa68d85ac7f637602636874098b",
+    "extensions": [
+      "magenpy.stats.ld.c_utils",
+      "magenpy.stats.score.score_cpp",
+      "magenpy.stats.variant.variant_cpp"
+    ],
+    "origin": "release-asset",
+    "release_tag": "v0.2.2",
+    "release_url": "https://github.com/shz9/magenpy/releases/tag/v0.2.2",
+    "source_commit": "cb0f5575f06039bd63ffc96b817050d4d3bd8db3",
+    "asset_id": 635245526,
+    "asset_url": "https://github.com/shz9/magenpy/releases/download/v0.2.2/magenpy-0.2.2-cp313-cp313-pyodide_2025_0_wasm32.whl"
+  },
+  "viprs": {
+    "version": "0.1.5",
+    "source_sha256": "228183e630baf5d06ef6061e22aa1fe618d49eb18d553a9ff73d2ababeeeed05",
+    "extensions": [
+      "viprs.model.vi.e_step_cpp",
+      "viprs.utils.math_utils"
+    ]
+  },
+  "wheel_sha256": {
+    "fasteners-0.20-py3-none-any.whl": "9422c40d1e350e4259f509fb2e608d6bc43c0136f79a00db1b49046029d0b3b7",
+    "magenpy-0.2.2-cp313-cp313-pyodide_2025_0_wasm32.whl": "6c215837836336e6645e6a4916aaafa5d3cc1aa68d85ac7f637602636874098b",
+    "viprs-0.1.5-cp313-cp313-pyodide_2025_0_wasm32.whl": "e791181ab07cc169041693acb2c14d57e900697a1ced6f1e6b870dc0f2a6f3d7",
+    "zarr-2.18.7-py3-none-any.whl": "ac3dc4033e9ae4e9d7b5e27c97ea3eaf1003cc0a07f010bd83d5134bf8c4b223"
+  },
+  "source_commit": "6c3f5f8d7aed6b811905bf1a09269ee2087b2d1e",
+  "build_tools": [
+    "pyodide-build==0.30.7",
+    "pyodide-cli==0.5.0",
+    "typer==0.15.4",
+    "click==8.1.8"
+  ]
+}
