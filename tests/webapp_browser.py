@@ -135,7 +135,7 @@ def main():
                 assert multi_report["components"] == (3 if model == "VIPRSMix" else 1)
                 page.locator("#chromosome-filter").select_option("21")
                 assert page.locator("#result-rows tr").count() == 20
-                assert set(page.locator("#result-rows tr td:nth-child(2)").all_text_contents()) == {"21"}
+                assert set(page.locator("#result-rows tr td:first-child").all_text_contents()) == {"21"}
             page.locator("#sumstats-file").set_input_files(multi / "combined.tsv")
             page.locator("#ld-file").set_input_files(multi / "combined.zip")
             page.locator("#run").click()
