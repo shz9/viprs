@@ -1,4 +1,6 @@
 Commit ID,Date,Model,Configurations,Phenotype,Accuracy,Runtime,Sumstats,LD
+6c3f5f8d7aed6b811905bf1a09269ee2087b2d1e,2026-10-15,VIPRS,,height,0.336218,16.38,https://zenodo.org/records/14612130/files/HEIGHT.tar.gz,https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz
+6c3f5f8d7aed6b811905bf1a09269ee2087b2d1e,2026-10-15,VIPRSMix(K=4),,height,0.343416,59.13,https://zenodo.org/records/14612130/files/HEIGHT.tar.gz,https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz
 a69f78440094659944740bc43f17607f8e07d0d1,2026-10-15,VIPRS,,height,0.336213,20.30,https://zenodo.org/records/14612130/files/HEIGHT.tar.gz,https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz
 a69f78440094659944740bc43f17607f8e07d0d1,2026-10-15,VIPRSMix(K=4),,height,0.343416,59.43,https://zenodo.org/records/14612130/files/HEIGHT.tar.gz,https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz
 1e98bc77e816d5332bc01bbeb05bfa130871c022,2026-10-15,VIPRS,,height,0.336218,15.01,https://zenodo.org/records/14612130/files/HEIGHT.tar.gz,https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz
