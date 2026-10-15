@@ -24,8 +24,7 @@
         </nav>
       </div>
       <figure class="genetics-figure">
-        <svg viewBox="0 0 510 322" role="img" aria-labelledby="genetics-title genetics-description">
-          <title id="genetics-title">GWAS and LD inform polygenic score weights</title>
+        <svg viewBox="0 0 510 322" role="img" aria-label="GWAS and LD inform polygenic score weights" aria-describedby="genetics-description">
           <desc id="genetics-description">A Manhattan plot has clustered association peaks across 22 chromosomes, with hits at P below five times ten to the minus eight highlighted in coral. A six-variant LD matrix shows squared correlations. An arrow leads from these inputs to a bell-shaped distribution of polygenic scores with an illustrative upper-tail threshold. Scoring additionally requires individual genotypes; this application exports effect weights. All plotted data and the threshold are illustrative.</desc>
           <text class="plot-title" x="36" y="19">GWAS summary statistics</text>
           <text class="plot-title" x="361" y="19">LD reference</text>
@@ -88,8 +87,8 @@
     <div class="workspace">
       <form id="inference-form">
         <fieldset id="controls" class="configuration-panels">
-          <section class="card input-card" aria-labelledby="ld-heading">
-            <div class="section-heading"><div><p class="section-kicker">01 · Reference data</p><h2 id="ld-heading">LD reference</h2></div><span class="source-badge">Local + cloud</span></div>
+          <section class="card input-card ld-card" aria-labelledby="ld-heading">
+            <div class="section-heading"><div><p class="section-kicker">02 · Reference data</p><h2 id="ld-heading">LD reference</h2></div><span class="source-badge">Local + cloud</span></div>
             <label for="ld-source">LD source</label>
             <select id="ld-source"><option value="hosted">Hosted UK Biobank matrices</option><option value="files">Local ZIP archives</option><option value="folder">Local folder · glob patterns</option><option value="urls">Custom URLs · files or globs</option><option value="example">Example · European LD, chromosome 22</option></select>
             <div id="ld-hosted-inputs" class="hosted-source-card">
@@ -107,8 +106,8 @@
             <div id="ld-example-inputs" class="example-box" hidden><span class="chromosome" aria-hidden="true"><b>22</b></span><div class="example-copy"><strong>UK Biobank · European LD</strong><span>Chromosome 22 · HapMap3 variants</span></div><div class="example-links"><a href="https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip" target="_blank" rel="noopener noreferrer">LD ↗</a></div></div>
           </section>
 
-          <section class="card input-card" aria-labelledby="sumstats-heading">
-            <div class="section-heading"><div><p class="section-kicker">02 · GWAS data</p><h2 id="sumstats-heading">Summary statistics</h2></div></div>
+          <section class="card input-card sumstats-card" aria-labelledby="sumstats-heading">
+            <div class="section-heading"><div><p class="section-kicker">01 · GWAS data</p><h2 id="sumstats-heading">Summary statistics</h2></div></div>
             <label for="sumstats-source">Summary statistics source</label>
             <select id="sumstats-source"><option value="files">Local files</option><option value="folder">Local folder · glob patterns</option><option value="urls">Hosted URLs · files or globs</option><option value="example">Example · UK Biobank height, chromosome 22</option></select>
             <div id="sumstats-files-inputs"><label for="sumstats-file">Summary statistics files</label><input id="sumstats-file" type="file" accept=".tsv,.txt,.gz,.fastGWA" multiple><p class="hint">One combined file or one file per chromosome; plain text or gzip. Files stay on your computer.</p><p id="sumstats-file-summary" class="selection-summary" role="status"></p></div>
@@ -121,7 +120,7 @@
 
           <section class="card model-card">
             <div class="section-heading"><h2 class="panel-title"><svg class="panel-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h7m4 0h5M4 17h3m4 0h9"/><circle cx="13" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Model</h2></div>
-            <label for="model">Prior architecture</label><select id="model"><option value="VIPRS">VIPRS · spike-and-slab</option><option value="VIPRSMix">VIPRSMix · sparse mixture</option></select>
+            <label for="model">Prior architecture</label><select id="model"><option value="VIPRS">VIPRS · Spike and slab</option><option value="VIPRSMix">VIPRSMix · Sparse Mixture of Gaussians</option></select>
             <p id="model-help" class="hint">A point mass at zero and one Gaussian component for nonzero effects.</p>
             <div id="mixture-settings" hidden><label for="components">Non-null mixture components</label><input id="components" type="number" min="1" max="10" step="1" value="3" disabled required><p class="hint">Gaussian effect-size components in addition to the point mass at zero.</p></div>
             <details class="advanced"><summary>Optimization settings</summary><div class="two-columns"><div><label for="max-iter">Maximum iterations</label><input id="max-iter" type="number" min="3" max="5000" step="1" value="1000" required></div><div><label for="tolerance">Convergence tolerance</label><input id="tolerance" type="number" min="0.000000000001" max="0.01" step="any" value="0.000001" required></div><div><label for="seed">Random seed</label><input id="seed" type="number" min="0" max="4294967295" step="1" value="0" required></div></div></details>
@@ -145,7 +144,7 @@
       <div class="section-heading results-heading"><div><p class="section-kicker">Results</p><h2>Posterior effect estimates</h2></div><div class="downloads"><a id="download" class="button" download="viprs-weights.tsv">Download weights <span aria-hidden="true">↓</span></a><a id="download-report" class="button" download="viprs-run.json">Run report <span aria-hidden="true">↓</span></a></div></div>
       <p id="result-summary" class="result-summary"></p>
       <div class="result-toolbar"><label for="chromosome-filter">Chromosome</label><select id="chromosome-filter"><option value="">All chromosomes</option></select><span id="table-caption" class="hint"></span></div>
-      <div class="table-scroll" tabindex="0" role="region" aria-label="Posterior effect estimates"><table><thead><tr><th scope="col">SNP</th><th scope="col">CHR</th><th scope="col">A1</th><th scope="col">A2</th><th scope="col">PIP</th><th scope="col">BETA</th><th scope="col">VAR_BETA</th></tr></thead><tbody id="result-rows"></tbody></table></div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Posterior effect estimates"><table><thead><tr><th scope="col">CHR</th><th scope="col">SNP</th><th scope="col">A1</th><th scope="col">A2</th><th scope="col">PIP</th><th scope="col">BETA</th><th scope="col">VAR_BETA</th></tr></thead><tbody id="result-rows"></tbody></table></div>
       <p class="table-note">Top 20 variants by posterior inclusion probability (PIP). A1 is the effect allele; BETA and VAR_BETA are the posterior mean and variance. Downloads contain the complete fitted result.</p>
     </section>
 

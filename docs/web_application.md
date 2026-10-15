@@ -3,7 +3,7 @@
 Run VIPRS right in your browser—no local installation required. Your analysis runs on your
 device, so your input data is not uploaded to a remote server.
 
-<a class="md-button md-button--primary" href="webapp/index.html">🚀 Launch VIPRS in your browser</a>
+<a class="md-button md-button--primary" href="https://shz9.github.io/viprs/webapp/">🚀 Launch VIPRS in your browser</a>
 
 ---
 

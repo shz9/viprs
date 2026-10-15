@@ -63,6 +63,7 @@ def main():
             assert page.locator("#ld-source").input_value() == "hosted"
             assert page.locator("#sumstats-source").input_value() == "files"
             assert page.locator("#ld-hosted-path").text_content() == "hf://datasets/shz9/ukb-ld/EUR/chr_*.zip"
+            assert page.locator(".sumstats-card").evaluate("(el) => el.getBoundingClientRect().left") < page.locator(".ld-card").evaluate("(el) => el.getBoundingClientRect().left")
             assert page.locator(".resource-links a").evaluate_all("links => links.every(a => a.target === '_blank' && a.rel.includes('noopener'))")
             assert "User guide" not in page.locator(".resource-links").inner_text()
             assert "Shadi Zabad" in page.locator("footer").inner_text()
@@ -102,6 +103,8 @@ def main():
                 assert request["ld"] == [expected_ld[ld_source]]
                 assert request["options"]["sumstats_format"] == ("fastGWA" if summary_source == "example" else "magenpy")
                 assert request["options"]["tolerance"] == 1e-6
+            assert "UI fixture completed." not in page.locator("#result-summary").text_content()
+            assert page.locator("#status").text_content() == ""
             page.locator("#demo").click()
             assert all(page.locator(f"#{kind}-source").input_value() == "example" for kind in folders)
             page.locator("#ld-source").select_option("hosted")

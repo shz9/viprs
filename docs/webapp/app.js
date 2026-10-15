@@ -116,6 +116,10 @@ function startWorker() {
       status("Running", data.message, data.detail || "Preparing inputs for inference.");
       log(data.message + (data.detail ? ": " + data.detail : ""));
     }
+    if (data.type === "chromosome-complete") {
+      status("Running", "Fit progress", data.message);
+      log(data.message);
+    }
     if (data.type === "result") {
       try { showResult(data.result); }
       catch (error) {
@@ -162,7 +166,7 @@ function renderRows() {
   $("result-rows").replaceChildren();
   for (const row of rows) {
     const tr = document.createElement("tr");
-    for (const key of ["SNP", "CHR", "A1", "A2", "PIP", "BETA", "VAR_BETA"]) {
+    for (const key of ["CHR", "SNP", "A1", "A2", "PIP", "BETA", "VAR_BETA"]) {
       const td = document.createElement("td"), value = row[key];
       td.textContent = typeof value === "number" && ["PIP", "BETA", "VAR_BETA"].includes(key) ? value.toPrecision(5) : String(value ?? "—");
       tr.append(td);
@@ -185,11 +189,10 @@ function showResult(result) {
   $("chromosomes").textContent = report.chromosomes.length;
   $("iterations").textContent = report.iterations;
   $("timing-summary").textContent = `Input preparation ${report.timings.preparation_seconds.toFixed(1)}s · Model fitting ${report.timings.fit_seconds.toFixed(1)}s. Runtime initialization is excluded.`;
-  $("result-summary").textContent = `${report.model}${report.model === "VIPRSMix" ? ` · ${report.components} non-null components` : ""} · ${report.variants.toLocaleString()} variants across ${report.chromosomes.length} chromosome(s). ${report.message}`;
+  $("result-summary").textContent = `${report.model}${report.model === "VIPRSMix" ? ` · ${report.components} non-null components` : ""} · ${report.variants.toLocaleString()} variants across ${report.chromosomes.length} chromosome(s).`;
   $("results").hidden = $("metrics").hidden = $("timing-summary").hidden = false;
   $("elapsed").textContent = `${report.timings.run_seconds.toFixed(1)}s`;
-  status(report.converged ? "Converged" : "Iteration limit", "Analysis complete", report.message);
-  log(`Completed ${report.model}: ${report.variants} variants across ${report.chromosomes.length} chromosome(s).`);
+  status(report.converged ? "Converged" : "Iteration limit", "Analysis complete", "");
   finish();
 }
 

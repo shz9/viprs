@@ -50,9 +50,11 @@ h1 { margin: 0; max-width: 650px; font-size: clamp(32px,3.4vw,43px); font-weight
 .genetics-figure figcaption span { font-size: 9px; }
 
 .workspace { display: grid; grid-template-columns: minmax(0,1fr); gap: 24px; }
-.configuration-panels { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 24px; align-items: stretch; }
+.configuration-panels { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); grid-template-areas: "sumstats ld" "model model"; gap: 24px; align-items: stretch; }
 .configuration-panels > .card { min-width: 0; margin-bottom: 0; }
-.model-card { grid-column: 1 / -1; }
+.configuration-panels > .sumstats-card { grid-area: sumstats; }
+.configuration-panels > .ld-card { grid-area: ld; }
+.model-card { grid-area: model; }
 .hosted-source-card { margin-top: 18px; padding: 20px; border: 1px solid #c8d9cf; border-radius: 15px; background: #f8fbf8; }
 .hosted-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 13px; }
 .source-badge { padding: 5px 8px; border: 1px solid #bad8c8; border-radius: 999px; background: #edf5f0; color: var(--green); font: 500 9px ui-monospace, monospace; white-space: nowrap; }
@@ -155,7 +157,7 @@ footer { margin-top: 36px; padding: 24px 16px 18px; border-top: 1px solid var(--
 @media (max-width: 760px) {
   .hero { padding-top: 36px; grid-template-columns: 1fr; gap: 28px; }.hero-copy { max-width: 600px; }
   .genetics-figure { max-width: 480px; justify-self: center; }
-  .configuration-panels { grid-template-columns: 1fr; gap: 18px; }
+  .configuration-panels { grid-template-columns: 1fr; grid-template-areas: "sumstats" "ld" "model"; gap: 18px; }
   .monitor { grid-template-columns: minmax(0,1fr); }
   .monitor > .actions { grid-column: 1; grid-row: auto; margin-bottom: 16px; }.monitor > .runtime-area { grid-column: 1; grid-row: auto; justify-content: space-between; }
 }

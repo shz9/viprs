@@ -122,12 +122,39 @@ def test_matches_direct_loader_and_fit(multichrom_inputs, tmp_path, model_name):
              for root in browser.unpack_ld(archive, tmp_path / f"direct-{i}")]
     gdl = GWADataLoader(sumstats_files=list(map(str, summaries)), ld_store_files=roots,
                        sumstats_format="magenpy", temp_dir=str(tmp_path / "temp"), threads=1)
-    model = (VIPRSMix(gdl, K=3, threads=1)
-             if model_name == "VIPRSMix" else VIPRS(gdl, threads=1))
-    np.random.seed(0)
-    model.fit(disable_pbar=True)
-    assert rows == json.loads(model.to_table().to_json(orient="records", double_precision=15))
-    assert report["elbo"] == model.history["ELBO"]
+    expected_rows = []
+    elbo_histories = []
+    expected_iterations = 0
+    for chromosome, chromosome_gdl in sorted(gdl.split_by_chromosome().items()):
+        model = (VIPRSMix(chromosome_gdl, K=3, threads=1)
+                 if model_name == "VIPRSMix" else VIPRS(chromosome_gdl, threads=1))
+        np.random.seed(0)
+        model.fit(disable_pbar=True)
+        expected_rows.extend(json.loads(
+            model.to_table().to_json(orient="records", double_precision=15)
+        ))
+        elbo_histories.append(model.history["ELBO"])
+        expected_iterations += model.optim_result.nit
+        chromosome_gdl.cleanup()
+    expected_elbo = [
+        sum(history[min(i, len(history) - 1)] for history in elbo_histories)
+        for i in range(max(map(len, elbo_histories)))
+    ]
+    assert rows == expected_rows
+    assert report["elbo"] == expected_elbo
+    assert report["iterations"] == expected_iterations
+
+
+def test_reports_progress_after_each_chromosome(multichrom_inputs):
+    summaries, archives, _, _ = multichrom_inputs
+    progress = []
+    browser.native_fit(
+        summaries,
+        archives,
+        dict(OPTIONS, sumstats_format="magenpy"),
+        progress_callback=lambda *event: progress.append(event),
+    )
+    assert progress == [("21", 1, 2), ("22", 2, 2)]
 
 
 def test_optimization_defaults_match_viprs():

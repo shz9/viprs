@@ -150,7 +150,15 @@ self.onmessage = async ({data}) => {
     emit("log", {id: data.id, message: `Inputs staged in ${downloadSeconds.toFixed(1)}s. Model: ${data.options.model}; components: ${data.options.components}; maximum iterations: ${data.options.max_iter}; tolerance: ${data.options.tolerance}; seed: ${data.options.seed}.`});
     emit("phase", {id: data.id, message: `Fitting ${data.options.model || "VIPRS"}`, detail: "Harmonizing data and fitting variant effects across the selected chromosomes."});
     pyodide.globals.set("request_json", JSON.stringify(request));
-    output = JSON.parse(await pyodide.runPythonAsync("run_request(request_json)"));
+    pyodide.globals.set("progress_callback", (chromosome, completed, total) => {
+      emit("chromosome-complete", {
+        id: data.id, chromosome, completed, total,
+        message: `Finished chromosome ${chromosome} (${completed} of ${total}).`,
+      });
+    });
+    output = JSON.parse(
+      await pyodide.runPythonAsync("run_request(request_json, progress_callback)")
+    );
     output.report.pyodide_version = PYODIDE_VERSION;
     output.report.wheels = manifest.wheels;
     output.report.runtime_reused = runsStarted > 1;
@@ -166,6 +174,7 @@ self.onmessage = async ({data}) => {
       const {pyodide} = runtime;
       try {
         pyodide.globals.delete("request_json");
+        pyodide.globals.delete("progress_callback");
         pyodide.globals.set("work_path", workPath);
         pyodide.runPython("shutil.rmtree(work_path, ignore_errors=True); gc.collect()");
       } catch (error) { failure = failure || `Could not clean up run files: ${error.message || error}`; }

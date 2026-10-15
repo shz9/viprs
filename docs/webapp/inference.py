@@ -77,8 +77,8 @@ def unpack_ld(archive_path, destination):
     return [str(p) for p in roots]
 
 
-def native_fit(sumstats_paths, ld_paths, options):
-    """Prepare all chromosomes, then hand the entire optimization to one fit() call."""
+def native_fit(sumstats_paths, ld_paths, options, progress_callback=None):
+    """Fit each chromosome independently, then combine posterior estimates."""
     import magenpy
     from magenpy import GWADataLoader
     from magenpy.stats.ld import c_utils
@@ -109,32 +109,67 @@ def native_fit(sumstats_paths, ld_paths, options):
         )
 
         model_name = options.get("model", "VIPRS")
-        model = (
-            VIPRSMix(
-                gdl,
-                K=int(options.get("components", 3)),
-                threads=1,
-            )
-            if model_name == "VIPRSMix"
-            else VIPRS(gdl, threads=1)
-        )
         seed = int(options.get("seed", 0))
-        np.random.seed(seed)
+        chromosome_loaders = gdl.split_by_chromosome()
+        chromosomes = sorted(chromosome_loaders)
+        chromosome_rows = []
+        chromosome_results = {}
         fit_start = time.perf_counter()
-        # The model owns its EM loop. No subclass, callback, stepping, or iteration messages.
-        model.fit(
-            max_iter=max_iter,
-            x_abs_tol=tolerance,
-            f_abs_tol=tolerance,
-            disable_pbar=True,
-        )
-        fit_seconds = time.perf_counter() - fit_start
-        if not model.optim_result.valid_optim_result:
-            raise ValueError(
-                f"{model_name} optimization failed: {model.optim_result.message}"
+
+        for chromosome in chromosomes:
+            chromosome_gdl = chromosome_loaders[chromosome]
+            variants = int(chromosome_gdl.n_snps)
+            np.random.seed(seed)
+            model = (
+                VIPRSMix(
+                    chromosome_gdl,
+                    K=int(options.get("components", 3)),
+                    threads=1,
+                )
+                if model_name == "VIPRSMix"
+                else VIPRS(chromosome_gdl, threads=1)
             )
-        table = model.to_table()
-        rows = json.loads(table.to_json(orient="records", double_precision=15))
+            try:
+                # The model owns its EM loop. No subclass, callback, stepping, or iteration messages.
+                model.fit(
+                    max_iter=max_iter,
+                    x_abs_tol=tolerance,
+                    f_abs_tol=tolerance,
+                    disable_pbar=True,
+                )
+                if not model.optim_result.valid_optim_result:
+                    raise ValueError(
+                        f"{model_name} optimization failed for chromosome {chromosome}: "
+                        f"{model.optim_result.message}"
+                    )
+                table = model.to_table()
+                chromosome_rows.extend(
+                    json.loads(table.to_json(orient="records", double_precision=15))
+                )
+                chromosome_results[chromosome] = {
+                    "elbo": [float(value) for value in model.history["ELBO"]],
+                    "iterations": int(model.optim_result.nit),
+                    "converged": bool(model.optim_result.converged),
+                    "message": str(model.optim_result.message),
+                    "variants": variants,
+                }
+            finally:
+                chromosome_gdl.cleanup()
+            if progress_callback is not None:
+                progress_callback(str(chromosome), len(chromosome_results), len(chromosomes))
+        fit_seconds = time.perf_counter() - fit_start
+        elbo_histories = [
+            chromosome_results[c]["elbo"] for c in chromosomes
+        ]
+        elbo = [
+            sum(history[min(i, len(history) - 1)] for history in elbo_histories)
+            for i in range(max(map(len, elbo_histories)))
+        ]
+        messages = [
+            f"chr{chromosome}: {chromosome_results[chromosome]['message']}"
+            for chromosome in chromosomes
+        ]
+        rows = chromosome_rows
         report = {
             "engine": f"{model_name} {__version__} (WebAssembly)",
             "model": model_name,
@@ -142,16 +177,22 @@ def native_fit(sumstats_paths, ld_paths, options):
             if model_name == "VIPRSMix"
             else 1,
             "variants": len(rows),
-            "chromosomes": list(map(str, sorted(gdl.ld))),
-            "variants_per_chromosome": {str(c): int(n) for c, n in gdl.shapes.items()},
-            "iterations": int(model.optim_result.nit),
-            "converged": bool(model.optim_result.converged),
-            "message": str(model.optim_result.message),
+            "chromosomes": list(map(str, chromosomes)),
+            "variants_per_chromosome": {
+                str(c): chromosome_results[c]["variants"] for c in chromosomes
+            },
+            "iterations": sum(
+                chromosome_results[c]["iterations"] for c in chromosomes
+            ),
+            "converged": all(
+                chromosome_results[c]["converged"] for c in chromosomes
+            ),
+            "message": "; ".join(messages),
             "options": options,
             "seed": seed,
             "magenpy_version": magenpy.__version__,
             "extensions": {"viprs": e_step_cpp.__file__, "magenpy": c_utils.__file__},
-            "elbo": [float(v) for v in model.history["ELBO"]],
+            "elbo": elbo,
             "timings": {
                 "preparation_seconds": fit_start - preparation_start,
                 "fit_seconds": fit_seconds,
@@ -194,9 +235,12 @@ def serialize_result(rows, report):
     )
 
 
-def run_request(request_json):
+def run_request(request_json, progress_callback=None):
     request = json.loads(request_json)
     rows, report = native_fit(
-        request["sumstats_paths"], request["ld_paths"], request["options"]
+        request["sumstats_paths"],
+        request["ld_paths"],
+        request["options"],
+        progress_callback=progress_callback,
     )
     return serialize_result(rows, report)
