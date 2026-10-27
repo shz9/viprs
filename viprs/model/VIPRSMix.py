@@ -409,7 +409,15 @@ class VIPRSMix(VIPRS):
                 1.0 / (np.min(self.d) * getattr(self, "_parameter_scale", 1.0)),
             )
 
-            self.tau_beta = self.d * global_tau
+            self.tau_beta = self._cast_parameter(self.d * global_tau)
+
+    def update_sigma_epsilon(self):
+        """Update residual variance without promoting float32 models."""
+
+        super().update_sigma_epsilon()
+        self.sigma_epsilon = np.dtype(self.float_precision).type(
+            self.sigma_epsilon
+        )
 
     def get_null_pi(self, chrom=None):
         """

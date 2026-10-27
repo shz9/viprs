@@ -312,6 +312,27 @@ def test_fixed_parameter_aliases_and_constrained_tau_update():
     np.testing.assert_array_equal(model.tau_beta, fixed_taus)
 
 
+def test_m_step_preserves_float32_hyperparameters():
+    model = make_mix_model(m=2, k=2)
+    model.float_precision = "float32"
+    model.d = model.d.astype(np.float32)
+    model.fix_params = {}
+    model._parameter_scale = 1.0
+    model._e_step_statistics = {
+        "gamma_sum": np.array([0.3, 0.4], dtype=np.float64),
+        "component_zeta": np.array([0.1, 0.2], dtype=np.float64),
+    }
+    model.std_beta = {1: np.array([0.1, -0.2], dtype=np.float32)}
+    model.eta = {1: np.array([0.05, -0.1], dtype=np.float32)}
+    model._sigma_g = np.float64(0.25)
+
+    model.update_tau_beta()
+    model.update_sigma_epsilon()
+
+    assert model.tau_beta.dtype == np.float32
+    assert isinstance(model.sigma_epsilon, np.float32)
+
+
 def test_fixed_shared_parameters_override_initial_component_values():
     model = make_mix_model(m=10, k=2)
     model.fix_params = {"pi": 0.3, "tau_beta": 20.0}
