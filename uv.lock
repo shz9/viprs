@@ -908,7 +908,7 @@ wheels = [
 
 [[package]]
 name = "magenpy"
-version = "0.2.0"
+version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "joblib" },
@@ -917,31 +917,30 @@ dependencies = [
     { name = "numpy", version = "2.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "psutil" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "tqdm" },
     { name = "zarr", version = "2.18.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "zarr", version = "2.18.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b3/e7/9f653ae5fca621318c1c35d50c3fd7f29ad244146c7a0a51c9ec1e16b20b/magenpy-0.2.0.tar.gz", hash = "sha256:4c8d5228721eb61dd0c0ca4b5e4388ea00763560094a688e36fb6d3eff2e60a2", size = 1329945, upload-time = "2026-07-01T23:46:31.981Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ec/b0/9a18a0860be52f9d151b0b5b47e06b49bb30cb0a83c19203feb6d63302e8/magenpy-0.2.3.tar.gz", hash = "sha256:bcb74d8d4c763fee674a882e62ea5a3c7d7c8bcca660e7f03ded1e8c99a232fd", size = 1373204, upload-time = "2026-10-27T21:06:55.369Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9a/ce/050994ff5f4daf1cd4d3897346fcb6cebeba9aafd17d83c845db07d1e074/magenpy-0.2.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:b44b58eff8866c7087cea4288c1047f0977628fc391b41dd9f142d18d8baab4e", size = 2067442, upload-time = "2026-07-01T22:13:40.962Z" },
-    { url = "https://files.pythonhosted.org/packages/3e/88/adaf5307d1f15d4e57469e82dbb529655ec3198bdf0abc7f4e06e3efaa86/magenpy-0.2.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:dcd48b2f9f8fb9978e7487f29112d138d4de03bfbea8fb42ae4dc66cd8e113ca", size = 1932530, upload-time = "2026-07-01T23:46:09.259Z" },
-    { url = "https://files.pythonhosted.org/packages/f1/ac/02eacfda0e113cc868fe9184c0a78df775b536101b076c59fd74a7e6f8df/magenpy-0.2.0-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:73b7c1ccc4fe62eb38d1131c4332fea0f523c1712445e29e3fe655bbee4b728d", size = 7256063, upload-time = "2026-07-01T23:46:10.841Z" },
-    { url = "https://files.pythonhosted.org/packages/6c/fe/2f2b3a045531060322f6cd53dcea17539ffa4d006f64bea9cb196dc2862d/magenpy-0.2.0-cp310-cp310-win_amd64.whl", hash = "sha256:b328406f24d5b509b9b010efc6f66fb025c4f2a94dab7a4142218b096a0eb496", size = 2196020, upload-time = "2026-07-01T23:46:12.372Z" },
-    { url = "https://files.pythonhosted.org/packages/1a/7e/1167ba0993d573cca662ac4ae7678333bd725bed7b62edadd95b1d63e737/magenpy-0.2.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:1678b973c18b9aad3e153479a2beb65d8b842ac96a07069facb49f9faef97fbc", size = 2058648, upload-time = "2026-07-01T23:46:13.779Z" },
-    { url = "https://files.pythonhosted.org/packages/56/7b/3a86ecfa5a41e470876b97d16793bd2bb7952f63f00d43170b056d0ed0e9/magenpy-0.2.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:3305806804aac6f58dd7aec4325a9e11aab5b945edc290dc84fc8636662339ce", size = 1915495, upload-time = "2026-07-01T23:46:15.2Z" },
-    { url = "https://files.pythonhosted.org/packages/49/63/60d30d87b3095921e8082c1bb60ed70fd75468dfc35136e8e2c1799236a1/magenpy-0.2.0-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3aaf4a4405b8b232d905655c59a518310beb0428d6e42d808d1c05ac9a379354", size = 7408052, upload-time = "2026-07-01T23:46:16.538Z" },
-    { url = "https://files.pythonhosted.org/packages/43/a2/79afc9231311371a7f64f6e44565d788afc9ed53f7b56be3da004832874b/magenpy-0.2.0-cp311-cp311-win_amd64.whl", hash = "sha256:d8655510845454fd5c8e6984abfa87986d5aed901cd8087e9f8788f8c4aa2461", size = 2197118, upload-time = "2026-07-01T23:46:18.149Z" },
-    { url = "https://files.pythonhosted.org/packages/f0/05/60f5f7b27e970d90519162398d850517f943a4bf46d239c3ab89ee71e0b8/magenpy-0.2.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:243d0e8d688c1641c03e84545275805f617f8e7638f53322e069f92a7a55ba88", size = 2042065, upload-time = "2026-07-01T23:46:19.59Z" },
-    { url = "https://files.pythonhosted.org/packages/51/6b/acbd113759114499e7bc2f154fd3331ed256aed457e1e490247de4f11129/magenpy-0.2.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:44e8c9a3c3f85c730b1da37d722201b2dba89150133bb22cde15147450f6e0e4", size = 1894994, upload-time = "2026-07-01T23:46:21.138Z" },
-    { url = "https://files.pythonhosted.org/packages/5e/b4/d20a6ad2100686073de579efc32dbfe939822754e91468ef178b27993c9b/magenpy-0.2.0-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5b616c319c2280f2d93528ec578d1fc0f9f6ec96841e66f6b4fa9c6d2b9d5125", size = 7292785, upload-time = "2026-07-01T23:46:22.843Z" },
-    { url = "https://files.pythonhosted.org/packages/59/7c/acf0bac5dca700111945d3895a20bf6cd0bf7b638816780c105af3f3087e/magenpy-0.2.0-cp312-cp312-win_amd64.whl", hash = "sha256:e035fd19bf34af69cb31cdc158d33ced958ba4efc22c35dcab65e78468decc1c", size = 2160107, upload-time = "2026-07-01T23:46:24.616Z" },
-    { url = "https://files.pythonhosted.org/packages/83/22/f68ebd8e63949eff31f7f21b46cd8eff79568d23a3de96cab2d444fd8d95/magenpy-0.2.0-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:6c1fa4f48f4079fb0661441ee94653065fa6bf5926e2974da931494205165c6a", size = 2039560, upload-time = "2026-07-01T23:46:26.065Z" },
-    { url = "https://files.pythonhosted.org/packages/b4/34/8058d4ff568470fe8b0dd5c13cdba06014f8e97800d933d3548371ca9760/magenpy-0.2.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:d395a2e383a08976b948d090bbcaf6f3387703154d573a33a6f0f75419eecfb1", size = 1893482, upload-time = "2026-07-01T23:46:27.385Z" },
-    { url = "https://files.pythonhosted.org/packages/3b/c2/bb06eac6a879a3c424112eecc66fabadd014ab4cdd12f0e2774fc27db31e/magenpy-0.2.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c4985ee4a7d982a24198e61c7cd2699af284b832fbfbcd019d13e2939b724344", size = 7220730, upload-time = "2026-07-01T23:46:29.074Z" },
-    { url = "https://files.pythonhosted.org/packages/48/a5/cb1d1af00de33298f59f5be7fdb816e13fe33c6204d54f7da1a5992f2afd/magenpy-0.2.0-cp313-cp313-win_amd64.whl", hash = "sha256:6d246d0eb76eea2a45949ec5cf988508f60ccc05bb3e85a03ce1dc61e18e30f7", size = 2158219, upload-time = "2026-07-01T23:46:30.773Z" },
+    { url = "https://files.pythonhosted.org/packages/40/2a/46c390b59ea8f3074c79590efa03739da2320d8b52ca0739a83572f44e65/magenpy-0.2.3-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:89dea39080fb35f14d241a107b2a36ee40e3d753a8043788ea6578e3f1caca44", size = 2137920, upload-time = "2026-10-27T21:06:34.098Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/ef/bd617cd2815be3bfb958834acb19ce74190df56b27e6a7e939f081edef57/magenpy-0.2.3-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:3a2d399a39f902741cc1a20a1c05fecf54b3463e79b5f7315c3012b8b61ce52d", size = 1997122, upload-time = "2026-10-27T21:06:35.543Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/7d/a991d4758d24866affa2628daea3789a68f3cededd565b578e00410b4d30/magenpy-0.2.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1898cad2c7a397bb670031862b1851685575195d1ab6d2cf1409341c1b7aea24", size = 7460717, upload-time = "2026-10-27T21:06:36.796Z" },
+    { url = "https://files.pythonhosted.org/packages/46/52/835c24a389ae7e163e1e2acd75925b121dc352bf9c0c6862af35aa83dd4e/magenpy-0.2.3-cp310-cp310-win_amd64.whl", hash = "sha256:56ec3259b2e03a6b03ea8d4931fc40b73bbdf7f0e318243cde0f4ae6ddad1752", size = 2258119, upload-time = "2026-10-27T21:06:38.201Z" },
+    { url = "https://files.pythonhosted.org/packages/29/ab/81d7905261911ccbf32c61b9beb61f29518d3f57c7162963aa741f097bb4/magenpy-0.2.3-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:fd056cab4a8feb8963110fb5fcfafd4c325b7ed4cd0bcc6b23c5958bcebe9b10", size = 2130745, upload-time = "2026-10-27T21:06:39.457Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/1d/6613b6153f895ba2331cf9e39f2efddb421b9e182e0e7e8a8b55316a4fe7/magenpy-0.2.3-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:be99160694830e7f9c1c9a315d81f73b77e8005944fdf476e54f856095be78fd", size = 1979669, upload-time = "2026-10-27T21:06:40.569Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/7d/92ade4937debdbbb48a7eb7cc560b5cfd3308f4d6af910dba07d5a4993c4/magenpy-0.2.3-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:27b3c925cf21b2d789805a3e6d2bb8dc1af2110ef5e87ecf200c9fe2e1ca6dfc", size = 7588514, upload-time = "2026-10-27T21:06:41.732Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/0d/31063013997b3dcd363852216350e879de3defbbc8d325b0bdfb1b53fc66/magenpy-0.2.3-cp311-cp311-win_amd64.whl", hash = "sha256:d71442127f135b043154a4836c43d86d234d5eae42fd0d09d49244e09380d851", size = 2257016, upload-time = "2026-10-27T21:06:43.162Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/56/8e7e82e3c1407534d6d8307d01ddbc46ddbd951209708dc9d1c629dab907/magenpy-0.2.3-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:7b17bf02e56a22711446bd82cb26943d9feb300db7faa53f7de285baeb0cf688", size = 2112018, upload-time = "2026-10-27T21:06:44.402Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/89/f278b40c628cd1a5b8e8b9ae9e4c15298d7fe15f1a8e0c7f393b15e1173e/magenpy-0.2.3-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:de5155bad5fd3889f0b4423a44452e5c67714d32cb7bd990e11e438f7572b828", size = 1972521, upload-time = "2026-10-27T21:06:45.424Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/ae/8b0fa6be40d7d93d0d2cca706f56b03c6ea6b6c145e4905a91119a58c0a6/magenpy-0.2.3-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a38ff3fec6bb8b5a10ff410b4e3ccb7864414f9c49d6f668a05e9da1e3a72440", size = 7508047, upload-time = "2026-10-27T21:06:47.086Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/fc/8b82964de910d4bd545624c80556b215e239836ee46ba633f700c3caf54f/magenpy-0.2.3-cp312-cp312-win_amd64.whl", hash = "sha256:4f0c8fe302ea6c167e2fdaba2269ec07424210b8d1c36d3f9e30706298a598f1", size = 2202808, upload-time = "2026-10-27T21:06:48.361Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/1b/f6d6bd5c96355c931c72f47cc6cf22fb218bce30ca6fdbbf1ae5733cbec2/magenpy-0.2.3-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:14a00c320162003016d86c72e108504e09ccbcd1343715a96a286e8a1c5f5a0e", size = 2127672, upload-time = "2026-10-27T21:06:49.9Z" },
+    { url = "https://files.pythonhosted.org/packages/96/b6/188aa361598597afc9c683aeeafcc9a1e4cfbbf59c196ff6ce219ec3d67b/magenpy-0.2.3-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:7cbb53484f6f37cf12769b8f5508b7b69696b5a57246c77767250277ffdf6226", size = 1972210, upload-time = "2026-10-27T21:06:51.269Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/64/50e205554f6e0512bed68d0420852c55ced6d79caf2eb02677deca040060/magenpy-0.2.3-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f7dfaeca2678059d10baef033296d148a2b1acf31e6277b9911e5d01d697a2da", size = 7384247, upload-time = "2026-10-27T21:06:52.511Z" },
+    { url = "https://files.pythonhosted.org/packages/72/f3/63508c768602133b8864390d11a37742aa963453c0372b2f81e88a88f1e4/magenpy-0.2.3-cp313-cp313-win_amd64.whl", hash = "sha256:1f4f0fd85fd9c3b017fb96de71ed1b5fd5cd3c2e155c903b870c2229a092eb83", size = 2201911, upload-time = "2026-10-27T21:06:53.983Z" },
 ]
 
 [[package]]
@@ -2521,7 +2520,7 @@ test = [
 requires-dist = [
     { name = "huggingface-hub", marker = "extra == 'opt'" },
     { name = "joblib" },
-    { name = "magenpy", specifier = ">=0.1.5" },
+    { name = "magenpy", specifier = ">=0.2.3" },
     { name = "matplotlib", marker = "extra == 'opt'" },
     { name = "mkdocs", marker = "extra == 'docs'" },
     { name = "mkdocs-material", marker = "extra == 'docs'" },

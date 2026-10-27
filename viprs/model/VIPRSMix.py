@@ -63,6 +63,19 @@ class VIPRSMix(VIPRS):
             c: n[:, None].astype(self.float_precision, order=self.order)
             for c, n in self.n_per_snp.items()
         }
+        self._e_step_statistics = None
+
+    def initialize_variational_parameters(self, param_0=None):
+        """Initialize variational parameters and invalidate cached statistics."""
+
+        super().initialize_variational_parameters(param_0)
+        self._e_step_statistics = None
+
+    def _set_optimization_scale(self, target_scale):
+        """Rescale model parameters and invalidate scale-dependent statistics."""
+
+        super()._set_optimization_scale(target_scale)
+        self._e_step_statistics = None
 
     def initialize_theta(self, theta_0=None):
         """
@@ -171,7 +184,22 @@ class VIPRSMix(VIPRS):
         Epub 2023 Apr 7. PMID: 37030289; PMCID: PMC10183379.
         """
 
+        # Step 1: Initialize genome-wide sufficient statistics. The native
+        # kernel adds each chromosome's contribution to these arrays.
+        statistics = {
+            "gamma_sum": np.zeros(self.K, dtype=np.float64),
+            "component_zeta": np.zeros(self.K, dtype=np.float64),
+            # gamma*log(gamma), null*log(null), gamma*log(var_tau), null
+            "elbo": np.zeros(4, dtype=np.float64),
+        }
+        self._e_step_statistics = None
+        if not hasattr(self, "zeta"):
+            self.zeta = {}
+
         for c, shapes in self.shapes.items():
+            if c not in self.zeta or self.zeta[c].shape != (shapes[0],):
+                self.zeta[c] = np.empty(shapes[0], dtype=np.float64)
+
             # Get the priors:
             tau_beta = self.get_tau_beta(c)
             pi = self.get_pi(c)
@@ -214,14 +242,75 @@ class VIPRSMix(VIPRS):
                 self.eta_diff[c],
                 log_null_pi,
                 u_logs,
+                self.var_tau[c],
+                self._log_var_tau[c],
                 np.sqrt(0.5 * self.var_tau[c]).astype(self.float_precision),
                 mu_mult,
+                self.zeta[c],
+                statistics["gamma_sum"],
+                statistics["component_zeta"],
+                statistics["elbo"],
                 self.dequantize_scale,
                 self.threads,
                 self.low_memory,
             )
 
-        self.zeta = self.compute_zeta()
+        # Step 2: Publish the statistics only after every chromosome has
+        # completed, so downstream updates cannot observe partial values.
+        self._e_step_statistics = statistics
+
+    def elbo(self, sum_axis=None):
+        """Compute the scalar ELBO from E-step sufficient statistics."""
+
+        statistics = getattr(self, "_e_step_statistics", None)
+        if (
+            statistics is None
+            or sum_axis is not None
+            or isinstance(self.pi, dict)
+            or isinstance(self.tau_beta, dict)
+        ):
+            return super().elbo(sum_axis=sum_axis)
+
+        # Step 1: Compute the likelihood contribution, which is independent
+        # of the component-wise reductions cached by the E-step.
+        parameter_scale = getattr(self, "_parameter_scale", 1.0)
+        elbo = -np.log(2.0 * np.pi * self.sigma_epsilon)
+        if "sigma_epsilon" not in self.fix_params:
+            elbo -= 1.0
+        else:
+            beta_eta = sum(
+                self.std_beta[c].astype(np.float64).dot(
+                    self.eta[c].astype(np.float64)
+                )
+                for c in self.shapes
+            )
+            elbo -= (1.0 / self.sigma_epsilon) * (
+                1.0
+                - 2.0 * beta_eta / parameter_scale
+                + self._sigma_g / parameter_scale
+            )
+        elbo *= 0.5 * self.n
+
+        # Step 2: Reconstruct all mixture terms from the cached scalar and
+        # component statistics, reducing the remaining work to O(K).
+        gamma_sum = statistics["gamma_sum"]
+        component_zeta = statistics["component_zeta"]
+        gamma_log_gamma, null_log_null, gamma_log_var_tau, null_sum = (
+            statistics["elbo"]
+        )
+        pi = np.asarray(self.pi, dtype=np.float64)
+        tau_beta = np.asarray(self.tau_beta, dtype=np.float64)
+        null_pi = 1.0 - pi.sum()
+
+        elbo -= gamma_log_gamma - np.dot(gamma_sum, np.log(pi))
+        elbo -= null_log_null - null_sum * np.log(null_pi)
+        elbo += 0.5 * (
+            gamma_sum.sum()
+            - gamma_log_var_tau
+            + np.dot(gamma_sum, np.log(tau_beta))
+        )
+        elbo -= 0.5 * np.dot(tau_beta, component_zeta)
+        return elbo
 
     def set_fixed_params(self, fix_params):
         """Set fixed mixture hyperparameters, including their plural aliases."""
@@ -279,7 +368,11 @@ class VIPRSMix(VIPRS):
         """
 
         if "pis" not in self.fix_params:
-            pi_estimate = dict_sum(self.var_gamma, axis=0)
+            statistics = getattr(self, "_e_step_statistics", None)
+            if statistics is None:
+                pi_estimate = dict_sum(self.var_gamma, axis=0)
+            else:
+                pi_estimate = statistics["gamma_sum"].copy()
 
             if "pi" in self.fix_params:
                 # If the user provides an estimate for the total proportion of causal variants,
@@ -289,7 +382,7 @@ class VIPRSMix(VIPRS):
                 pi_estimate /= self.n_snps
 
             # Set pi to the new estimate:
-            self.pi = pi_estimate
+            self.pi = self._cast_parameter(pi_estimate)
 
     def update_tau_beta(self):
         """
@@ -300,8 +393,13 @@ class VIPRSMix(VIPRS):
             # Estimate a shared precision scale and apply the component-specific
             # precision multipliers. This is the constrained mixture M-step.
 
-            zetas = sum(self.compute_zeta(sum_axis=0).values())
-            total_responsibility = dict_sum(self.var_gamma)
+            statistics = getattr(self, "_e_step_statistics", None)
+            if statistics is None:
+                zetas = sum(self.compute_zeta(sum_axis=0).values())
+                total_responsibility = dict_sum(self.var_gamma)
+            else:
+                zetas = statistics["component_zeta"]
+                total_responsibility = statistics["gamma_sum"].sum()
 
             global_tau = total_responsibility / np.dot(self.d, zetas)
             # Preserve the exact component ratios while enforcing tau_k >= 1

@@ -94,6 +94,11 @@ def test_mixture_skips_negligible_ld_update(low_memory):
     eta_diff = np.ones(1, dtype=np.float64)
     var_gamma = np.zeros((1, 1), dtype=np.float64)
     var_mu = np.zeros((1, 1), dtype=np.float64)
+    var_tau = np.ones((1, 1), dtype=np.float64)
+    zeta = np.zeros(1, dtype=np.float64)
+    gamma_sum = np.zeros(1, dtype=np.float64)
+    component_zeta = np.zeros(1, dtype=np.float64)
+    elbo_stats = np.zeros(4, dtype=np.float64)
 
     cpp_e_step_mixture(
         np.zeros(1, dtype=np.intc),
@@ -107,8 +112,14 @@ def test_mixture_skips_negligible_ld_update(low_memory):
         eta_diff,
         np.zeros(1, dtype=np.float64),
         np.zeros((1, 1), dtype=np.float64),
+        var_tau,
+        np.log(var_tau),
         np.ones((1, 1), dtype=np.float64),
         np.ones((1, 1), dtype=np.float64),
+        zeta,
+        gamma_sum,
+        component_zeta,
+        elbo_stats,
         np.float64(1.0),
         1,
         low_memory,
@@ -119,6 +130,22 @@ def test_mixture_skips_negligible_ld_update(low_memory):
     np.testing.assert_array_equal(eta, old_eta)
     np.testing.assert_allclose(var_gamma, expected_gamma, rtol=0.0, atol=1e-15)
     np.testing.assert_array_equal(var_mu, 1.0)
+    np.testing.assert_allclose(zeta, 2.0 * expected_gamma, rtol=0.0, atol=1e-15)
+    np.testing.assert_allclose(gamma_sum, expected_gamma, rtol=0.0, atol=1e-15)
+    np.testing.assert_allclose(
+        component_zeta, 2.0 * expected_gamma, rtol=0.0, atol=1e-15
+    )
+    np.testing.assert_allclose(
+        elbo_stats,
+        [
+            expected_gamma * np.log(expected_gamma),
+            (1.0 - expected_gamma) * np.log(1.0 - expected_gamma),
+            0.0,
+            1.0 - expected_gamma,
+        ],
+        rtol=0.0,
+        atol=1e-15,
+    )
 
 
 @pytest.mark.parametrize("low_memory", [False, True])

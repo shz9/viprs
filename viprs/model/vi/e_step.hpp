@@ -359,9 +359,8 @@ e_step(int c_size,
         assumes that the variational tau (inverse variance) have been updated prior to calling this function.
 
         In addition to updating the variational posterior parameters var_gamma and var_mu, the function also
-        computes certain quantities that are used in the M-step of the CAVI algorithm. These quantities include
-        the q-factor for each variant (the dot product between the LD matrix and the posterior mean), and eta_diff,
-        defined as the difference between the current value of eta and the updated value of eta.
+        computes quantities used by the M-step and ELBO. These include the q-factor, eta_diff, per-variant zeta,
+        component responsibility and zeta sums, and scalar entropy terms.
     */
 
     int start, end;
@@ -450,8 +449,14 @@ e_step_mixture(int c_size,
                 T* eta_diff,
                 T* log_null_pi,
                 T* u_logs,
+                T* var_tau,
+                T* log_var_tau,
                 T* sqrt_half_var_tau,
                 T* mu_mult,
+                double* zeta,
+                double* gamma_sum,
+                double* component_zeta,
+                double* elbo_stats,
                 T dq_scale,
                 int threads,
                 bool low_memory) {
@@ -484,6 +489,14 @@ e_step_mixture(int c_size,
         T mu_beta_j, mu_tau_j, eta_diff_j;
         T* u_j = new T[K + 1];
 
+        // Accumulate component and ELBO statistics privately, then merge once
+        // per thread to avoid synchronization in the per-variant loop.
+        double* thread_gamma_sum = new double[K]();
+        double* thread_component_zeta = new double[K]();
+        // Entries are sum(gamma*log(gamma)), sum(null*log(null)),
+        // sum(gamma*log(var_tau)), and sum(null), respectively.
+        double thread_elbo_stats[4] = {0., 0., 0., 0.};
+
         #ifdef _OPENMP
             #pragma omp for schedule(static)
         #endif
@@ -511,11 +524,40 @@ e_step_mixture(int c_size,
 
             /* Update eta_diff for variant j */
             eta_diff_j = -eta[j];
+            T pip_j = 0.;
+            double zeta_j = 0.;
 
             for (int k = 0; k < K; ++k) {
                 mat_idx = j*K + k; // Assumes C-order matrices.
                 eta_diff_j = std::fma(var_gamma[mat_idx], var_mu[mat_idx], eta_diff_j);
+
+                // Cache posterior sufficient statistics while the component
+                // parameters are already in the processor cache.
+                T gamma_j = var_gamma[mat_idx];
+                double clipped_gamma = clamp(
+                    static_cast<double>(gamma_j), 1e-15, 1. - 1e-15
+                );
+                double component_second_moment = static_cast<double>(gamma_j) * (
+                    static_cast<double>(var_mu[mat_idx]) * var_mu[mat_idx]
+                    + 1. / static_cast<double>(var_tau[mat_idx])
+                );
+
+                pip_j += gamma_j;
+                zeta_j += component_second_moment;
+                thread_gamma_sum[k] += static_cast<double>(gamma_j);
+                thread_component_zeta[k] += component_second_moment;
+                thread_elbo_stats[0] += clipped_gamma * std::log(clipped_gamma);
+                thread_elbo_stats[2] += (
+                    clipped_gamma * static_cast<double>(log_var_tau[mat_idx])
+                );
             }
+
+            double null_gamma = clamp(
+                1. - static_cast<double>(pip_j), 1e-15, 1. - 1e-15
+            );
+            zeta[j] = zeta_j;
+            thread_elbo_stats[1] += null_gamma * std::log(null_gamma);
+            thread_elbo_stats[3] += null_gamma;
 
             if (std::abs(eta_diff_j) < machine_precision) {
                 /* Avoid propagating negligible changes through the LD matrix. */
@@ -538,7 +580,24 @@ e_step_mixture(int c_size,
             eta[j] += eta_diff_j;
         }
 
+        // Merge the thread-local sufficient statistics into the chromosome-
+        // wide outputs initialized by the caller.
+        #ifdef _OPENMP
+            #pragma omp critical
+        #endif
+        {
+            for (int k = 0; k < K; ++k) {
+                gamma_sum[k] += thread_gamma_sum[k];
+                component_zeta[k] += thread_component_zeta[k];
+            }
+            for (int i = 0; i < 4; ++i) {
+                elbo_stats[i] += thread_elbo_stats[i];
+            }
+        }
+
         delete[] u_j;
+        delete[] thread_gamma_sum;
+        delete[] thread_component_zeta;
 
     }
 

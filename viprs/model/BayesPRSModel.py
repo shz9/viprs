@@ -152,6 +152,9 @@ class BayesPRSModel:
                 c: np.repeat(self.gdl.n, c_size) for c, c_size in self.shapes.items()
             }
 
+        # Keep the model-wide sample size synchronized when this method is used
+        # to restore the original summary statistics after a training split.
+        self._sample_size = dict_max(self.n_per_snp)
         self.validation_std_beta = None
 
     def set_validation_sumstats(self):
@@ -187,7 +190,21 @@ class BayesPRSModel:
             for c in self.chromosomes
         }
 
-        self.n_per_snp = {c: self.n_per_snp[c] * prop_train for c in self.chromosomes}
+        # Use the sample sizes returned by the splitting procedure. In addition
+        # to keeping these values consistent with the sampled statistics, this
+        # prevents repeated calls from multiplying an already-split sample size.
+        # Preserve any trailing singleton dimensions used by mixture models.
+        train_n = {}
+        for c in self.chromosomes:
+            current_n = np.asarray(self.n_per_snp[c])
+            n = np.asarray(split_sumstats[c]["train_n"], dtype=current_n.dtype)
+            ndim_diff = current_n.ndim - n.ndim
+            if ndim_diff > 0:
+                n = n.reshape(n.shape + (1,) * ndim_diff)
+            train_n[c] = n
+
+        self.n_per_snp = train_n
+        self._sample_size = dict_max(self.n_per_snp)
 
         self.validation_std_beta = {
             c: split_sumstats[c]["test_beta"].astype(self.float_precision)

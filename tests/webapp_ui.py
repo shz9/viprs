@@ -14,11 +14,13 @@ import tempfile
 import threading
 
 from playwright.sync_api import sync_playwright
+from magenpy.parsers.sumstats_parsers import get_supported_sumstats_formats
 
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "build/wasm/browser-test"
+SUMSTATS_FORMATS = sorted(get_supported_sumstats_formats(include_aliases=True))
 MOCK_WORKER = """
-self.postMessage({type: "ready", seconds: 0.01});
+self.postMessage({type: "ready", seconds: 0.01, sumstats_formats: __SUMSTATS_FORMATS__});
 self.onmessage = ({data}) => {
   self.postMessage({type: "log", id: data.id, message: "REQUEST " + JSON.stringify({
     sumstats: data.sumstats.map(s => s.url || s.file.name),
@@ -33,7 +35,7 @@ self.onmessage = ({data}) => {
       timings: {preparation_seconds: 0.1, fit_seconds: 0.2, run_seconds: 0.3}}
   }});
 };
-"""
+""".replace("__SUMSTATS_FORMATS__", json.dumps(SUMSTATS_FORMATS))
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -60,6 +62,7 @@ def main():
             page.route("**/worker.js", lambda route: route.fulfill(content_type="text/javascript", body=MOCK_WORKER))
             page.goto(f"http://127.0.0.1:{server.server_port}/webapp/")
             page.wait_for_function("document.querySelector('#runtime-state').dataset.state === 'ready'")
+            assert page.locator("#sumstats-format option").all_text_contents() == SUMSTATS_FORMATS
             assert page.locator("#ld-source").input_value() == "hosted"
             assert page.locator("#sumstats-source").input_value() == "files"
             assert page.locator("#ld-hosted-path").text_content() == "hf://datasets/shz9/ukb-ld/EUR/chr_*.zip"
@@ -101,7 +104,7 @@ def main():
                 expected_ld = {"files": "chr_22.zip", "folder": "chr_22.zip", "urls": "https://example.org/ld.zip", "example": "https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip", "hosted": "https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/AFR/chr_*.zip"}
                 assert request["sumstats"] == [expected_sumstats[summary_source]]
                 assert request["ld"] == [expected_ld[ld_source]]
-                assert request["options"]["sumstats_format"] == ("fastGWA" if summary_source == "example" else "magenpy")
+                assert request["options"]["sumstats_format"] == ("fastgwa" if summary_source == "example" else "magenpy")
                 assert request["options"]["tolerance"] == 1e-6
             assert "UI fixture completed." not in page.locator("#result-summary").text_content()
             assert page.locator("#status").text_content() == ""

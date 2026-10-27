@@ -13,8 +13,8 @@ The script is designed to be used with the VIPRS package and requires the follow
 
 - Linkage disequilibrium (LD) matrices (in zarr format).
 - GWAS summary statistics files
-    - The summary statistics files can be in any of the following formats:
-        - plink1.9, plink2, cojo, magenpy, fastgwa, ssf, gwas-ssf, gwascatalog, saige, or a `custom` format.
+    - The summary statistics files can use any format registered with magenpy,
+      or a `custom` format.
 - The output directory where to store the results of the inference.
 
 Usage:
@@ -34,6 +34,15 @@ import os.path as osp
 import time
 
 logger = logging.getLogger(__name__)
+
+
+def get_sumstats_formats():
+    """Return every magenpy summary-statistics format alias plus ``custom``."""
+
+    from magenpy.parsers.sumstats_parsers import get_supported_sumstats_formats
+
+    formats = get_supported_sumstats_formats(include_aliases=True)
+    return tuple(sorted((*formats, "custom")))
 
 
 def get_model_name(n_components):
@@ -305,7 +314,7 @@ def init_data(args):
                 )
                 ss_format = None
             else:
-                ss_format = args.sumstats_format
+                ss_format = args.validation_sumstats_format
                 ss_parser = None
 
             # Read the summary statistics file(s):
@@ -626,6 +635,8 @@ def main():
 
     import viprs as vp
 
+    sumstats_formats = get_sumstats_formats()
+
     print(
         "\n"
         + vp.make_ascii_logo(
@@ -702,19 +713,7 @@ def main():
         dest="sumstats_format",
         type=str.lower,
         default="plink",
-        choices={
-            "plink1.9",
-            "plink2",
-            "plink",
-            "cojo",
-            "magenpy",
-            "fastgwa",
-            "ssf",
-            "gwas-ssf",
-            "gwascatalog",
-            "saige",
-            "custom",
-        },
+        choices=sumstats_formats,
         help="The format for the summary statistics file(s).",
     )
     parser.add_argument(
@@ -782,19 +781,7 @@ def main():
         "--validation-sumstats-format",
         dest="validation_sumstats_format",
         type=str.lower,
-        choices={
-            "plink1.9",
-            "plink2",
-            "plink",
-            "cojo",
-            "magenpy",
-            "fastgwa",
-            "ssf",
-            "gwas-ssf",
-            "gwascatalog",
-            "saige",
-            "custom",
-        },
+        choices=sumstats_formats,
         help="The format for the summary statistics file(s) for the validation set.",
     )
     # For now, suppress the help message for these arguments:

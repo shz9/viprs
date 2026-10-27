@@ -38,7 +38,7 @@ dependencies = [
     "numpy>=2,<3",
     "scipy<1.17",
     "joblib",
-    "magenpy>=0.1.5",
+    "magenpy>=0.2.3",
     "pandas",
     "psutil",
     "scikit-learn",

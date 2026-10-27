@@ -10,6 +10,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIT_CLI = runpy.run_path(PROJECT_ROOT / "bin/viprs_fit")
 
 
+def test_sumstats_formats_follow_magenpy_registry():
+    from magenpy.parsers.sumstats_parsers import get_supported_sumstats_formats
+
+    assert FIT_CLI["get_sumstats_formats"]() == tuple(
+        sorted((*get_supported_sumstats_formats(include_aliases=True), "custom"))
+    )
+
+
 def test_check_args_accepts_hugging_face_ld_path(monkeypatch):
     hf_calls = []
     monkeypatch.setattr(

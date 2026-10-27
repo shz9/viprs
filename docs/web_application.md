@@ -330,7 +330,7 @@ python -m pytest tests/test_webapp.py tests/test_wasm_package.py tests/test_mage
 node --test tests/webapp_sources.mjs tests/webapp_worker.mjs
 python tests/webapp_fixtures.py
 uv run --no-project --with playwright python tests/webapp_browser.py
-uv run --no-project --with playwright python tests/webapp_ui.py
+uv run --no-project --with 'magenpy>=0.2.3' --with playwright python tests/webapp_ui.py
 ```
 
 The UI-only browser check uses a stub worker to verify all 20 combinations of

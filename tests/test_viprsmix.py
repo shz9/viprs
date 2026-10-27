@@ -137,12 +137,38 @@ def test_elbo_matches_likelihood_prior_and_entropy_decomposition():
     model.std_beta = {1: np.array([0.08, -0.03])}
     model._sigma_g = 0.15
 
+    expected_elbo = model.elbo()
     np.testing.assert_allclose(
-        model.elbo(),
+        expected_elbo,
         model.loglikelihood() + model.log_prior() + model.entropy(),
         rtol=1e-12,
         atol=1e-12,
     )
+
+    # Cache the same sufficient statistics produced by the native E-step and
+    # verify that the O(K) ELBO reconstruction preserves the full calculation.
+    gamma = model.var_gamma[1].astype(np.float64)
+    null_gamma = 1.0 - gamma.sum(axis=1)
+    model._e_step_statistics = {
+        "gamma_sum": gamma.sum(axis=0),
+        "component_zeta": np.sum(
+            gamma
+            * (
+                model.var_mu[1].astype(np.float64) ** 2
+                + 1.0 / model.var_tau[1].astype(np.float64)
+            ),
+            axis=0,
+        ),
+        "elbo": np.array(
+            [
+                np.sum(gamma * np.log(gamma)),
+                np.sum(null_gamma * np.log(null_gamma)),
+                np.sum(gamma * model._log_var_tau[1]),
+                np.sum(null_gamma),
+            ]
+        ),
+    }
+    np.testing.assert_allclose(model.elbo(), expected_elbo, rtol=1e-12, atol=1e-12)
 
 
 def test_global_variance_scaling_preserves_objectives_and_public_summaries():

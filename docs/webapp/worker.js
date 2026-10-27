@@ -36,7 +36,11 @@ import viprs, magenpy
   await pyodide.runPythonAsync(await localText("inference.py"));
   pyodide.globals.delete("packages_json");
   const initializationSeconds = (performance.now() - start) / 1000;
-  emit("ready", {seconds: initializationSeconds});
+  const sumstatsFormats = JSON.parse(pyodide.runPython(`
+from magenpy.parsers.sumstats_parsers import get_supported_sumstats_formats
+json.dumps(sorted(get_supported_sumstats_formats(include_aliases=True)))
+`));
+  emit("ready", {seconds: initializationSeconds, sumstats_formats: sumstatsFormats});
   return {pyodide, manifest, initializationSeconds};
 }
 

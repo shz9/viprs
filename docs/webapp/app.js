@@ -10,7 +10,14 @@ function syncInputs() {
       if (panel) panel.hidden = $(kind + "-source").value !== source;
     }
   }
-  $("sumstats-format").disabled = $("sumstats-source").value === "example";
+  $("sumstats-format").disabled = runtimeState !== "ready" || $("sumstats-source").value === "example";
+}
+function setSumstatsFormats(formats) {
+  if (!Array.isArray(formats) || !formats.length) throw new Error("The runtime did not report any summary-statistics formats.");
+  const select = $("sumstats-format"), current = select.value;
+  select.replaceChildren(...formats.map((format) => new Option(format, format)));
+  select.value = formats.includes(current) ? current : formats.includes("fastgwa") ? "fastgwa" : formats[0];
+  syncInputs();
 }
 function syncHostedLD() {
   $("ld-hosted-path").value = `hf://datasets/shz9/ukb-ld/${$("ld-ancestry").value}/chr_*.zip`;
@@ -27,7 +34,7 @@ function syncModel() {
 $("model").addEventListener("change", syncModel);
 $("demo").addEventListener("click", () => {
   for (const kind of ["ld", "sumstats"]) $(kind + "-source").value = "example";
-  $("sumstats-format").value = "fastGWA";
+  $("sumstats-format").value = "fastgwa";
   syncInputs();
 });
 for (const kind of ["ld", "sumstats"]) {
@@ -100,7 +107,10 @@ function startWorker() {
     if (worker !== current) return;
     if (data.type === "runtime-status") runtimeStatus("loading", data.message);
     if (data.type === "ready") {
+      try { setSumstatsFormats(data.sumstats_formats); }
+      catch (error) { runtimeStatus("error", "Initialization failed"); fail(error.message); return; }
       runtimeStatus("ready", "Runtime ready");
+      syncInputs();
       if (activeRun === null && $("status-badge").textContent === "Ready") {
         $("status").textContent = "Select your inputs and model.";
       }
@@ -205,7 +215,7 @@ $("inference-form").addEventListener("submit", (event) => {
     const request = {
       type: "run", id: ++nextRun,
       sumstats: sourceInputs("sumstats"), ld: sourceInputs("ld"),
-      options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "example" ? "fastGWA" : $("sumstats-format").value},
+      options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "example" ? "fastgwa" : $("sumstats-format").value},
     };
     activeRun = request.id;
     $("controls").disabled = true; $("demo").disabled = true; $("run").disabled = true; $("cancel").disabled = false;

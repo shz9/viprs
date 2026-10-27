@@ -2,7 +2,7 @@ numpy
 scipy
 pandas
 tqdm
-magenpy>=0.1.5
+magenpy>=0.2.3
 statsmodels
 scikit-learn
 joblib
