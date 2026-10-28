@@ -16,6 +16,18 @@ from pathlib import Path, PurePosixPath
 import numpy as np
 
 
+def ensure_huggingface_compat():
+    """Stub terminal-only modules unavailable inside a Pyodide web worker."""
+    if sys.platform != "emscripten":
+        return
+    # huggingface_hub imports these modules eagerly for its interactive choice
+    # prompt. A web worker has no TTY, so that code is unreachable, but Pyodide
+    # does not provide the POSIX terminal modules and the import would otherwise
+    # prevent HfFileSystem from loading.
+    for name in ("termios", "tty"):
+        sys.modules.setdefault(name, types.ModuleType(name))
+
+
 async def resolve_browser_gwas_catalog(accession, read_text=None):
     """Resolve a Catalog accession using the browser's HTTP transport."""
     from viprs.utils.data_utils import resolve_gwas_catalog_async
@@ -210,6 +222,8 @@ class BrowserFitSession:
     def fit_ld_archive(self, ld_path, remaining_archives=0, progress_callback=None):
         """Stream or extract, fit, and release one LD archive at a time."""
         self.linear_operator = self.linear_operator or ensure_linear_operator()
+        if str(ld_path).startswith("hf://"):
+            ensure_huggingface_compat()
         from magenpy import GWADataLoader
         from viprs.model import VIPRS, VIPRSMix
 

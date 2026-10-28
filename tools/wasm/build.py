@@ -47,7 +47,9 @@ BUILTIN_PACKAGES = [
     "micropip", "numpy", "pandas", "tqdm", "numcodecs", "asciitree",
     # magenpy's Hugging Face LD support imports the bundled huggingface-hub
     # wheel; these are its browser-compatible pure-Python dependencies.
-    "fsspec", "httpx", "click", "packaging", "pyyaml",
+    # Pyodide's httpx recipe deliberately has no dependency metadata, while
+    # huggingface_hub imports the normal httpx/httpcore stack directly.
+    "fsspec", "httpx", "httpcore", "anyio", "idna", "click", "packaging", "pyyaml",
     "typing-extensions",
 ]
 RUNTIME_DEPENDENCIES = {

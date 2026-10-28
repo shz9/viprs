@@ -18,6 +18,21 @@ spec.loader.exec_module(browser)
 OPTIONS = {}
 
 
+def test_huggingface_compat_is_limited_to_emscripten(monkeypatch):
+    modules = {name: SimpleNamespace(marker=name) for name in ("termios", "tty")}
+    for name, module in modules.items():
+        monkeypatch.setitem(browser.sys.modules, name, module)
+    monkeypatch.setattr(browser.sys, "platform", "darwin")
+    browser.ensure_huggingface_compat()
+    assert all(browser.sys.modules[name] is module for name, module in modules.items())
+
+    for name in modules:
+        monkeypatch.delitem(browser.sys.modules, name)
+    monkeypatch.setattr(browser.sys, "platform", "emscripten")
+    browser.ensure_huggingface_compat()
+    assert all(browser.sys.modules[name].__name__ == name for name in modules)
+
+
 @pytest.mark.parametrize("member", ["../outside", "/outside", "dir/../../outside", "dir\\outside"])
 @pytest.mark.parametrize("zip_separator", ["/", "\\"])
 def test_archive_traversal_rejected(tmp_path, member, zip_separator, monkeypatch):
