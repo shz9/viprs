@@ -96,7 +96,7 @@ A combined summary-statistics file and ZIP containing multiple chromosome stores
 also work. The browser adapter uses the loader's input-handling behavior.
 
 Choose **VIPRS** for a spike-and-slab prior or **VIPRSMix** for a sparse Gaussian
-mixture. VIPRSMix exposes the number of non-null components (1–10), in addition to
+mixture. VIPRSMix exposes the number of non-null components (1–9), in addition to
 the point mass at zero. Optimization settings include the maximum iteration count,
 convergence tolerance, and random seed. Defaults are 1,000 iterations, as in
 `viprs_fit`, and a tolerance of `1e-6` for both parameters and ELBO, as in
@@ -106,10 +106,13 @@ The worker streams inputs into its in-memory filesystem. GWAS Catalog downloads 
 up to four parallel byte ranges when the server advertises range support, with a
 single-stream fallback for other servers. For summary statistics, it detects gzip
 from the first two bytes and renames the staged file with the appropriate suffix,
-without copying its contents. Python reads that file once; large inputs use 32-bit
-storage for non-positional numeric summary-statistic columns to avoid pandas' second
-full-width consolidation allocation. Hosted Hugging Face LD archives
-remain remote: `GWADataLoader` resolves the `hf://` glob and its `LDMatrix` objects
+without copying its contents. Python reads that file once; large inputs retain only
+parser-recognized columns, use 32-bit storage for non-positional numeric fields,
+categorically encode allele columns, and discard the staged compressed file after
+parsing. This prevents optional GWAS-SSF
+metadata from triggering pandas' second full-width consolidation allocation and
+releases the input bytes before LD and model arrays are loaded. Hosted Hugging Face
+LD archives remain remote: `GWADataLoader` resolves the `hf://` glob and its `LDMatrix` objects
 request ZIP ranges through the Hugging Face filesystem as they are needed. Uploaded
 and custom HTTP(S) LD archives retain the local staged path. For example,
 with a combined summary file:
@@ -388,9 +391,11 @@ JavaScript buffer. Downloads have no fixed time limit; Cancel can stop a stalled
 This is still an in-memory application: summary-statistics tables, local archives,
 and runtime arrays must fit in available browser memory. Pyodide's wasm32 heap has a
 4 GiB address-space ceiling, and the browser or operating system may enforce a lower
-practical process limit. Arrays can occupy substantially more memory than compressed
-inputs, especially with many mixture components. Summary statistics are parsed once
-and partitioned by chromosome; each partition is released after fitting. Hosted LD
+practical process limit. This is an architectural limit of the current wasm32 runtime,
+not an application setting that users can increase. Arrays can occupy substantially
+more memory than compressed inputs, especially with many mixture components. Summary
+statistics are parsed once and partitioned by chromosome; each partition is released
+after fitting. Hosted LD
 is range-streamed, while uploaded or custom archives are fitted in chromosome order
 and released before the next archive is staged. Separate local chromosome archives
 provide the lowest peak usage.

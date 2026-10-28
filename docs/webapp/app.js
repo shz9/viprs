@@ -29,7 +29,7 @@ $("ld-ancestry").addEventListener("change", syncHostedLD);
 function syncModel() {
   const mixture = $("model").value === "VIPRSMix";
   const componentInput = $("components");
-  const components = mixture ? Math.min(6, Math.max(1, Number.parseInt(componentInput.value, 10) || 1)) : 1;
+  const components = mixture ? Math.min(9, Math.max(1, Number.parseInt(componentInput.value, 10) || 1)) : 1;
   $("mixture-settings").hidden = !mixture;
   componentInput.disabled = !mixture;
   $("model-help").textContent = mixture
@@ -41,16 +41,16 @@ $("model").addEventListener("change", syncModel);
 $("components").addEventListener("input", syncModel);
 $("components").addEventListener("change", () => {
   const input = $("components");
-  input.value = Math.min(6, Math.max(1, Number.parseInt(input.value, 10) || 1));
+  input.value = Math.min(9, Math.max(1, Number.parseInt(input.value, 10) || 1));
   syncModel();
 });
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const SLAB_COLORS = ["#1f6f9c", "#6b55a1", "#178276", "#b36f12", "#9b3f78", "#4f772d"];
+const SLAB_COLORS = ["#1f6f9c", "#6b55a1", "#178276", "#b36f12", "#9b3f78", "#4f772d", "#a34f34", "#39758a", "#796328"];
 function slabPath(index) {
   const baseline = 140, center = 284;
-  const sigma = [25, 38, 54, 72, 94, 120][index];
-  const height = [92, 82, 72, 63, 55, 49][index];
+  const sigma = [25, 38, 54, 72, 94, 120, 150, 184, 222][index];
+  const height = [92, 82, 72, 63, 55, 49, 44, 40, 36][index];
   const points = [];
   for (let x = 28; x <= 540; x += 4) {
     const y = baseline - height * Math.exp(-0.5 * ((x - center) / sigma) ** 2);

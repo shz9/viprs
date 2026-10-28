@@ -112,9 +112,9 @@ def validate_options(options):
     if options.get("model") == "VIPRSMix" and (
         isinstance(components, bool)
         or int(components) != components
-        or not 1 <= components <= 10
+        or not 1 <= components <= 9
     ):
-        raise ValueError("Mixture components must be an integer between 1 and 10.")
+        raise ValueError("Mixture components must be an integer between 1 and 9.")
     seed = options.get("seed", 0)
     if isinstance(seed, bool) or int(seed) != seed or not 0 <= seed <= 2**32 - 1:
         raise ValueError("Seed must be an integer from 0 to 4294967295.")
@@ -159,6 +159,52 @@ def unpack_ld(archive_path, destination):
     return [str(p) for p in roots]
 
 
+def _compact_sumstats_parser(parser):
+    """Restrict a parser to model-relevant columns and bounded numeric dtypes.
+
+    Catalog GWAS-SSF files may contain many optional numeric columns. Leaving
+    those columns to pandas' inference defeats the canonical dtype map and can
+    make its BlockManager allocate another full-width float64 matrix while it
+    constructs the DataFrame. Parser-declared raw fields are retained because
+    format-specific post-processing may need them.
+    """
+    converters = parser.col_name_converter or {}
+    position_columns = {"POS"} | {
+        raw for raw, output in converters.items() if output == "POS"
+    }
+
+    def compact_dtypes(dtypes):
+        return {
+            column: (
+                np.float32
+                if np.dtype(dtype) == np.dtype(np.float64)
+                and column not in position_columns
+                else dtype
+            )
+            for column, dtype in dtypes.items()
+        }
+
+    parser.column_dtypes = compact_dtypes(parser.column_dtypes)
+    parser.raw_column_dtypes = compact_dtypes(parser.raw_column_dtypes)
+    # Alleles have a tiny vocabulary but otherwise become millions of Python
+    # string references. Categories preserve pandas compatibility while storing
+    # one small integer code per row.
+    for column in ("A1", "A2"):
+        if column in parser.column_dtypes:
+            parser.column_dtypes[column] = "category"
+    for column in ("REF", "ALT", "ALT1"):
+        if column in parser.raw_column_dtypes:
+            parser.raw_column_dtypes[column] = "category"
+    retained_columns = (
+        set(parser.get_standard_cols())
+        | set(parser.column_dtypes)
+        | set(parser.raw_column_dtypes)
+        | set(converters)
+    )
+    parser.read_csv_kwargs["usecols"] = retained_columns.__contains__
+    return parser
+
+
 class BrowserFitSession:
     """Accumulate a run while keeping at most one LD archive loaded at a time."""
 
@@ -185,10 +231,10 @@ class BrowserFitSession:
         from magenpy.parsers.sumstats_parsers import get_sumstats_parser
 
         # pandas otherwise consolidates every numeric GWAS-SSF column into a
-        # second float64 block. For an eight-million-row Catalog file that one
-        # temporary allocation is about 728 MiB. Use compact storage only for
-        # large staged inputs, preserving the established float64 numerics for
-        # ordinary files and small regression fixtures.
+        # second block. At eight million rows, optional float64 columns can add
+        # hundreds of MiB to the parsing peak. Use compact storage only for large
+        # staged inputs, preserving the established float64 numerics for ordinary
+        # files and small regression fixtures.
         parser = get_sumstats_parser(
             self.options.get("sumstats_format", "fastgwa")
         )(None)
@@ -197,14 +243,7 @@ class BrowserFitSession:
             >= 64 * 1024**2
         )
         if compact:
-            parser.column_dtypes = {
-                column: (
-                    np.float32
-                    if dtype is np.float64 and column != "POS"
-                    else dtype
-                )
-                for column, dtype in parser.column_dtypes.items()
-            }
+            _compact_sumstats_parser(parser)
         with tempfile.TemporaryDirectory(prefix="viprs-browser-sumstats-") as work:
             loader = GWADataLoader(temp_dir=str(Path(work) / "temp"), threads=1)
             loader.read_summary_statistics(

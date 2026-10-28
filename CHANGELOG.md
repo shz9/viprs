@@ -35,8 +35,9 @@ registry instead of maintaining a fixed list, and raised the minimum magenpy ver
 - Centralized GRCh37 GWAS Catalog accession resolution in `data_utils` and made accessions valid
 summary-statistics inputs in both `viprs_fit` and the browser application.
 - Improved the browser application's performance and memory use by range-streaming hosted Hugging Face LD,
-downloading large range-capable GWAS Catalog files in parallel, parsing summary statistics once, using compact
-numeric storage for large inputs, and releasing chromosome data and local LD archives incrementally.
+downloading large range-capable GWAS Catalog files in parallel, parsing summary statistics once, projecting
+large inputs to model-relevant columns with compact numeric storage and categorical alleles, releasing staged
+summary files after parsing, and releasing chromosome data and local LD archives incrementally.
 - Improved the browser interface with clearer source selection, model configuration and prior visualization,
 runtime and convergence status, timing summaries, result filtering, download controls, responsive styling,
 and more actionable validation and network errors.

@@ -278,6 +278,11 @@ self.onmessage = async ({data}) => {
     });
     await pyodide.runPythonAsync("start_request(request_json)");
     requestStarted = true;
+    // The parsed chromosome tables no longer depend on their compressed input.
+    // Unlink it before any LD metadata or model arrays enter the wasm heap.
+    for (const path of request.sumstats_paths) {
+      try { pyodide.FS.unlink(path); } catch {}
+    }
     downloadSeconds += await fitLDArchives(
       data.ld, pyodide.FS, workPath, async (path, remaining) => {
         emit("phase", {

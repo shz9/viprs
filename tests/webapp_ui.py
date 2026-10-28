@@ -84,11 +84,11 @@ def main():
             assert page.locator(".spike-legend").evaluate("el => getComputedStyle(el).color") != page.locator(".slab-legend").evaluate("el => getComputedStyle(el).color")
             page.locator("#model").select_option("VIPRSMix")
             assert page.locator("#slab-curves .slab-curve").count() == 3
-            assert page.locator("#components").get_attribute("max") == "6"
-            page.locator("#components").fill("6")
-            assert page.locator("#slab-curves .slab-curve").count() == 6
-            assert len(set(page.locator("#slab-curves .slab-curve").evaluate_all("curves => curves.map(curve => curve.getAttribute('stroke'))"))) == 6
-            assert "6 centered Gaussian slabs" in page.locator("#prior-plot-description").text_content()
+            assert page.locator("#components").get_attribute("max") == "9"
+            page.locator("#components").fill("9")
+            assert page.locator("#slab-curves .slab-curve").count() == 9
+            assert len(set(page.locator("#slab-curves .slab-curve").evaluate_all("curves => curves.map(curve => curve.getAttribute('stroke'))"))) == 9
+            assert "9 centered Gaussian slabs" in page.locator("#prior-plot-description").text_content()
             page.locator("#model").select_option("VIPRS")
             page.screenshot(path=str(ARTIFACTS / "ui-desktop.png"), full_page=True)
             page.locator("#ld-ancestry").select_option("AFR")

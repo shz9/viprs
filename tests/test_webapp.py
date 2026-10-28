@@ -109,7 +109,8 @@ def test_bundle_contains_real_webassembly_extensions():
 
 
 @pytest.mark.parametrize("options", [{"model": "unknown"}, {"model": "VIPRSMix", "components": 0},
-                                     {"model": "VIPRSMix", "components": 2.5}, {"seed": -1}])
+                                     {"model": "VIPRSMix", "components": 2.5},
+                                     {"model": "VIPRSMix", "components": 10}, {"seed": -1}])
 def test_model_options_rejected(options):
     with pytest.raises(ValueError):
         browser.validate_options(dict(OPTIONS, **options))
@@ -196,6 +197,72 @@ def test_optimization_defaults_match_viprs():
     iterations, tolerance = browser.validate_options({})
     assert iterations == defaults["max_iter"].default == 1000
     assert tolerance == defaults["x_abs_tol"].default == defaults["f_abs_tol"].default
+
+
+def test_large_catalog_parser_projects_and_compacts_columns(tmp_path):
+    import numpy as np
+    from magenpy.parsers.sumstats_parsers import get_sumstats_parser
+
+    source = tmp_path / "catalog.tsv"
+    source.write_text(
+        "chromosome\tbase_pair_location\trsid\teffect_allele\tother_allele\t"
+        "beta\tstandard_error\teffect_allele_frequency\tp_value\tn\t"
+        + "\t".join(f"unused_{index}" for index in range(10))
+        + "\n22\t101\trs1\tA\tG\t0.1\t0.02\t0.3\t1e-6\t10000\t"
+        + "\t".join("1.5" for _ in range(10))
+        + "\n"
+    )
+    parser = browser._compact_sumstats_parser(
+        get_sumstats_parser("gwascatalog")(None)
+    )
+
+    table = parser.parse(source)
+
+    assert set(table) == {
+        "CHR", "POS", "SNP", "A1", "A2", "BETA", "SE", "MAF", "PVAL", "N"
+    }
+    assert not any(column.startswith("unused_") for column in table)
+    assert table["POS"].dtype == np.int32
+    assert str(table["A1"].dtype) == str(table["A2"].dtype) == "category"
+    assert all(
+        table[column].dtype == np.float32
+        for column in ("BETA", "SE", "MAF", "PVAL", "N")
+    )
+
+
+def test_compact_categorical_alleles_harmonize_with_ld(
+    multichrom_inputs, tmp_path
+):
+    import numpy as np
+    from magenpy import GWADataLoader
+    from magenpy.parsers.sumstats_parsers import get_sumstats_parser
+
+    summaries, archives, _, _ = multichrom_inputs
+    roots = [
+        root
+        for index, archive in enumerate(archives)
+        for root in browser.unpack_ld(archive, tmp_path / f"compact-{index}")
+    ]
+    parser = browser._compact_sumstats_parser(
+        get_sumstats_parser("magenpy")(None)
+    )
+    loader = GWADataLoader(
+        ld_store_files=roots, temp_dir=str(tmp_path / "compact-temp"), threads=1
+    )
+    loader.read_summary_statistics(summaries, parser=parser)
+    assert all(
+        str(table.table["A1"].dtype) == str(table.table["A2"].dtype) == "category"
+        for table in loader.sumstats_table.values()
+    )
+    loader.harmonize_data()
+
+    assert loader.n_snps == 96
+    assert all(
+        np.array_equal(table.a1, np.full(len(table), "A"))
+        and np.array_equal(table.a2, np.full(len(table), "G"))
+        for table in loader.sumstats_table.values()
+    )
+    loader.cleanup()
 
 
 @pytest.mark.parametrize("compressed", [False, True])

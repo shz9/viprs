@@ -123,11 +123,12 @@
             <div class="model-settings">
               <label for="model">Prior on the genetic architecture</label><select id="model"><option value="VIPRS">VIPRS · Spike and slab</option><option value="VIPRSMix">VIPRSMix · Sparse Mixture of Gaussians</option></select>
               <p id="model-help" class="hint">A point mass at zero and one Gaussian component for nonzero effects.</p>
-              <div id="mixture-settings" hidden><label for="components">Non-null mixture components</label><input id="components" type="number" min="1" max="6" step="1" value="3" disabled required><p class="hint">Choose up to six Gaussian effect-size components in addition to the point mass at zero.</p></div>
+              <div id="mixture-settings" hidden><label for="components">Non-null mixture components</label><input id="components" type="number" min="1" max="9" step="1" value="3" disabled required><p class="hint">Choose up to nine Gaussian effect-size components in addition to the point mass at zero.</p></div>
               <details class="advanced"><summary>Optimization settings</summary><div class="two-columns"><div><label for="max-iter">Maximum iterations</label><input id="max-iter" type="number" min="3" max="5000" step="1" value="1000" required></div><div><label for="tolerance">Convergence tolerance</label><input id="tolerance" type="number" min="0.000000000001" max="0.01" step="any" value="0.000001" required></div><div><label for="seed">Random seed</label><input id="seed" type="number" min="0" max="4294967295" step="1" value="0" required></div></div></details>
             </div>
             <figure class="prior-figure">
-              <div class="prior-figure-heading"><strong>Illustrative effect-size prior</strong><output id="prior-summary" for="model components">1 spike + 1 slab</output></div>
+              <div class="prior-figure-heading"><div><span class="preview-label">Model preview</span><strong>Genetic architecture</strong></div><output id="prior-summary" for="model components">1 spike + 1 slab</output></div>
+              <p class="prior-figure-copy">Illustrative distribution of effect sizes under the selected prior.</p>
               <svg id="prior-plot" viewBox="0 0 560 172" role="img" aria-label="Illustrative effect-size prior" aria-describedby="prior-plot-description">
                 <desc id="prior-plot-description">A point mass at zero and one centered Gaussian slab for nonzero genetic effects.</desc>
                 <path class="prior-grid" d="M28 36H540M28 76H540M28 116H540"/>
@@ -146,7 +147,7 @@
         <div class="section-heading"><h2 id="monitor-heading">Inference</h2><span id="status-badge" class="status">Ready</span></div>
         <div class="run-placeholder"><div id="activity" class="activity" aria-hidden="true"><span></span><span></span><span></span></div><div class="run-message"><h3 id="activity-title">Ready for inference</h3><p id="status" role="status" aria-live="polite">Select your inputs and model.</p><p id="elapsed-line" class="elapsed-line" hidden>Elapsed <span id="elapsed">—</span></p></div></div>
         <div class="actions"><button id="run" class="primary" type="submit" form="inference-form">Run inference <span aria-hidden="true">→</span></button><button id="cancel" type="button" disabled>Cancel</button></div>
-        <p class="privacy"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 018 0v2M3 7h10v7H3z"/></svg>Files are processed locally. There is no app byte cap; the Pyodide heap can grow to 4 GiB, though the browser may allow less.</p>
+        <p class="privacy"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 018 0v2M3 7h10v7H3z"/></svg>Files are processed locally. There is no app byte cap; the current wasm32 runtime has a non-configurable 4 GiB ceiling, and the browser may allow less.</p>
         <div id="metrics" class="metrics" hidden><div><span>Variants</span><strong id="variants">—</strong></div><div><span>Chromosomes</span><strong id="chromosomes">—</strong></div><div><span>Iterations</span><strong id="iterations">—</strong></div></div>
         <p id="timing-summary" class="timing-summary" hidden></p>
         <div class="runtime-area"><span id="runtime-state" class="runtime-state" data-state="loading" role="status"><span class="runtime-dot" aria-hidden="true"></span><span id="runtime-text">Preparing runtime</span></span><button id="retry-runtime" type="button" class="text-button" hidden>Retry</button></div>
