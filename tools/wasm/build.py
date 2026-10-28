@@ -133,7 +133,7 @@ def stage(name, source):
             # The browser kernels implement their own dot/axpy operations.
             continue
         extensions.append(
-            (str(relative.with_suffix("")).replace("/", "."), str(relative))
+            (".".join(relative.with_suffix("").parts), str(relative))
         )
     setup = f"""from setuptools import setup, find_packages, Extension
 from Cython.Build import cythonize
