@@ -4,6 +4,11 @@ import importlib.util
 from pathlib import Path
 import sys
 
+import pytest
+
+
+pytest.importorskip("tomllib")
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools" / "wasm"
