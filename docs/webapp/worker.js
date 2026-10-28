@@ -103,6 +103,66 @@ async function stageInput(source, FS, path, inferCompression = false) {
   return path;
 }
 
+async function stageRangedInput(source, FS, path, inferCompression = false) {
+  // Large Catalog files are served from a geographically distant endpoint for
+  // some users. Use independent ranges when EBI exposes range support, while
+  // retaining the ordinary streaming path for every other server.
+  let metadata;
+  try { metadata = await fetch(source.url, {method: "HEAD", credentials: "omit"}); }
+  catch { return null; }
+  const size = Number(metadata.headers.get("content-length"));
+  if (!metadata.ok || !Number.isSafeInteger(size) || size < 8 * 1024 ** 2) return null;
+  // Accept-Ranges is not a CORS-safelisted response header and EBI does not
+  // expose it. A one-byte request provides an observable, reliable check.
+  let probe;
+  try {
+    probe = await fetch(source.url, {
+      credentials: "omit", headers: {Range: "bytes=0-0"},
+    });
+  } catch { return null; }
+  if (probe.status !== 206) {
+    await probe.body?.cancel().catch(() => {});
+    return null;
+  }
+  await probe.body?.cancel().catch(() => {});
+  const parts = Math.min(4, Math.ceil(size / (8 * 1024 ** 2)));
+  const handle = FS.open(path, "w");
+  const header = new Uint8Array(2);
+  try {
+    await Promise.all(Array.from({length: parts}, async (_, index) => {
+      const start = Math.floor(size * index / parts);
+      const end = Math.floor(size * (index + 1) / parts) - 1;
+      const response = await fetch(source.url, {
+        credentials: "omit", headers: {Range: `bytes=${start}-${end}`},
+      });
+      if (response.status !== 206 || !response.body) throw new Error("The GWAS Catalog server stopped accepting parallel byte ranges. Retry the download.");
+      const reader = response.body.getReader();
+      let position = start;
+      try {
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          if (start === 0 && position < 2) header.set(value.subarray(0, 2 - position), position);
+          const written = FS.write(handle, value, 0, value.length, position);
+          if (written !== value.length) throw new Error("Could not write the complete input to browser memory.");
+          position += written;
+        }
+      } catch (error) {
+        await reader.cancel().catch(() => {});
+        throw error;
+      } finally { reader.releaseLock(); }
+      if (position !== end + 1) throw new Error("A parallel GWAS Catalog download ended before its byte range was complete.");
+    }));
+  } finally { FS.close(handle); }
+  if (inferCompression) {
+    const suffix = header[0] === 0x1f && header[1] === 0x8b ? ".tsv.gz" : ".tsv";
+    const renamed = path + suffix;
+    FS.rename(path, renamed);
+    return renamed;
+  }
+  return path;
+}
+
 async function fitLDArchives(sources, FS, workPath, fitArchive) {
   let downloadSeconds = 0;
   for (let index = 0; index < sources.length; index++) {
@@ -111,14 +171,18 @@ async function fitLDArchives(sources, FS, workPath, fitArchive) {
     let stagedPath;
     emit("phase", {
       id: currentRun,
-      message: `${source.file ? "Reading" : "Downloading"} LD reference`,
+      message: source.stream ? "Streaming LD reference" : `${source.file ? "Reading" : "Downloading"} LD reference`,
       detail: `Chromosome archive ${index + 1} of ${sources.length}.`,
     });
     const downloadStart = performance.now();
     try {
-      stagedPath = await stageInput(source, FS, path);
-      downloadSeconds += (performance.now() - downloadStart) / 1000;
-      await fitArchive(stagedPath, sources.length - index - 1);
+      if (source.stream) {
+        await fitArchive(source.url, sources.length - index - 1);
+      } else {
+        stagedPath = await stageInput(source, FS, path);
+        downloadSeconds += (performance.now() - downloadStart) / 1000;
+        await fitArchive(stagedPath, sources.length - index - 1);
+      }
     } finally {
       // Python has already released the loader, model arrays and extracted
       // store. Remove the compressed archive before staging the next one.
@@ -156,18 +220,27 @@ self.onmessage = async ({data}) => {
     runsStarted += 1;
     const runStart = performance.now();
     emit("phase", {id: data.id, message: "Preparing inputs", started: true});
-    const {expandDataURL, resolveGWASCatalog} = await import("./sources.mjs");
+    const {expandDataURL} = await import("./sources.mjs");
     for (const kind of ["sumstats", "ld"]) {
       const expanded = new Map();
       for (const source of data[kind]) {
         if (source.file) expanded.set(source.file.webkitRelativePath || source.file.name, source);
         else if (source.catalog) {
           emit("phase", {id: data.id, message: "Resolving GWAS Catalog study", detail: `Finding GRCh37/hg19 summary statistics for ${source.catalog}.`});
-          for (const url of await resolveGWASCatalog(source.catalog)) expanded.set(url, {url});
+          pyodide.globals.set("catalog_accession", source.catalog);
+          try {
+            const url = await pyodide.runPythonAsync("await resolve_browser_gwas_catalog(catalog_accession)");
+            expanded.set(url, {url, parallel: true});
+          } finally { pyodide.globals.delete("catalog_accession"); }
+        }
+        else if (kind === "ld" && source.stream && source.url.startsWith("hf://")) {
+          // Keep the native URI and glob: GWADataLoader handles both through
+          // magenpy's Hugging Face filesystem integration.
+          expanded.set(source.url, source);
         }
         else {
           emit("phase", {id: data.id, message: "Resolving input paths", detail: "Finding matching files before download."});
-          for (const url of await expandDataURL(source.url, self.location.href)) expanded.set(url, {url});
+          for (const url of await expandDataURL(source.url, self.location.href)) expanded.set(url, {url, stream: Boolean(source.stream)});
         }
         if (expanded.size > 64) throw new Error("Patterns match more than 64 " + kind + " files. Narrow the selection.");
       }
@@ -188,9 +261,12 @@ self.onmessage = async ({data}) => {
         detail: `File ${index + 1} of ${data.sumstats.length}. Model fitting has not started yet.`,
       });
       const downloadStart = performance.now();
-      request.sumstats_paths.push(await stageInput(
-        source, pyodide.FS, `${workPath}/sumstats-${index}`, true
-      ));
+      const inputPath = `${workPath}/sumstats-${index}`;
+      request.sumstats_paths.push(
+        source.parallel
+          ? (await stageRangedInput(source, pyodide.FS, inputPath, true) || await stageInput(source, pyodide.FS, inputPath, true))
+          : await stageInput(source, pyodide.FS, inputPath, true)
+      );
       downloadSeconds += (performance.now() - downloadStart) / 1000;
     }
     pyodide.globals.set("request_json", JSON.stringify(request));

@@ -97,7 +97,7 @@
               <label for="ld-ancestry">Ancestry</label>
               <select id="ld-ancestry"><option value="EUR">EUR · European</option><option value="AFR">AFR · African</option><option value="AMR">AMR · Admixed American</option><option value="CSA">CSA · Central/South Asian</option><option value="EAS">EAS · East Asian</option><option value="MID">MID · Middle Eastern</option></select>
               <label for="ld-hosted-path">All-chromosome path</label><output id="ld-hosted-path" class="hosted-path" for="ld-ancestry">hf://datasets/shz9/ukb-ld/EUR/chr_*.zip</output>
-              <p class="hint">Archives are downloaded before fitting. To select fewer chromosomes, use custom URLs or globs.</p>
+              <p class="hint">Hosted archives are streamed on demand while fitting; they are not downloaded in full first. To select fewer chromosomes, use custom URLs or globs.</p>
               <details class="reference-details"><summary>Dataset details</summary><p class="hint">LD between HapMap3 variants from imputed UK Biobank genotypes, with approximately independent LD blocks. <a href="https://huggingface.co/datasets/shz9/ukb-ld" target="_blank" rel="noopener noreferrer">View dataset ↗</a></p></details>
             </div>
             <div id="ld-files-inputs" hidden><label for="ld-file">LD archives</label><input id="ld-file" type="file" accept=".zip" multiple><p class="hint">ZIP archives containing magenpy Zarr stores. Files stay on your computer.</p><p id="ld-file-summary" class="selection-summary" role="status"></p></div>
@@ -110,7 +110,7 @@
             <div class="section-heading"><div><p class="section-kicker">01 · GWAS data</p><h2 id="sumstats-heading">Summary statistics</h2></div></div>
             <label for="sumstats-source">Summary statistics source</label>
             <select id="sumstats-source"><option value="catalog">GWAS Catalog ID</option><option value="files">Local files</option><option value="folder">Local folder · glob patterns</option><option value="urls">Hosted URLs · files or globs</option></select>
-            <div id="sumstats-catalog-inputs"><label for="sumstats-catalog-id">GWAS Catalog study accession</label><input id="sumstats-catalog-id" type="text" placeholder="GCST005195" autocomplete="off" spellcheck="false"><p class="hint">Enter a GCST accession. GRCh37/hg19 summary statistics are downloaded from the <a href="https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/" target="_blank" rel="noopener noreferrer">GWAS Catalog FTP server ↗</a> to match the default LD reference.</p></div>
+            <div id="sumstats-catalog-inputs"><label for="sumstats-catalog-id">GWAS Catalog study accession</label><input id="sumstats-catalog-id" type="text" placeholder="GCST005195" autocomplete="off" spellcheck="false"><p class="hint">Enter a GCST accession. GRCh37/hg19 summary statistics are downloaded from the <a href="https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/" target="_blank" rel="noopener noreferrer">GWAS Catalog FTP server ↗</a> using parallel byte ranges when the server supports them.</p></div>
             <div id="sumstats-files-inputs" hidden><label for="sumstats-file">Summary statistics files</label><input id="sumstats-file" type="file" multiple><p class="hint">One combined file or one file per chromosome; plain text or gzip. Files stay on your computer.</p><p id="sumstats-file-summary" class="selection-summary" role="status"></p></div>
             <div id="sumstats-folder-inputs" hidden><label for="sumstats-folder">Summary statistics folder</label><input id="sumstats-folder" type="file" webkitdirectory multiple><label for="sumstats-pattern">Summary statistics patterns</label><textarea id="sumstats-pattern" rows="2" spellcheck="false">**/*</textarea><p class="hint">One pattern per line, relative to this folder. ** includes subfolders.</p><p id="sumstats-folder-summary" class="selection-summary" role="status">Choose a folder to see matching file counts.</p></div>
             <div id="sumstats-urls-inputs" hidden><label for="sumstats-url">Summary statistics URLs or globs</label><textarea id="sumstats-url" rows="3" placeholder="One URL or pattern per line" spellcheck="false"></textarea><p class="hint">Globs are supported for public Hugging Face datasets and GitHub repositories. Other HTTP hosts and relative URLs require explicit paths; remote hosts must allow CORS access.</p></div>
@@ -120,12 +120,15 @@
 
           <section class="card model-card">
             <div class="section-heading"><h2 class="panel-title"><svg class="panel-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h7m4 0h5M4 17h3m4 0h9"/><circle cx="13" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Model</h2></div>
-            <label for="model">Prior on the genetic architecture</label><select id="model"><option value="VIPRS">VIPRS · Spike and slab</option><option value="VIPRSMix">VIPRSMix · Sparse Mixture of Gaussians</option></select>
-            <p id="model-help" class="hint">A point mass at zero and one Gaussian component for nonzero effects.</p>
+            <div class="model-settings">
+              <label for="model">Prior on the genetic architecture</label><select id="model"><option value="VIPRS">VIPRS · Spike and slab</option><option value="VIPRSMix">VIPRSMix · Sparse Mixture of Gaussians</option></select>
+              <p id="model-help" class="hint">A point mass at zero and one Gaussian component for nonzero effects.</p>
+              <div id="mixture-settings" hidden><label for="components">Non-null mixture components</label><input id="components" type="number" min="1" max="6" step="1" value="3" disabled required><p class="hint">Choose up to six Gaussian effect-size components in addition to the point mass at zero.</p></div>
+              <details class="advanced"><summary>Optimization settings</summary><div class="two-columns"><div><label for="max-iter">Maximum iterations</label><input id="max-iter" type="number" min="3" max="5000" step="1" value="1000" required></div><div><label for="tolerance">Convergence tolerance</label><input id="tolerance" type="number" min="0.000000000001" max="0.01" step="any" value="0.000001" required></div><div><label for="seed">Random seed</label><input id="seed" type="number" min="0" max="4294967295" step="1" value="0" required></div></div></details>
+            </div>
             <figure class="prior-figure">
               <div class="prior-figure-heading"><strong>Illustrative effect-size prior</strong><output id="prior-summary" for="model components">1 spike + 1 slab</output></div>
-              <svg id="prior-plot" viewBox="0 0 560 172" role="img" aria-labelledby="prior-plot-title prior-plot-description">
-                <title id="prior-plot-title">Spike-and-slab prior</title>
+              <svg id="prior-plot" viewBox="0 0 560 172" role="img" aria-label="Illustrative effect-size prior" aria-describedby="prior-plot-description">
                 <desc id="prior-plot-description">A point mass at zero and one centered Gaussian slab for nonzero genetic effects.</desc>
                 <path class="prior-grid" d="M28 36H540M28 76H540M28 116H540"/>
                 <path class="prior-axis" d="M28 140H540"/>
@@ -133,10 +136,8 @@
                 <g class="spike-mark" aria-hidden="true"><path d="M284 140V24"/><circle cx="284" cy="24" r="3.5"/></g>
                 <g class="prior-ticks" aria-hidden="true"><path d="M284 140v5"/><text x="284" y="158" text-anchor="middle">0</text><text x="540" y="158" text-anchor="end">Effect size β</text></g>
               </svg>
-              <figcaption><span><i class="key-spike" aria-hidden="true"></i>Spike · exactly zero</span><span><i class="key-slab" aria-hidden="true"></i><span id="slab-key">Slab · nonzero effects</span></span></figcaption>
+              <figcaption><span class="spike-legend"><i class="key-spike" aria-hidden="true"></i>Spike · exactly zero</span><span class="slab-legend"><i class="key-slab" aria-hidden="true"></i><span id="slab-key">Slab · nonzero effects</span></span></figcaption>
             </figure>
-            <div id="mixture-settings" hidden><label for="components">Non-null mixture components</label><input id="components" type="number" min="1" max="6" step="1" value="3" disabled required><p class="hint">Choose up to six Gaussian effect-size components in addition to the point mass at zero.</p></div>
-            <details class="advanced"><summary>Optimization settings</summary><div class="two-columns"><div><label for="max-iter">Maximum iterations</label><input id="max-iter" type="number" min="3" max="5000" step="1" value="1000" required></div><div><label for="tolerance">Convergence tolerance</label><input id="tolerance" type="number" min="0.000000000001" max="0.01" step="any" value="0.000001" required></div><div><label for="seed">Random seed</label><input id="seed" type="number" min="0" max="4294967295" step="1" value="0" required></div></div></details>
           </section>
         </fieldset>
       </form>
@@ -145,7 +146,7 @@
         <div class="section-heading"><h2 id="monitor-heading">Inference</h2><span id="status-badge" class="status">Ready</span></div>
         <div class="run-placeholder"><div id="activity" class="activity" aria-hidden="true"><span></span><span></span><span></span></div><div class="run-message"><h3 id="activity-title">Ready for inference</h3><p id="status" role="status" aria-live="polite">Select your inputs and model.</p><p id="elapsed-line" class="elapsed-line" hidden>Elapsed <span id="elapsed">—</span></p></div></div>
         <div class="actions"><button id="run" class="primary" type="submit" form="inference-form">Run inference <span aria-hidden="true">→</span></button><button id="cancel" type="button" disabled>Cancel</button></div>
-        <p class="privacy"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 018 0v2M3 7h10v7H3z"/></svg>Files are processed locally. Analysis size depends on available browser memory.</p>
+        <p class="privacy"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 018 0v2M3 7h10v7H3z"/></svg>Files are processed locally. There is no app byte cap; the Pyodide heap can grow to 4 GiB, though the browser may allow less.</p>
         <div id="metrics" class="metrics" hidden><div><span>Variants</span><strong id="variants">—</strong></div><div><span>Chromosomes</span><strong id="chromosomes">—</strong></div><div><span>Iterations</span><strong id="iterations">—</strong></div></div>
         <p id="timing-summary" class="timing-summary" hidden></p>
         <div class="runtime-area"><span id="runtime-state" class="runtime-state" data-state="loading" role="status"><span class="runtime-dot" aria-hidden="true"></span><span id="runtime-text">Preparing runtime</span></span><button id="retry-runtime" type="button" class="text-button" hidden>Retry</button></div>

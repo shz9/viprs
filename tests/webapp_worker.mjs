@@ -114,6 +114,59 @@ test("LD archives are fitted and deleted one at a time in source order", async (
   ]);
 });
 
+test("hosted LD is fitted from its remote URL without filesystem staging", async () => {
+  const context = worker();
+  const url = "hf://datasets/shz9/ukb-ld/EUR/chr_22.zip";
+  const seen = [];
+  const seconds = await context.fitLDArchives(
+    [{url, stream: true}],
+    {open() { assert.fail("streamed LD must not be staged"); }, unlink() {}},
+    "/run",
+    async (path, remaining) => seen.push([path, remaining]),
+  );
+  assert.deepEqual(seen, [[url, 0]]);
+  assert.equal(seconds, 0);
+});
+
+test("large range-capable inputs are downloaded in parallel into fixed offsets", async () => {
+  const size = 32 * 1024 ** 2;
+  const ranges = [];
+  const context = worker(async (_url, options) => {
+    if (options.method === "HEAD") return {
+      ok: true,
+      headers: {get: name => ({"content-length": String(size), "accept-ranges": "bytes"})[name]},
+    };
+    const [start, end] = options.headers.Range.match(/\d+/g).map(Number);
+    if (start === 0 && end === 0) return {status: 206, body: new ReadableStream({start(controller) {
+      controller.enqueue(new Uint8Array([0x1f]));
+      controller.close();
+    }})};
+    ranges.push([start, end]);
+    let position = start;
+    return {status: 206, body: new ReadableStream({pull(controller) {
+      if (position > end) return controller.close();
+      const length = Math.min(1024 ** 2, end - position + 1);
+      const chunk = new Uint8Array(length);
+      if (position === 0) chunk.set([0x1f, 0x8b]);
+      position += length;
+      controller.enqueue(chunk);
+    }})};
+  });
+  const writes = [], renames = [];
+  const FS = {
+    open: path => ({path}), close() {},
+    write(_handle, _bytes, _offset, length, position) { writes.push([position, length]); return length; },
+    rename: (from, to) => renames.push([from, to]),
+  };
+  assert.equal(await context.stageRangedInput({url: "https://ftp.ebi.ac.uk/large"}, FS, "/sumstats", true), "/sumstats.tsv.gz");
+  assert.deepEqual(ranges, [
+    [0, 8 * 1024 ** 2 - 1], [8 * 1024 ** 2, 16 * 1024 ** 2 - 1],
+    [16 * 1024 ** 2, 24 * 1024 ** 2 - 1], [24 * 1024 ** 2, size - 1],
+  ]);
+  assert.equal(writes.reduce((total, [, length]) => total + length, 0), size);
+  assert.deepEqual(renames, [["/sumstats", "/sumstats.tsv.gz"]]);
+});
+
 test("LD archive order is chromosome-numeric for local files and URLs", () => {
   const context = worker();
   const sorted = context.sortLDInputs([

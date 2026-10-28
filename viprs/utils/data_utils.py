@@ -1,4 +1,10 @@
+import asyncio as _asyncio
 import gzip
+import html as _html
+import re as _re
+from urllib.parse import unquote as _unquote
+from urllib.parse import urljoin as _urljoin
+from urllib.parse import urlsplit as _urlsplit
 
 import numpy as np
 import pandas as pd
@@ -23,6 +29,153 @@ PGS_CATALOG_COLUMN_MAP = {
     "other_allele": "A2",
     "effect_weight": "BETA",
 }
+GWAS_CATALOG_SUMSTATS_ROOT = (
+    "https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/"
+)
+
+
+def is_gwas_catalog_accession(value):
+    """Return whether ``value`` is a GWAS Catalog study accession."""
+
+    return isinstance(value, str) and _re.fullmatch(
+        r"GCST\d+", value.strip(), _re.IGNORECASE
+    ) is not None
+
+
+def gwas_catalog_directory(accession):
+    """Return the GWAS Catalog summary-statistics directory for an accession."""
+
+    match = _re.fullmatch(r"GCST(\d+)", str(accession).strip(), _re.IGNORECASE)
+    if match is None:
+        raise ValueError("Enter a GWAS Catalog accession such as GCST005195.")
+
+    number = int(match.group(1))
+    if not 0 < number <= 2**53 - 1:
+        raise ValueError("The GWAS Catalog accession is out of range.")
+
+    width = max(6, len(match.group(1)))
+    start = (number - 1) // 1000 * 1000 + 1
+    study_id = f"GCST{number:0{width}d}"
+    study_range = f"GCST{start:0{width}d}-GCST{start + 999:0{width}d}"
+    return f"{GWAS_CATALOG_SUMSTATS_ROOT}{study_range}/{study_id}/"
+
+
+def _listing_links(listing, directory):
+    origin = _urlsplit(directory)[:2]
+    links = (
+        _urljoin(directory, _html.unescape(match.group(1)))
+        for match in _re.finditer(
+            r"href=[\"']([^\"']+)[\"']", listing, _re.IGNORECASE
+        )
+    )
+    return [
+        url
+        for url in links
+        if _urlsplit(url)[:2] == origin and url.startswith(directory)
+    ]
+
+
+def _is_build_37_filename(url):
+    return _re.search(
+        r"(?:grch37|build(?:grch)?37|hg19)",
+        _unquote(_urlsplit(url).path),
+        _re.IGNORECASE,
+    ) is not None
+
+
+def _metadata_is_build_37(metadata):
+    match = _re.search(
+        r"(?:^|\n)\s*genome_assembly\s*:\s*[\"']?([^\s#\"']+)",
+        metadata,
+        _re.IGNORECASE,
+    )
+    return match is not None and match.group(1).lower() in {
+        "grch37",
+        "hg19",
+        "ncbi37",
+    }
+
+
+async def resolve_gwas_catalog_async(accession, read_text):
+    """Resolve an accession using an async text-fetching callback."""
+
+    directory = gwas_catalog_directory(accession)
+    root_links = _listing_links(await read_text(directory), directory)
+    candidates = []
+
+    harmonised_directory = next(
+        (url for url in root_links if url == directory + "harmonised/"), None
+    )
+    if harmonised_directory:
+        links = _listing_links(
+            await read_text(harmonised_directory), harmonised_directory
+        )
+        for suffix in (".h.tsv.gz", ".f.tsv.gz"):
+            candidates.extend(
+                (url, links)
+                for url in sorted(links)
+                if _urlsplit(url).path.lower().endswith(suffix)
+            )
+
+    candidates.extend(
+        (url, root_links)
+        for url in sorted(root_links)
+        if _re.search(r"\.tsv(?:\.gz)?$", _urlsplit(url).path, _re.IGNORECASE)
+    )
+    for candidate, links in candidates:
+        if _is_build_37_filename(candidate):
+            return candidate
+        metadata_url = next(
+            (url for url in links if url == candidate + "-meta.yaml"), None
+        )
+        if metadata_url:
+            try:
+                metadata = await read_text(metadata_url)
+            except Exception:
+                continue
+            if _metadata_is_build_37(metadata):
+                return candidate
+
+    raise ValueError(
+        "This accession has no GRCh37/hg19 harmonised, formatted, or GWAS-SSF "
+        "summary-statistics file compatible with the default LD reference."
+    )
+
+
+def _read_gwas_catalog_text(url):
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
+
+    try:
+        with urlopen(Request(url, headers={"User-Agent": "VIPRS"})) as response:
+            encoding = response.headers.get_content_charset() or "utf-8"
+            return response.read().decode(encoding)
+    except HTTPError as error:
+        if error.code == 404:
+            raise FileNotFoundError(
+                "No GWAS Catalog summary statistics were found for this accession."
+            ) from error
+        raise ConnectionError(
+            f"Could not list GWAS Catalog files (HTTP {error.code})."
+        ) from error
+    except URLError as error:
+        raise ConnectionError(
+            "Could not reach the GWAS Catalog FTP server. Check the connection."
+        ) from error
+
+
+def resolve_gwas_catalog(accession, read_text=None):
+    """Resolve an accession to its preferred GRCh37 summary-statistics URL.
+
+    ``read_text`` may be supplied to use a different HTTP transport.
+    """
+
+    fetch = read_text or _read_gwas_catalog_text
+
+    async def async_fetch(url):
+        return fetch(url)
+
+    return _asyncio.run(resolve_gwas_catalog_async(accession, async_fetch))
 
 
 def parse_pgs_catalog_metadata(metadata=None):

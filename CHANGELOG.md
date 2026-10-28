@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-10-28
+
+### Added
+
+- Added a browser application that runs the real VIPRS and VIPRSMix inference code locally in a Pyodide
+Web Worker, supports local and hosted summary statistics and LD references, and exports posterior tables
+and detailed JSON run reports without uploading user data to a server.
+- Added browser input support for files, folders, URL and glob patterns, hosted UK Biobank LD panels,
+GWAS Catalog accessions, and multi-chromosome analyses, with chromosome-aware ordering, secure ZIP
+extraction, input validation, progress reporting, cancellation, and a bundled chromosome 22 example.
+- Added a reproducible WebAssembly build and packaging toolchain for VIPRS and magenpy, including SIMD-enabled
+Cython/C++ kernels, pinned runtime dependencies, wheel and source checksums, build provenance, release-asset
+verification and reuse, and source-build fallback when a compatible magenpy wheel is unavailable.
+- Added continuous WebAssembly builds, browser integration tests, release archives, and documentation deployment
+that publishes only a tested application bundle from the same source commit.
+- Added comprehensive tests for browser input resolution and streaming, WebAssembly artifacts and release
+selection, archive safety, multi-chromosome inference, user-interface behavior, and parity with native VIPRS.
+
+### Changed
+
+- Optimized the VIPRSMix E-step by accumulating component responsibilities, posterior moments, and ELBO terms
+inside the native kernel, using thread-local double-precision reductions and cached sufficient statistics to
+avoid repeated genome-wide scans during M-step and ELBO calculations.
+- Added WebAssembly SIMD implementations of the inference kernel's dot-product and update operations while
+preserving the existing native and OpenMP execution paths.
+- Updated `viprs_fit` to obtain all supported summary-statistics formats and aliases from magenpy's parser
+registry instead of maintaining a fixed list, and raised the minimum magenpy version to 0.2.3.
+- Centralized GRCh37 GWAS Catalog accession resolution in `data_utils` and made accessions valid
+summary-statistics inputs in both `viprs_fit` and the browser application.
+- Improved the browser application's performance and memory use by range-streaming hosted Hugging Face LD,
+downloading large range-capable GWAS Catalog files in parallel, parsing summary statistics once, using compact
+numeric storage for large inputs, and releasing chromosome data and local LD archives incrementally.
+- Improved the browser interface with clearer source selection, model configuration and prior visualization,
+runtime and convergence status, timing summaries, result filtering, download controls, responsive styling,
+and more actionable validation and network errors.
+- Refreshed continuous benchmark results for the release changes.
+
+### Fixed
+
+- Fixed summary-statistics train/validation splitting to use the sample sizes returned by magenpy, avoid
+compounding sample-size reductions across repeated splits, preserve mixture-model dimensions, and keep the
+model-wide sample size synchronized when restoring or replacing inputs.
+- Fixed `viprs_fit` to use `--validation-sumstats-format` when reading validation summary statistics rather
+than reusing the training-data format.
+- Fixed VIPRSMix parameter updates to preserve the configured floating-point precision and skipped negligible
+LD updates in mixture and grid E-step kernels.
+- Fixed browser and WebAssembly build behavior across Windows and POSIX path conventions, along with runtime,
+URL-resolution, and browser-test failures discovered during application development.
+
 ## [0.1.5] - 2026-10-07
 
 ### Added

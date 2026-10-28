@@ -46,7 +46,7 @@ $("components").addEventListener("change", () => {
 });
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const SLAB_COLORS = ["#205540", "#cd745e", "#527da3", "#b18b3e", "#725d94", "#4d8d87"];
+const SLAB_COLORS = ["#1f6f9c", "#6b55a1", "#178276", "#b36f12", "#9b3f78", "#4f772d"];
 function slabPath(index) {
   const baseline = 140, center = 284;
   const sigma = [25, 38, 54, 72, 94, 120][index];
@@ -72,7 +72,6 @@ function renderPrior(components, mixture) {
   const slabWord = components === 1 ? "slab" : "slabs";
   $("prior-summary").value = `1 spike + ${components} ${slabWord}`;
   $("slab-key").textContent = components === 1 ? "Slab · nonzero effects" : `${components} slabs · different effect scales`;
-  $("prior-plot-title").textContent = mixture ? "Sparse-mixture prior" : "Spike-and-slab prior";
   $("prior-plot-description").textContent = `A point mass at zero and ${components === 1 ? "one centered Gaussian slab" : `${components} centered Gaussian slabs with different variances`} for nonzero genetic effects.`;
 }
 $("demo").addEventListener("click", () => {
@@ -195,13 +194,13 @@ $("retry-runtime").addEventListener("click", () => { try { startWorker(); } catc
 
 function sourceInputs(kind) {
   const source = $(kind + "-source").value;
-  if (kind === "ld" && source === "hosted") return [{url: resolveDataURL($("ld-hosted-path").value, location.href)}];
+  if (kind === "ld" && source === "hosted") return [{url: $("ld-hosted-path").value, stream: true}];
   if (kind === "sumstats" && source === "catalog") {
     const accession = $("sumstats-catalog-id").value.trim().toUpperCase();
     if (!/^GCST\d+$/.test(accession)) throw new Error("Enter a GWAS Catalog accession such as GCST005195.");
     return [{catalog: accession}];
   }
-  if (source === "example") return [{url: resolveDataURL(EXAMPLE[kind], location.href)}];
+  if (source === "example") return [{url: EXAMPLE[kind], stream: kind === "ld"}];
   if (source === "folder") {
     if (!$(kind + "-folder").files.length) throw new Error(`Choose a local ${kind} folder first.`);
     const files = selectLocalFiles($(kind + "-folder").files, $(kind + "-pattern").value);
@@ -216,9 +215,15 @@ function sourceInputs(kind) {
   }
   const lines = $(kind + "-url").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (!lines.length || lines.length > 64) throw new Error(`Enter 1–64 ${kind} URLs, one per line.`);
-  const urls = lines.map((line) => resolveDataURL(line, location.href));
-  if (new Set(urls).size !== urls.length) throw new Error(`Remove duplicate ${kind} URLs.`);
-  return urls.map((url) => ({url}));
+  const urls = lines.map((line) => ({
+    raw: line,
+    url: resolveDataURL(line, location.href),
+  }));
+  if (new Set(urls.map(({url}) => url)).size !== urls.length) throw new Error(`Remove duplicate ${kind} URLs.`);
+  return urls.map(({raw, url}) => ({
+    url: kind === "ld" && /^hf:\/\//i.test(raw) ? raw : url,
+    stream: kind === "ld" && /^hf:\/\//i.test(raw),
+  }));
 }
 function renderRows() {
   const chromosome = $("chromosome-filter").value;

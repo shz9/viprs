@@ -16,6 +16,34 @@ from pathlib import Path, PurePosixPath
 import numpy as np
 
 
+async def resolve_browser_gwas_catalog(accession, read_text=None):
+    """Resolve a Catalog accession using the browser's HTTP transport."""
+    from viprs.utils.data_utils import resolve_gwas_catalog_async
+
+    if read_text is None:
+        from pyodide.http import pyfetch
+
+        async def read_text(url):
+            try:
+                response = await pyfetch(url, credentials="omit")
+            except Exception as error:
+                raise ConnectionError(
+                    "Could not reach the GWAS Catalog FTP server. "
+                    "Check the connection."
+                ) from error
+            if response.status == 404:
+                raise FileNotFoundError(
+                    "No GWAS Catalog summary statistics were found for this accession."
+                )
+            if not 200 <= response.status < 300:
+                raise ConnectionError(
+                    f"Could not list GWAS Catalog files (HTTP {response.status})."
+                )
+            return await response.string()
+
+    return await resolve_gwas_catalog_async(accession, read_text)
+
+
 def ensure_linear_operator():
     """Provide the tiny scipy interface magenpy needs without loading SciPy."""
     try:
@@ -137,26 +165,85 @@ class BrowserFitSession:
         self.preparation_seconds = 0.0
         self.fit_seconds = 0.0
         self.linear_operator = None
+        self.sumstats_tables = self._read_summary_statistics()
+
+    def _read_summary_statistics(self):
+        """Parse summary statistics once, using bounded browser-friendly dtypes."""
+        from magenpy import GWADataLoader
+        from magenpy.parsers.sumstats_parsers import get_sumstats_parser
+
+        # pandas otherwise consolidates every numeric GWAS-SSF column into a
+        # second float64 block. For an eight-million-row Catalog file that one
+        # temporary allocation is about 728 MiB. Use compact storage only for
+        # large staged inputs, preserving the established float64 numerics for
+        # ordinary files and small regression fixtures.
+        parser = get_sumstats_parser(
+            self.options.get("sumstats_format", "fastgwa")
+        )(None)
+        compact = (
+            sum(Path(path).stat().st_size for path in self.sumstats_paths)
+            >= 64 * 1024**2
+        )
+        if compact:
+            parser.column_dtypes = {
+                column: (
+                    np.float32
+                    if dtype is np.float64 and column != "POS"
+                    else dtype
+                )
+                for column, dtype in parser.column_dtypes.items()
+            }
+        with tempfile.TemporaryDirectory(prefix="viprs-browser-sumstats-") as work:
+            loader = GWADataLoader(temp_dir=str(Path(work) / "temp"), threads=1)
+            loader.read_summary_statistics(
+                [str(path) for path in self.sumstats_paths],
+                parser=parser,
+                drop_duplicated=True,
+            )
+            tables = loader.sumstats_table or {}
+            loader.sumstats_table = None
+            loader.cleanup()
+        if not tables:
+            raise ValueError("No summary statistics could be read from the supplied inputs.")
+        return {str(chromosome): table for chromosome, table in tables.items()}
 
     def fit_ld_archive(self, ld_path, remaining_archives=0, progress_callback=None):
-        """Extract, fit, and release one archive before the worker stages another."""
+        """Stream or extract, fit, and release one LD archive at a time."""
         self.linear_operator = self.linear_operator or ensure_linear_operator()
         from magenpy import GWADataLoader
-
         from viprs.model import VIPRS, VIPRSMix
 
         preparation_start = time.perf_counter()
         with tempfile.TemporaryDirectory(prefix="viprs-browser-ld-") as work:
-            roots = unpack_ld(ld_path, Path(work) / "stores")
-            # Summary statistics remain staged for the run. The LD archive and
-            # its extracted stores exist only for this call.
+            # GWADataLoader expands hf:// globs and delegates each store to
+            # LDMatrix.from_path. Local browser uploads first need safe ZIP
+            # extraction because Pyodide's filesystem does not expose them as
+            # native ZipStore paths.
+            ld_stores = (
+                str(ld_path)
+                if str(ld_path).startswith("hf://")
+                else unpack_ld(ld_path, Path(work) / "stores")
+            )
             gdl = GWADataLoader(
-                sumstats_files=[str(path) for path in self.sumstats_paths],
-                sumstats_format=self.options.get("sumstats_format", "fastgwa"),
-                ld_store_files=roots,
+                ld_store_files=ld_stores,
                 temp_dir=str(Path(work) / "temp"),
                 threads=1,
             )
+            selected = {}
+            for chromosome in gdl.ld or {}:
+                key = str(chromosome)
+                if key in self.sumstats_tables:
+                    selected[chromosome] = self.sumstats_tables.pop(key)
+            if not selected:
+                available = ", ".join(sorted(self.sumstats_tables, key=str)) or "none"
+                raise ValueError(
+                    "The LD chromosome does not occur in the summary statistics "
+                    f"(remaining summary chromosomes: {available})."
+                )
+            # Keep parsed summaries across sequential local archives, while
+            # GWADataLoader performs the actual cross-source harmonization.
+            gdl.sumstats_table = selected
+            gdl.harmonize_data()
             chromosome_loaders = gdl.split_by_chromosome()
             chromosomes = sorted(chromosome_loaders)
             self.preparation_seconds += time.perf_counter() - preparation_start
@@ -214,6 +301,8 @@ class BrowserFitSession:
                     completed = len(self.chromosome_results)
                     total = completed + len(chromosomes) - index - 1 + remaining_archives
                     progress_callback(chromosome_key, completed, total)
+            gdl.cleanup()
+            del gdl
         gc.collect()
 
     def finish(self):

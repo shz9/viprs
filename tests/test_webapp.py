@@ -1,4 +1,5 @@
 """Validation and numerical regression coverage for the standalone browser adapter."""
+import asyncio
 import importlib.util
 import json
 import os
@@ -48,6 +49,20 @@ def test_archive_store_discovery(tmp_path):
 def test_invalid_options_rejected(options):
     with pytest.raises(ValueError):
         browser.validate_options(dict(OPTIONS, **options))
+
+
+def test_browser_catalog_resolution_uses_shared_python_utility():
+    from viprs.utils.data_utils import gwas_catalog_directory
+
+    directory = gwas_catalog_directory("GCST005195")
+
+    async def read_text(url):
+        assert url == directory
+        return '<a href="study-build37.tsv.gz">data</a>'
+
+    assert asyncio.run(
+        browser.resolve_browser_gwas_catalog("GCST005195", read_text)
+    ) == (directory + "study-build37.tsv.gz")
 
 
 def test_bundle_contains_real_webassembly_extensions():

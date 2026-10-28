@@ -34,8 +34,22 @@ PURE_WHEELS = {
         "0.20",
         "9422c40d1e350e4259f509fb2e608d6bc43c0136f79a00db1b49046029d0b3b7",
     ),
+    "huggingface-hub": (
+        "1.22.0",
+        "b09e19309ae09ee0a71892701c4fe70af39ab4e00817321dc62f2289a977249b",
+    ),
+    "filelock": (
+        "3.29.5",
+        "8af830889ba3a0ffcefbd6c7d2af8a54012058103771f2e10848222f476a1693",
+    ),
 }
-BUILTIN_PACKAGES = ["micropip", "numpy", "pandas", "tqdm", "numcodecs", "asciitree"]
+BUILTIN_PACKAGES = [
+    "micropip", "numpy", "pandas", "tqdm", "numcodecs", "asciitree",
+    # magenpy's Hugging Face LD support imports the bundled huggingface-hub
+    # wheel; these are its browser-compatible pure-Python dependencies.
+    "fsspec", "httpx", "click", "packaging", "pyyaml",
+    "typing-extensions",
+]
 RUNTIME_DEPENDENCIES = {
     "magenpy": {"numpy", "pandas", "tqdm", "zarr"},
     "viprs": {"numpy", "magenpy", "pandas", "tqdm", "zarr"},

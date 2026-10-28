@@ -75,6 +75,21 @@ def check_args(args):
 
     from magenpy.utils.system_utils import get_filenames, is_path_writable
 
+    def is_remote(path):
+        return path.startswith(("https://", "http://"))
+
+    def resolve_sumstats(path_attr, format_attr):
+        from viprs.utils.data_utils import (
+            is_gwas_catalog_accession,
+            resolve_gwas_catalog,
+        )
+
+        path = getattr(args, path_attr, None)
+        if is_gwas_catalog_accession(path):
+            logger.info(f"> Resolving GWAS Catalog study {path.upper()}...")
+            setattr(args, path_attr, resolve_gwas_catalog(path))
+            setattr(args, format_attr, "gwascatalog")
+
     def get_ld_store_files(path):
         if path.startswith("hf://"):
             from magenpy.utils.system_utils import glob_hf_path
@@ -91,8 +106,9 @@ def check_args(args):
             f"No valid LD matrix files were found at: {args.ld_dir}"
         )
 
+    resolve_sumstats("sumstats_path", "sumstats_format")
     sumstats_files = get_filenames(args.sumstats_path)
-    if len(sumstats_files) < 1:
+    if len(sumstats_files) < 1 and not is_remote(args.sumstats_path):
         raise FileNotFoundError(
             f"No valid summary statistics files were found at: {args.sumstats_path}"
         )
@@ -173,6 +189,9 @@ def check_args(args):
                 args.validation_ld_panel is not None
                 and args.validation_sumstats_path is not None
             ):
+                resolve_sumstats(
+                    "validation_sumstats_path", "validation_sumstats_format"
+                )
                 ld_store_files = get_ld_store_files(args.validation_ld_panel)
                 if len(ld_store_files) < 1:
                     raise FileNotFoundError(
@@ -180,7 +199,9 @@ def check_args(args):
                         f"validation set were found at: {args.ld_dir}"
                     )
                 sumstats_files = get_filenames(args.validation_sumstats_path)
-                if len(sumstats_files) < 1:
+                if len(sumstats_files) < 1 and not is_remote(
+                    args.validation_sumstats_path
+                ):
                     raise FileNotFoundError(
                         f"No valid summary statistics files for the validation set "
                         f"were found at: {args.validation_sumstats_path}"
@@ -669,7 +690,8 @@ def main():
         type=str,
         required=True,
         help="The summary statistics directory or file. Can be a "
-        "wildcard of the form sumstats/chr_*",
+        "wildcard of the form sumstats/chr_*, an HTTP(S) URL, or a GWAS "
+        "Catalog accession such as GCST005195.",
     )
 
     # Output files / directories:
@@ -775,7 +797,8 @@ def main():
         dest="validation_sumstats_path",
         type=str,
         help="The summary statistics directory or file for the validation set. Can be a "
-        "wildcard of the form sumstats/chr_*",
+        "wildcard of the form sumstats/chr_*, an HTTP(S) URL, or a GWAS Catalog "
+        "accession.",
     )
     parser.add_argument(
         "--validation-sumstats-format",

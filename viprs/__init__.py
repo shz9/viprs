@@ -1,6 +1,5 @@
 from ._version import __release_date__, __version__
-from .model import LDPredInf, LDPredInfGrid, VIPRS
-from .utils.data_utils import *
+from .model import VIPRS, VIPRSMix
 
 
 def make_ascii_logo(desc=None, left_padding=None):
@@ -21,19 +20,31 @@ _____/  /_/   _  .___/ /_/     /____/
               /_/
     """
 
-    lines = logo.replace(" ", "\u2001").splitlines()[1:]
-    lines.append("Variational Inference of Polygenic Risk Scores")
-    lines.append(f"Version: {__version__} | Release date: {__release_date__}")
-    lines.append("Author: Shadi Zabad, University of Oxford")
+    # Keep the logo on a single, predictable terminal column grid. U+2001
+    # (EM QUAD) is not rendered at the same width as an ASCII space by every
+    # terminal, despite both counting as one Python character. Also center the
+    # ASCII art as one block so the relative indentation of its rows is kept.
+    art_lines = logo.splitlines()
+    while art_lines and not art_lines[0].strip():
+        art_lines.pop(0)
+    while art_lines and not art_lines[-1].strip():
+        art_lines.pop()
+
+    text_lines = [
+        "Variational Inference of Polygenic Risk Scores",
+        f"Version: {__version__} | Release date: {__release_date__}",
+        "Author: Shadi Zabad, University of Oxford",
+    ]
 
     # Find the maximum length of the lines
-    max_len = max([len(l) for l in lines])
+    art_width = max(len(line) for line in art_lines)
+    max_len = max(art_width, *(len(line) for line in text_lines))
     if desc is not None:
         max_len = max(max_len, len(desc))
 
-    # Pad the lines to the same length
-    for i, l in enumerate(lines):
-        lines[i] = l.center(max_len)
+    # Right-pad the art before centering it to preserve its internal layout.
+    lines = [line.ljust(art_width).center(max_len) for line in art_lines]
+    lines.extend(line.center(max_len) for line in text_lines)
 
     # Add separators at the top and bottom
     lines.insert(0, "*" * max_len)
@@ -44,6 +55,6 @@ _____/  /_/   _  .___/ /_/     /____/
 
     if left_padding is not None:
         for i, l in enumerate(lines):
-            lines[i] = "\u2001" * left_padding + l
+            lines[i] = " " * left_padding + l
 
     return "\n".join(lines)

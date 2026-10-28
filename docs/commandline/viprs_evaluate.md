@@ -136,3 +136,74 @@ following command in your terminal:
 ```bash
 viprs_evaluate -h
 ```
+
+Which outputs the following help message:
+
+```text
+
+          **********************************************
+                     _____
+             ___   _____(_)________ ________________
+             __ | / /__  / ___  __ \__  ___/__  ___/
+             __ |/ / _  /  __  /_/ /_  /    _(__  )
+             _____/  /_/   _  .___/ /_/     /____/
+                           /_/
+          Variational Inference of Polygenic Risk Scores
+           Version: 0.1.6 | Release date: October 2026
+            Author: Shadi Zabad, University of Oxford
+          **********************************************
+          < Evaluate Prediction Accuracy of PRS Models >
+
+usage: viprs_evaluate [-h] [--prs-file PRS_FILE] [--phenotype-file PHENO_FILE] [--phenotype-col PHENO_COL]
+                      [--phenotype-likelihood {binomial,infer,gaussian}] [--keep KEEP]
+                      [--covariates-file COVARIATES_FILE] [-s SUMSTATS_PATH] [-f FIT_FILES] [-l LD_DIR]
+                      [--sumstats-format {custom,plink1.9,fastgwa,plink2,cojo,gwas-ssf,gwascatalog,magenpy,ssf,saige,plink}]
+                      [--custom-sumstats-mapper CUSTOM_SUMSTATS_MAPPER] [--custom-sumstats-sep CUSTOM_SUMSTATS_SEP]
+                      [--gwas-sample-size GWAS_SAMPLE_SIZE] [--temp-dir TEMP_DIR] [--threads THREADS] --output-file
+                      OUTPUT_FILE [--metrics METRICS [METRICS ...]] [--log-level {INFO,WARNING,ERROR,DEBUG,CRITICAL}]
+
+Commandline arguments for evaluating polygenic scores
+
+options:
+  -h, --help            show this help message and exit
+  --prs-file PRS_FILE   The path to the PRS file (expected format: FID IID PRS, tab-separated).
+  --phenotype-file PHENO_FILE
+                        The path to the phenotype file. The expected format is: FID IID phenotype (no header), tab-
+                        separated.
+  --phenotype-col PHENO_COL
+                        The column index for the phenotype in the phenotype file (0-based index).
+  --phenotype-likelihood {binomial,infer,gaussian}
+                        The phenotype likelihood ("gaussian" for continuous, "binomial" for case-control). If not set,
+                        it will be inferred automatically from the phenotype file.
+  --keep KEEP           A plink-style keep file to select a subset of individuals for the evaluation.
+  --covariates-file COVARIATES_FILE
+                        A file with covariates for the samples included in the analysis. This tab-separated file
+                        should not have a header and the first two columns should be the FID and IID of the samples.
+  -s SUMSTATS_PATH, --sumstats SUMSTATS_PATH, --sumstats-file SUMSTATS_PATH
+                        The validation/test summary statistics file(s). This can be a file, directory, or wildcard
+                        matching multiple files.
+  -f FIT_FILES, --fit-files FIT_FILES
+                        The VIPRS .fit file(s) containing inferred effect sizes. This can be a file, directory, or
+                        wildcard matching per-chromosome files.
+  -l LD_DIR, --ld-dir LD_DIR
+                        The path to LD matrices for the validation/test dataset. This can be a directory or wildcard
+                        of the form ld/chr_*.
+  --sumstats-format {custom,plink1.9,fastgwa,plink2,cojo,gwas-ssf,gwascatalog,magenpy,ssf,saige,plink}
+                        The format of the validation/test summary statistics file(s).
+  --custom-sumstats-mapper CUSTOM_SUMSTATS_MAPPER
+                        Comma-separated column mappings for custom summary statistics, e.g.
+                        rsid=SNP,eff_allele=A1,beta=BETA.
+  --custom-sumstats-sep CUSTOM_SUMSTATS_SEP
+                        The delimiter for custom-format summary statistics (default: tab).
+  --gwas-sample-size GWAS_SAMPLE_SIZE
+                        The validation/test GWAS sample size. Required when it is absent from the summary statistics.
+  --temp-dir TEMP_DIR   The temporary directory where intermediate files are stored.
+  --threads THREADS     The number of threads to use when reading summary statistics and LD data.
+  --output-file OUTPUT_FILE
+                        The output file where evaluation metrics are stored (with no extension).
+  --metrics METRICS [METRICS ...]
+                        The evaluation metrics to compute. Summary-statistics evaluation supports Pseudo_Pearson_R and
+                        Pseudo_R2. By default, all metrics relevant to the selected evaluation mode are computed.
+  --log-level {INFO,WARNING,ERROR,DEBUG,CRITICAL}
+                        The logging level for the console output.
+```

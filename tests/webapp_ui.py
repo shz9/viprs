@@ -78,6 +78,10 @@ def main():
             assert page.locator("label[for=model]").text_content() == "Prior on the genetic architecture"
             assert page.locator("#slab-curves .slab-curve").count() == 1
             assert page.locator("#prior-summary").text_content() == "1 spike + 1 slab"
+            assert page.locator("#prior-plot title").count() == 0
+            assert page.locator(".spike-mark path").get_attribute("stroke") is None
+            assert page.locator(".spike-mark path").evaluate("el => getComputedStyle(el).stroke") != page.locator("#slab-curves .slab-curve").evaluate("el => getComputedStyle(el).stroke")
+            assert page.locator(".spike-legend").evaluate("el => getComputedStyle(el).color") != page.locator(".slab-legend").evaluate("el => getComputedStyle(el).color")
             page.locator("#model").select_option("VIPRSMix")
             assert page.locator("#slab-curves .slab-curve").count() == 3
             assert page.locator("#components").get_attribute("max") == "6"
@@ -117,7 +121,7 @@ def main():
                 assert page.locator("#status-badge").text_content() == "Converged", (summary_source, ld_source, page.locator("#log").text_content())
                 request = json.loads(page.locator("#log").text_content().split("REQUEST ")[-1].splitlines()[0])
                 expected_sumstats = {"files": "height.tsv", "folder": "height.tsv", "urls": "https://example.org/sumstats.zip"}
-                expected_ld = {"files": "chr_22.zip", "folder": "chr_22.zip", "urls": "https://example.org/ld.zip", "example": "https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip", "hosted": "https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/AFR/chr_*.zip"}
+                expected_ld = {"files": "chr_22.zip", "folder": "chr_22.zip", "urls": "https://example.org/ld.zip", "example": "hf://datasets/shz9/ukb-ld/EUR/chr_22.zip", "hosted": "hf://datasets/shz9/ukb-ld/AFR/chr_*.zip"}
                 assert request["sumstats"] == [expected_sumstats[summary_source]]
                 assert request["ld"] == [expected_ld[ld_source]]
                 assert request["options"]["sumstats_format"] == "magenpy"

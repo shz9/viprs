@@ -57,8 +57,9 @@ to the built MkDocs site.
 LD and summary statistics have independent source selectors. The initial selection
 is hosted UK Biobank LD plus local summary statistics. The hosted LD card selects
 an ancestry and shows the all-chromosome glob,
-`hf://datasets/shz9/ukb-ld/EUR/chr_*.zip` by default. Archives are downloaded before
-fitting; use custom URLs or globs to select fewer chromosomes. Each input also
+`hf://datasets/shz9/ukb-ld/EUR/chr_*.zip` by default. Hosted archives remain remote
+and are read through magenpy's range-backed Zarr store while fitting; use custom
+URLs or globs to select fewer chromosomes. Each input also
 supports its own local files, local folder and patterns, or hosted URLs.
 
 The **Try chr22 example** button beside the top resource links selects both of these supplied chromosome 22 datasets:
@@ -101,10 +102,17 @@ convergence tolerance, and random seed. Defaults are 1,000 iterations, as in
 `viprs_fit`, and a tolerance of `1e-6` for both parameters and ELBO, as in
 `VIPRS.fit`.
 
-The worker streams inputs into its in-memory filesystem. For summary statistics,
-it detects gzip from the first two bytes and renames the staged file with the
-appropriate suffix, without copying its contents. Python reads that same file,
-extracts the LD archives, and makes one uninterrupted `fit()` call. For example, with a combined summary file:
+The worker streams inputs into its in-memory filesystem. GWAS Catalog downloads use
+up to four parallel byte ranges when the server advertises range support, with a
+single-stream fallback for other servers. For summary statistics, it detects gzip
+from the first two bytes and renames the staged file with the appropriate suffix,
+without copying its contents. Python reads that file once; large inputs use 32-bit
+storage for non-positional numeric summary-statistic columns to avoid pandas' second
+full-width consolidation allocation. Hosted Hugging Face LD archives
+remain remote: `GWADataLoader` resolves the `hf://` glob and its `LDMatrix` objects
+request ZIP ranges through the Hugging Face filesystem as they are needed. Uploaded
+and custom HTTP(S) LD archives retain the local staged path. For example,
+with a combined summary file:
 
 ```python
 from magenpy import GWADataLoader
@@ -351,9 +359,9 @@ plus GWAS Catalog accessions, ancestry selection, local folder matching, the exa
 shortcut, the threshold hover animation, responsive layouts, and reduced motion.
 
 The Python checks validate archive extraction, options, wheel hashes, WebAssembly
-magic bytes, the bundled VIPRS/VIPRSMix source, and joint inference on two chromosomes
-using separate and combined inputs. The JavaScript tests check HF/GitHub URL
-resolution, GRCh37-aware GWAS Catalog FTP discovery, streamed input integrity, cleanup on failure, and acceptance above the
+magic bytes, the bundled VIPRS/VIPRSMix source, GRCh37-aware GWAS Catalog FTP
+discovery, and joint inference on two chromosomes using separate and combined inputs.
+The JavaScript tests check HF/GitHub URL resolution, streamed input integrity, cleanup on failure, and acceptance above the
 old size thresholds with a simulated filesystem. The browser test runs the real chromosome 22 inference and asserts that
 WASM extension modules were loaded. It verifies eager initialization, runtime reuse,
 VIPRS and VIPRSMix with two chromosomes, downloads, cancellation, initialization
@@ -377,17 +385,19 @@ The earlier 256 MiB per-file, 512 MiB combined, and 1 GiB extraction caps were
 conservative prototype guardrails, not VIPRS requirements. Local files and downloads
 are streamed into the virtual filesystem without assembling an extra full-file
 JavaScript buffer. Downloads have no fixed time limit; Cancel can stop a stalled transfer.
-This is still an in-memory application: the current archive, its extracted LD store,
-and runtime arrays must fit in available browser memory. Arrays can occupy
-substantially more memory than the archive, especially with many mixture components.
-For multi-chromosome inputs, LD archives are downloaded and fitted in chromosome
-order, and each archive and model are released before the next download begins.
-An archive containing several chromosomes must itself fit in memory while it is
-processed, so separate chromosome archives provide the lowest peak usage.
+This is still an in-memory application: summary-statistics tables, local archives,
+and runtime arrays must fit in available browser memory. Pyodide's wasm32 heap has a
+4 GiB address-space ceiling, and the browser or operating system may enforce a lower
+practical process limit. Arrays can occupy substantially more memory than compressed
+inputs, especially with many mixture components. Summary statistics are parsed once
+and partitioned by chromosome; each partition is released after fitting. Hosted LD
+is range-streamed, while uploaded or custom archives are fitted in chromosome order
+and released before the next archive is staged. Separate local chromosome archives
+provide the lowest peak usage.
 Up to 64 files per input type and 50,000 ZIP entries per archive are accepted.
 Archive traversal paths, symlinks, and duplicate paths are rejected.
-Streaming remote Zarr access, multiple worker threads,
-grid search, and genotype-based scoring are not implemented in the interface.
+Multiple worker threads, grid search, and genotype-based scoring are not implemented
+in the interface.
 
 Use file selection for local data: a typed filesystem path cannot grant a website
 access to your disk. Remote hosts must allow CORS. Data is fetched without credentials,

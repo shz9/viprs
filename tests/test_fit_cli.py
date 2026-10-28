@@ -4,6 +4,7 @@ from pathlib import Path
 
 import magenpy.utils.system_utils as system_utils
 import pandas as pd
+import viprs.utils.data_utils as data_utils
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,33 @@ def test_check_args_accepts_hugging_face_ld_path(monkeypatch):
     )
 
     assert hf_calls == ["hf://datasets/example/chr_*.zip"]
+
+
+def test_check_args_resolves_gwas_catalog_accession(monkeypatch):
+    url = "https://ftp.ebi.ac.uk/study.tsv.gz"
+    monkeypatch.setattr(data_utils, "resolve_gwas_catalog", lambda accession: url)
+    monkeypatch.setattr(
+        system_utils,
+        "get_filenames",
+        lambda path, extension=None: [path] if extension else [],
+    )
+    monkeypatch.setattr(system_utils, "is_path_writable", lambda path: True)
+
+    args = Namespace(
+        ld_dir="ld",
+        sumstats_path="gcst005195",
+        sumstats_format="plink",
+        output_dir="output",
+        temp_dir="temp",
+        n_components=1,
+        fix_sigma_epsilon=None,
+        lambda_min=None,
+        hyp_search="EM",
+    )
+    FIT_CLI["check_args"](args)
+
+    assert args.sumstats_path == url
+    assert args.sumstats_format == "gwascatalog"
 
 
 def test_write_effect_sizes_as_pgs_catalog(tmp_path):

@@ -20,7 +20,9 @@ spec.loader.exec_module(build)
 
 def test_runtime_omits_optional_scientific_stacks():
     assert set(build.BUILTIN_PACKAGES) == {
-        "micropip", "numpy", "pandas", "tqdm", "numcodecs", "asciitree"
+        "micropip", "numpy", "pandas", "tqdm", "numcodecs", "asciitree",
+        "fsspec", "httpx", "click", "packaging", "pyyaml",
+        "typing-extensions",
     }
     assert {"scipy", "scikit-learn", "statsmodels", "joblib"}.isdisjoint(
         build.BUILTIN_PACKAGES
