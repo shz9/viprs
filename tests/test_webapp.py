@@ -72,9 +72,10 @@ def test_bundle_contains_real_webassembly_extensions():
                 # The fitted model and its C++ kernel source are the actual repository implementation.
                 for source in ["viprs/model/VIPRS.py", "viprs/model/VIPRSMix.py", "viprs/model/vi/e_step.hpp"]:
                     assert wheel.read(source) == (ASSETS.parents[1] / source).read_bytes()
-    assert len(modules) == 5
+    assert len(modules) == 4
     assert any("e_step_cpp" in name for name in modules)
     assert any("c_utils" in name for name in modules)
+    assert not any("math_utils" in name for name in modules)
 
 
 @pytest.mark.parametrize("options", [{"model": "unknown"}, {"model": "VIPRSMix", "components": 0},

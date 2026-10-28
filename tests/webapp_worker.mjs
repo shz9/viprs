@@ -75,6 +75,58 @@ test("streams over the old per-file and combined caps without a full-file buffer
   assert.equal(total, 600 * 1024 ** 2);
 });
 
+test("LD archives are fitted and deleted one at a time in source order", async () => {
+  const context = worker();
+  const resident = new Set(), events = [];
+  let peakResident = 0;
+  const FS = {
+    open(path) {
+      resident.add(path);
+      peakResident = Math.max(peakResident, resident.size);
+      events.push(`open:${path}`);
+      return {path};
+    },
+    write(_handle, _bytes, _offset, length) { return length; },
+    close() {},
+    unlink(path) {
+      if (!resident.delete(path)) throw new Error("missing");
+      events.push(`unlink:${path}`);
+    },
+  };
+  const sources = [21, 22].map(chromosome => ({file: {
+    name: `chr${chromosome}.zip`, size: 1,
+    stream: () => new ReadableStream({start(controller) {
+      controller.enqueue(new Uint8Array([chromosome]));
+      controller.close();
+    }}),
+  }}));
+  const seen = [];
+  await context.fitLDArchives(sources, FS, "/run", async (path, remaining) => {
+    assert.deepEqual([...resident], [path]);
+    seen.push([path, remaining]);
+    events.push(`fit:${path}`);
+  });
+  assert.equal(peakResident, 1);
+  assert.deepEqual(seen, [["/run/ld-current", 1], ["/run/ld-current", 0]]);
+  assert.deepEqual(events, [
+    "open:/run/ld-current", "fit:/run/ld-current", "unlink:/run/ld-current",
+    "open:/run/ld-current", "fit:/run/ld-current", "unlink:/run/ld-current",
+  ]);
+});
+
+test("LD archive order is chromosome-numeric for local files and URLs", () => {
+  const context = worker();
+  const sorted = context.sortLDInputs([
+    {file: {name: "chr_22.zip"}},
+    {url: "https://example.org/chr_10.zip"},
+    {file: {name: "chr_2.zip"}},
+  ]);
+  assert.deepEqual(
+    [...sorted].map(source => source.file?.name || source.url.split("/").at(-1)),
+    ["chr_2.zip", "chr_10.zip", "chr_22.zip"],
+  );
+});
+
 test("filesystem failures cancel the reader and close the file", async () => {
   let cancelled = false;
   const stream = new ReadableStream({

@@ -8,6 +8,10 @@
 #include <limits>
 #include <type_traits>
 
+#ifdef __wasm_simd128__
+    #include <wasm_simd128.h>
+#endif
+
 // Check for and include `cblas`:
 #ifdef HAVE_CBLAS
     #include <cblas.h>
@@ -25,6 +29,15 @@
 bool omp_supported() {
     /* Check if OpenMP is supported by examining compiler flags. */
     #ifdef _OPENMP
+        return true;
+    #else
+        return false;
+    #endif
+}
+
+bool simd_supported() {
+    /* WebAssembly SIMD is enabled independently of OpenMP threading. */
+    #ifdef __wasm_simd128__
         return true;
     #else
         return false;
@@ -89,8 +102,39 @@ dot(T* x, U* y, int size) {
 
     */
 
-    T s = 0.;
+    #ifdef __wasm_simd128__
+        if constexpr (std::is_same<T, float>::value && std::is_same<U, float>::value) {
+            v128_t sums = wasm_f32x4_splat(0.f);
+            int i = 0;
+            for (; i + 4 <= size; i += 4) {
+                sums = wasm_f32x4_add(
+                    sums,
+                    wasm_f32x4_mul(wasm_v128_load(x + i), wasm_v128_load(y + i))
+                );
+            }
+            alignas(16) float lanes[4];
+            wasm_v128_store(lanes, sums);
+            T result = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+            for (; i < size; ++i) result = std::fma(y[i], x[i], result);
+            return result;
+        } else if constexpr (std::is_same<T, double>::value && std::is_same<U, double>::value) {
+            v128_t sums = wasm_f64x2_splat(0.);
+            int i = 0;
+            for (; i + 2 <= size; i += 2) {
+                sums = wasm_f64x2_add(
+                    sums,
+                    wasm_f64x2_mul(wasm_v128_load(x + i), wasm_v128_load(y + i))
+                );
+            }
+            alignas(16) double lanes[2];
+            wasm_v128_store(lanes, sums);
+            T result = lanes[0] + lanes[1];
+            for (; i < size; ++i) result = std::fma(y[i], x[i], result);
+            return result;
+        }
+    #endif
 
+    T s = 0.;
     #ifdef _OPENMP
         #ifndef _WIN32
             #pragma omp simd
@@ -158,6 +202,38 @@ axpy(T* x, U* y, T alpha, int size) {
        element-wise addition and multiplication:
        x := x + a*y.
     */
+
+    #ifdef __wasm_simd128__
+        if constexpr (std::is_same<T, float>::value && std::is_same<U, float>::value) {
+            const v128_t scale = wasm_f32x4_splat(alpha);
+            int i = 0;
+            for (; i + 4 <= size; i += 4) {
+                wasm_v128_store(
+                    x + i,
+                    wasm_f32x4_add(
+                        wasm_v128_load(x + i),
+                        wasm_f32x4_mul(wasm_v128_load(y + i), scale)
+                    )
+                );
+            }
+            for (; i < size; ++i) x[i] = std::fma(y[i], alpha, x[i]);
+            return;
+        } else if constexpr (std::is_same<T, double>::value && std::is_same<U, double>::value) {
+            const v128_t scale = wasm_f64x2_splat(alpha);
+            int i = 0;
+            for (; i + 2 <= size; i += 2) {
+                wasm_v128_store(
+                    x + i,
+                    wasm_f64x2_add(
+                        wasm_v128_load(x + i),
+                        wasm_f64x2_mul(wasm_v128_load(y + i), scale)
+                    )
+                );
+            }
+            for (; i < size; ++i) x[i] = std::fma(y[i], alpha, x[i]);
+            return;
+        }
+    #endif
 
     #ifdef _OPENMP
         #ifndef _WIN32

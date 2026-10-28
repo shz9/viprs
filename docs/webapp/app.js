@@ -5,12 +5,15 @@ let timer = null, startedAt = 0, downloadURLs = [], resultRows = {};
 
 function syncInputs() {
   for (const kind of ["ld", "sumstats"]) {
-    for (const source of ["hosted", "example", "files", "urls", "folder"]) {
+    for (const source of ["hosted", "catalog", "example", "files", "urls", "folder"]) {
       const panel = $(kind + "-" + source + "-inputs");
       if (panel) panel.hidden = $(kind + "-source").value !== source;
     }
   }
-  $("sumstats-format").disabled = runtimeState !== "ready" || $("sumstats-source").value === "example";
+  if ($("sumstats-source").value === "catalog" && Array.from($("sumstats-format").options).some(option => option.value === "gwascatalog")) {
+    $("sumstats-format").value = "gwascatalog";
+  }
+  $("sumstats-format").disabled = runtimeState !== "ready" || $("sumstats-source").value === "catalog";
 }
 function setSumstatsFormats(formats) {
   if (!Array.isArray(formats) || !formats.length) throw new Error("The runtime did not report any summary-statistics formats.");
@@ -25,15 +28,57 @@ function syncHostedLD() {
 $("ld-ancestry").addEventListener("change", syncHostedLD);
 function syncModel() {
   const mixture = $("model").value === "VIPRSMix";
+  const componentInput = $("components");
+  const components = mixture ? Math.min(6, Math.max(1, Number.parseInt(componentInput.value, 10) || 1)) : 1;
   $("mixture-settings").hidden = !mixture;
-  $("components").disabled = !mixture;
+  componentInput.disabled = !mixture;
   $("model-help").textContent = mixture
-    ? "A point mass at zero with multiple Gaussian effect-size components."
+    ? `A point mass at zero with ${components} Gaussian effect-size ${components === 1 ? "component" : "components"}.`
     : "A point mass at zero and one Gaussian component for nonzero effects.";
+  renderPrior(components, mixture);
 }
 $("model").addEventListener("change", syncModel);
+$("components").addEventListener("input", syncModel);
+$("components").addEventListener("change", () => {
+  const input = $("components");
+  input.value = Math.min(6, Math.max(1, Number.parseInt(input.value, 10) || 1));
+  syncModel();
+});
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const SLAB_COLORS = ["#205540", "#cd745e", "#527da3", "#b18b3e", "#725d94", "#4d8d87"];
+function slabPath(index) {
+  const baseline = 140, center = 284;
+  const sigma = [25, 38, 54, 72, 94, 120][index];
+  const height = [92, 82, 72, 63, 55, 49][index];
+  const points = [];
+  for (let x = 28; x <= 540; x += 4) {
+    const y = baseline - height * Math.exp(-0.5 * ((x - center) / sigma) ** 2);
+    points.push(`${x},${y.toFixed(2)}`);
+  }
+  return `M28,${baseline} L${points.join(" L")} L540,${baseline} Z`;
+}
+function renderPrior(components, mixture) {
+  const curves = [];
+  for (let index = components - 1; index >= 0; index -= 1) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", slabPath(index));
+    path.setAttribute("fill", SLAB_COLORS[index]);
+    path.setAttribute("stroke", SLAB_COLORS[index]);
+    path.setAttribute("class", "slab-curve");
+    curves.push(path);
+  }
+  $("slab-curves").replaceChildren(...curves);
+  const slabWord = components === 1 ? "slab" : "slabs";
+  $("prior-summary").value = `1 spike + ${components} ${slabWord}`;
+  $("slab-key").textContent = components === 1 ? "Slab · nonzero effects" : `${components} slabs · different effect scales`;
+  $("prior-plot-title").textContent = mixture ? "Sparse-mixture prior" : "Spike-and-slab prior";
+  $("prior-plot-description").textContent = `A point mass at zero and ${components === 1 ? "one centered Gaussian slab" : `${components} centered Gaussian slabs with different variances`} for nonzero genetic effects.`;
+}
 $("demo").addEventListener("click", () => {
-  for (const kind of ["ld", "sumstats"]) $(kind + "-source").value = "example";
+  $("ld-source").value = "example";
+  $("sumstats-source").value = "urls";
+  $("sumstats-url").value = resolveDataURL(EXAMPLE.sumstats, location.href);
   $("sumstats-format").value = "fastgwa";
   syncInputs();
 });
@@ -151,6 +196,11 @@ $("retry-runtime").addEventListener("click", () => { try { startWorker(); } catc
 function sourceInputs(kind) {
   const source = $(kind + "-source").value;
   if (kind === "ld" && source === "hosted") return [{url: resolveDataURL($("ld-hosted-path").value, location.href)}];
+  if (kind === "sumstats" && source === "catalog") {
+    const accession = $("sumstats-catalog-id").value.trim().toUpperCase();
+    if (!/^GCST\d+$/.test(accession)) throw new Error("Enter a GWAS Catalog accession such as GCST005195.");
+    return [{catalog: accession}];
+  }
   if (source === "example") return [{url: resolveDataURL(EXAMPLE[kind], location.href)}];
   if (source === "folder") {
     if (!$(kind + "-folder").files.length) throw new Error(`Choose a local ${kind} folder first.`);
@@ -215,7 +265,7 @@ $("inference-form").addEventListener("submit", (event) => {
     const request = {
       type: "run", id: ++nextRun,
       sumstats: sourceInputs("sumstats"), ld: sourceInputs("ld"),
-      options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "example" ? "fastgwa" : $("sumstats-format").value},
+      options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "catalog" ? "gwascatalog" : $("sumstats-format").value},
     };
     activeRun = request.id;
     $("controls").disabled = true; $("demo").disabled = true; $("run").disabled = true; $("cancel").disabled = false;

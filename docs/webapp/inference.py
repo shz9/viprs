@@ -1,16 +1,58 @@
 """Run the compiled VIPRS package in Pyodide against summary statistics and LD."""
 
 import csv
+import gc
 import io
 import json
 import math
 import stat
+import sys
 import tempfile
 import time
+import types
 import zipfile
 from pathlib import Path, PurePosixPath
 
 import numpy as np
+
+
+def ensure_linear_operator():
+    """Provide the tiny scipy interface magenpy needs without loading SciPy."""
+    try:
+        from scipy.sparse.linalg import LinearOperator  # noqa: F401
+    except ModuleNotFoundError as error:
+        if error.name != "scipy":
+            raise
+
+        class LinearOperator:
+            def __init__(self, dtype, shape):
+                self.dtype = np.dtype(dtype)
+                self.shape = shape
+
+            def matvec(self, vector):
+                return self._matvec(vector)
+
+            def rmatvec(self, vector):
+                return self._rmatvec(vector)
+
+            def dot(self, vector):
+                return self.matvec(vector)
+
+            def __matmul__(self, vector):
+                return self.matvec(vector)
+
+        scipy = types.ModuleType("scipy")
+        sparse = types.ModuleType("scipy.sparse")
+        linalg = types.ModuleType("scipy.sparse.linalg")
+        scipy.__viprs_fallback__ = True
+        scipy.sparse = sparse
+        sparse.linalg = linalg
+        linalg.LinearOperator = LinearOperator
+        sys.modules.update(
+            {"scipy": scipy, "scipy.sparse": sparse, "scipy.sparse.linalg": linalg}
+        )
+        return "minimal LinearOperator"
+    return "SciPy"
 
 
 def validate_options(options):
@@ -77,129 +119,169 @@ def unpack_ld(archive_path, destination):
     return [str(p) for p in roots]
 
 
-def native_fit(sumstats_paths, ld_paths, options, progress_callback=None):
-    """Fit each chromosome independently, then combine posterior estimates."""
-    import magenpy
-    from magenpy import GWADataLoader
-    from magenpy.stats.ld import c_utils
+class BrowserFitSession:
+    """Accumulate a run while keeping at most one LD archive loaded at a time."""
 
-    from viprs import __version__
-    from viprs.model import VIPRS, VIPRSMix
-    from viprs.model.vi import e_step_cpp
-
-    max_iter, tolerance = validate_options(options)
-    sumstats_paths = (
-        [sumstats_paths] if isinstance(sumstats_paths, (str, Path)) else sumstats_paths
-    )
-    ld_paths = [ld_paths] if isinstance(ld_paths, (str, Path)) else ld_paths
-    preparation_start = time.perf_counter()
-    with tempfile.TemporaryDirectory(prefix="viprs-browser-") as work:
-        roots = [
-            root
-            for index, path in enumerate(ld_paths)
-            for root in unpack_ld(path, Path(work) / f"ld-{index}")
-        ]
-        # The worker assigns compression-aware suffixes while staging inputs.
-        gdl = GWADataLoader(
-            sumstats_files=[str(path) for path in sumstats_paths],
-            sumstats_format=options.get("sumstats_format", "fastGWA"),
-            ld_store_files=roots,
-            temp_dir=str(Path(work) / "temp"),
-            threads=1,
+    def __init__(self, sumstats_paths, options):
+        self.max_iter, self.tolerance = validate_options(options)
+        self.options = options
+        self.sumstats_paths = (
+            [sumstats_paths]
+            if isinstance(sumstats_paths, (str, Path))
+            else list(sumstats_paths)
         )
+        self.model_name = options.get("model", "VIPRS")
+        self.seed = int(options.get("seed", 0))
+        self.chromosome_rows = {}
+        self.chromosome_results = {}
+        self.preparation_seconds = 0.0
+        self.fit_seconds = 0.0
+        self.linear_operator = None
 
-        model_name = options.get("model", "VIPRS")
-        seed = int(options.get("seed", 0))
-        chromosome_loaders = gdl.split_by_chromosome()
-        chromosomes = sorted(chromosome_loaders)
-        chromosome_rows = []
-        chromosome_results = {}
-        fit_start = time.perf_counter()
+    def fit_ld_archive(self, ld_path, remaining_archives=0, progress_callback=None):
+        """Extract, fit, and release one archive before the worker stages another."""
+        self.linear_operator = self.linear_operator or ensure_linear_operator()
+        from magenpy import GWADataLoader
 
-        for chromosome in chromosomes:
-            chromosome_gdl = chromosome_loaders[chromosome]
-            variants = int(chromosome_gdl.n_snps)
-            np.random.seed(seed)
-            model = (
-                VIPRSMix(
-                    chromosome_gdl,
-                    K=int(options.get("components", 3)),
-                    threads=1,
-                )
-                if model_name == "VIPRSMix"
-                else VIPRS(chromosome_gdl, threads=1)
+        from viprs.model import VIPRS, VIPRSMix
+
+        preparation_start = time.perf_counter()
+        with tempfile.TemporaryDirectory(prefix="viprs-browser-ld-") as work:
+            roots = unpack_ld(ld_path, Path(work) / "stores")
+            # Summary statistics remain staged for the run. The LD archive and
+            # its extracted stores exist only for this call.
+            gdl = GWADataLoader(
+                sumstats_files=[str(path) for path in self.sumstats_paths],
+                sumstats_format=self.options.get("sumstats_format", "fastgwa"),
+                ld_store_files=roots,
+                temp_dir=str(Path(work) / "temp"),
+                threads=1,
             )
-            try:
-                # The model owns its EM loop. No subclass, callback, stepping, or iteration messages.
-                model.fit(
-                    max_iter=max_iter,
-                    x_abs_tol=tolerance,
-                    f_abs_tol=tolerance,
-                    disable_pbar=True,
-                )
-                if not model.optim_result.valid_optim_result:
+            chromosome_loaders = gdl.split_by_chromosome()
+            chromosomes = sorted(chromosome_loaders)
+            self.preparation_seconds += time.perf_counter() - preparation_start
+
+            for index, chromosome in enumerate(chromosomes):
+                chromosome_key = str(chromosome)
+                if chromosome_key in self.chromosome_results:
                     raise ValueError(
-                        f"{model_name} optimization failed for chromosome {chromosome}: "
-                        f"{model.optim_result.message}"
+                        f"LD inputs contain chromosome {chromosome_key} more than once."
                     )
-                table = model.to_table()
-                chromosome_rows.extend(
-                    json.loads(table.to_json(orient="records", double_precision=15))
-                )
-                chromosome_results[chromosome] = {
-                    "elbo": [float(value) for value in model.history["ELBO"]],
-                    "iterations": int(model.optim_result.nit),
-                    "converged": bool(model.optim_result.converged),
-                    "message": str(model.optim_result.message),
-                    "variants": variants,
-                }
-            finally:
-                chromosome_gdl.cleanup()
-            if progress_callback is not None:
-                progress_callback(str(chromosome), len(chromosome_results), len(chromosomes))
-        fit_seconds = time.perf_counter() - fit_start
-        elbo_histories = [
-            chromosome_results[c]["elbo"] for c in chromosomes
-        ]
+                chromosome_gdl = chromosome_loaders[chromosome]
+                model = None
+                fit_start = time.perf_counter()
+                try:
+                    variants = int(chromosome_gdl.n_snps)
+                    np.random.seed(self.seed)
+                    model = (
+                        VIPRSMix(
+                            chromosome_gdl,
+                            K=int(self.options.get("components", 3)),
+                            threads=1,
+                        )
+                        if self.model_name == "VIPRSMix"
+                        else VIPRS(chromosome_gdl, threads=1)
+                    )
+                    model.fit(
+                        max_iter=self.max_iter,
+                        x_abs_tol=self.tolerance,
+                        f_abs_tol=self.tolerance,
+                        disable_pbar=True,
+                    )
+                    if not model.optim_result.valid_optim_result:
+                        raise ValueError(
+                            f"{self.model_name} optimization failed for chromosome "
+                            f"{chromosome}: {model.optim_result.message}"
+                        )
+                    self.chromosome_rows[chromosome_key] = json.loads(
+                        model.to_table().to_json(
+                            orient="records", double_precision=15
+                        )
+                    )
+                    self.chromosome_results[chromosome_key] = {
+                        "elbo": [float(value) for value in model.history["ELBO"]],
+                        "iterations": int(model.optim_result.nit),
+                        "converged": bool(model.optim_result.converged),
+                        "message": str(model.optim_result.message),
+                        "variants": variants,
+                    }
+                finally:
+                    self.fit_seconds += time.perf_counter() - fit_start
+                    chromosome_gdl.cleanup()
+                    del model
+                    gc.collect()
+                if progress_callback is not None:
+                    completed = len(self.chromosome_results)
+                    total = completed + len(chromosomes) - index - 1 + remaining_archives
+                    progress_callback(chromosome_key, completed, total)
+        gc.collect()
+
+    def finish(self):
+        """Combine chromosome results after every LD archive has been released."""
+        import magenpy
+        from magenpy.stats.ld import c_utils
+
+        from viprs import __version__
+        from viprs.model.vi import e_step_cpp
+
+        if not self.chromosome_results:
+            raise ValueError("No chromosomes were fitted from the supplied LD inputs.")
+        chromosomes = sorted(
+            self.chromosome_results,
+            key=lambda value: (not value.isdigit(), int(value) if value.isdigit() else value),
+        )
+        elbo_histories = [self.chromosome_results[c]["elbo"] for c in chromosomes]
         elbo = [
             sum(history[min(i, len(history) - 1)] for history in elbo_histories)
             for i in range(max(map(len, elbo_histories)))
         ]
         messages = [
-            f"chr{chromosome}: {chromosome_results[chromosome]['message']}"
+            f"chr{chromosome}: {self.chromosome_results[chromosome]['message']}"
             for chromosome in chromosomes
         ]
-        rows = chromosome_rows
+        rows = [row for chromosome in chromosomes for row in self.chromosome_rows[chromosome]]
         report = {
-            "engine": f"{model_name} {__version__} (WebAssembly)",
-            "model": model_name,
-            "components": int(options.get("components", 3))
-            if model_name == "VIPRSMix"
+            "engine": f"{self.model_name} {__version__} (WebAssembly)",
+            "model": self.model_name,
+            "components": int(self.options.get("components", 3))
+            if self.model_name == "VIPRSMix"
             else 1,
             "variants": len(rows),
-            "chromosomes": list(map(str, chromosomes)),
+            "chromosomes": chromosomes,
             "variants_per_chromosome": {
-                str(c): chromosome_results[c]["variants"] for c in chromosomes
+                c: self.chromosome_results[c]["variants"] for c in chromosomes
             },
-            "iterations": sum(
-                chromosome_results[c]["iterations"] for c in chromosomes
-            ),
-            "converged": all(
-                chromosome_results[c]["converged"] for c in chromosomes
-            ),
+            "iterations": sum(self.chromosome_results[c]["iterations"] for c in chromosomes),
+            "converged": all(self.chromosome_results[c]["converged"] for c in chromosomes),
             "message": "; ".join(messages),
-            "options": options,
-            "seed": seed,
+            "options": self.options,
+            "seed": self.seed,
             "magenpy_version": magenpy.__version__,
             "extensions": {"viprs": e_step_cpp.__file__, "magenpy": c_utils.__file__},
+            "wasm_simd": bool(getattr(e_step_cpp, "check_simd_support", lambda: False)()),
+            "blas": bool(e_step_cpp.check_blas_support()),
+            "linear_operator": self.linear_operator,
             "elbo": elbo,
             "timings": {
-                "preparation_seconds": fit_start - preparation_start,
-                "fit_seconds": fit_seconds,
+                "preparation_seconds": self.preparation_seconds,
+                "fit_seconds": self.fit_seconds,
             },
             "effect_scale": "Unmodified VIPRS posterior estimates; use the appropriate genotype scaling when scoring.",
         }
         return rows, report
+
+
+def native_fit(sumstats_paths, ld_paths, options, progress_callback=None):
+    """Native adapter mirroring the browser's sequential LD processing."""
+    ld_paths = [ld_paths] if isinstance(ld_paths, (str, Path)) else list(ld_paths)
+    session = BrowserFitSession(sumstats_paths, options)
+    for index, ld_path in enumerate(ld_paths):
+        session.fit_ld_archive(
+            ld_path,
+            remaining_archives=len(ld_paths) - index - 1,
+            progress_callback=progress_callback,
+        )
+    return session.finish()
 
 
 def serialize_result(rows, report):
@@ -244,3 +326,47 @@ def run_request(request_json, progress_callback=None):
         progress_callback=progress_callback,
     )
     return serialize_result(rows, report)
+
+
+_active_session = None
+
+
+def start_request(request_json):
+    """Start a browser run before any LD archive is staged."""
+    global _active_session
+    if _active_session is not None:
+        raise RuntimeError("A browser fit is already active.")
+    request = json.loads(request_json)
+    _active_session = BrowserFitSession(
+        request["sumstats_paths"], request["options"]
+    )
+
+
+def process_ld_archive(ld_path, remaining_archives=0, progress_callback=None):
+    """Fit one staged archive; no reference to it survives this call."""
+    if _active_session is None:
+        raise RuntimeError("Start the browser fit before processing LD.")
+    _active_session.fit_ld_archive(
+        ld_path,
+        remaining_archives=int(remaining_archives),
+        progress_callback=progress_callback,
+    )
+
+
+def finish_request():
+    """Serialize the active run and release its accumulated Python state."""
+    global _active_session
+    if _active_session is None:
+        raise RuntimeError("No browser fit is active.")
+    try:
+        return serialize_result(*_active_session.finish())
+    finally:
+        _active_session = None
+        gc.collect()
+
+
+def abort_request():
+    """Release a partially completed run after a worker-side failure."""
+    global _active_session
+    _active_session = None
+    gc.collect()

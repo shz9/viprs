@@ -59,8 +59,8 @@ def package(assets, destination):
                         raise ValueError(f"Expected a WebAssembly extension: {name}")
                     modules.append(name)
         files.append(path.as_posix())
-    if len(modules) != 5 or not any("e_step_cpp" in name for name in modules):
-        raise ValueError("Expected the five compiled VIPRS and magenpy extensions.")
+    if len(modules) != 4 or not any("e_step_cpp" in name for name in modules):
+        raise ValueError("Expected the VIPRS kernel and three magenpy WebAssembly extensions.")
     if checksums != provenance["wheel_sha256"]:
         raise ValueError("Wheel checksums differ from build provenance.")
     # Read everything before creating the archive, so missing sources fail early.

@@ -8,6 +8,7 @@ cdef extern from "e_step.hpp" nogil:
 
     bint blas_supported() noexcept nogil
     bint omp_supported() noexcept nogil
+    bint simd_supported() noexcept nogil
 
     void blas_axpy[T](T* y, T* x, T alpha, int size) noexcept nogil
     T blas_dot[T](T* x, T* y, int size) noexcept nogil
@@ -80,6 +81,10 @@ cpdef check_blas_support():
 
 cpdef check_omp_support():
     return omp_supported()
+
+
+cpdef check_simd_support():
+    return simd_supported()
 
 
 cdef void cpp_blas_axpy(floating[::1] v1, floating[::1] v2, floating alpha) noexcept nogil:

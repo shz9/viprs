@@ -75,7 +75,7 @@ jobs:
 
       - name: Validate wheels and run native and URL tests
         run: |
-          python -m pytest tests/test_webapp.py tests/test_wasm_package.py tests/test_magenpy_release.py -q
+          python -m pytest tests/test_webapp.py tests/test_wasm_build.py tests/test_wasm_package.py tests/test_magenpy_release.py -q
           node --test tests/webapp_sources.mjs tests/webapp_worker.mjs
           python tests/webapp_fixtures.py
 

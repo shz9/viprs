@@ -148,11 +148,18 @@ records the source commit and hashes, the resolved magenpy release and commit, c
 and build tools.
 The application installs these explicit wheel files without resolving packages from
 PyPI at run time. Standard scientific packages are loaded from the pinned Pyodide CDN.
+The runtime loads `numpy`, `pandas`, `tqdm`, `numcodecs`, and `asciitree` (plus
+`micropip` for the local wheels). SciPy, scikit-learn, statsmodels, and joblib are
+excluded because the browser inference path does not use them. The WASM wheel also
+omits VIPRS's unused `math_utils` extension, whose SciPy BLAS declarations were the
+remaining runtime dependency on SciPy.
+Magenpy's LD operator normally subclasses SciPy's `LinearOperator`; the browser
+adapter supplies the small `matvec`/`@` interface used by VIPRS, while native runs
+continue to use SciPy when it is installed.
 
-The five compiled extension modules are:
+The four compiled extension modules are:
 
 - `viprs.model.vi.e_step_cpp`
-- `viprs.utils.math_utils`
 - `magenpy.stats.ld.c_utils`
 - `magenpy.stats.score.score_cpp`
 - `magenpy.stats.variant.variant_cpp`
@@ -273,12 +280,17 @@ uv run --no-project --python 3.13 --with-requirements tools/wasm/requirements-bu
 ```
 
 The build was exercised on macOS ARM64. It compiles the original `.pyx` and C++
-headers using the existing non-BLAS, single-threaded kernels. It avoids host BLAS
-and OpenMP probes by generating an Emscripten-specific setuptools configuration in
+headers using the single-threaded kernels. The VIPRS kernel enables WebAssembly
+SIMD128 and Clang loop vectorization. It avoids host BLAS and OpenMP probes by
+generating an Emscripten-specific setuptools configuration in
 the staging directory. The staged VIPRS package defers POSIX shared-memory imports
 until multiprocess grid search is requested, and omits the unused `psutil`
 requirement. Those features are outside the browser interface. The source tree's
 Python and C++ inference implementation is preserved.
+Pyodide's NumPy uses its packaged BLAS implementation, but the coordinate-ascent
+kernel operates directly on variable-length LD spans rather than NumPy matrices.
+The browser build therefore vectorizes those C++ loops in place instead of loading
+SciPy or linking the extension to a second BLAS interface.
 
 Tqdm's background monitor thread is disabled in the worker because this runtime
 uses a single thread. The worker sends initialization and run status messages;
@@ -326,26 +338,28 @@ VIPRS safely uses the source-build fallback for that same release.
 ## Verification
 
 ```sh
-python -m pytest tests/test_webapp.py tests/test_wasm_package.py tests/test_magenpy_release.py
+python -m pytest tests/test_webapp.py tests/test_wasm_build.py tests/test_wasm_package.py tests/test_magenpy_release.py
 node --test tests/webapp_sources.mjs tests/webapp_worker.mjs
 python tests/webapp_fixtures.py
 uv run --no-project --with playwright python tests/webapp_browser.py
 uv run --no-project --with 'magenpy>=0.2.3' --with playwright python tests/webapp_ui.py
 ```
 
-The UI-only browser check uses a stub worker to verify all 20 combinations of
-independent input sources, ancestry selection, local folder matching, the example
+The UI-only browser check uses a stub worker to verify the 15 combinations of
+independent file, folder, and URL summary-statistics sources with every LD source,
+plus GWAS Catalog accessions, ancestry selection, local folder matching, the example
 shortcut, the threshold hover animation, responsive layouts, and reduced motion.
 
 The Python checks validate archive extraction, options, wheel hashes, WebAssembly
 magic bytes, the bundled VIPRS/VIPRSMix source, and joint inference on two chromosomes
 using separate and combined inputs. The JavaScript tests check HF/GitHub URL
-resolution, streamed input integrity, cleanup on failure, and acceptance above the
+resolution, GRCh37-aware GWAS Catalog FTP discovery, streamed input integrity, cleanup on failure, and acceptance above the
 old size thresholds with a simulated filesystem. The browser test runs the real chromosome 22 inference and asserts that
 WASM extension modules were loaded. It verifies eager initialization, runtime reuse,
 VIPRS and VIPRSMix with two chromosomes, downloads, cancellation, initialization
 retry, and mobile layout. Small generated fixtures are used only in integration tests;
-the application default remains the supplied chromosome 22 data. It writes reports, weights, and screenshots under
+the application defaults to entering a GWAS Catalog accession; the chromosome 22 data
+is populated only by the example shortcut. It writes reports, weights, and screenshots under
 `build/wasm/browser-test/`. If local copies of the supplied data are present under
 `build/wasm/test-data/`, it also checks file uploads against the default run.
 
@@ -363,10 +377,13 @@ The earlier 256 MiB per-file, 512 MiB combined, and 1 GiB extraction caps were
 conservative prototype guardrails, not VIPRS requirements. Local files and downloads
 are streamed into the virtual filesystem without assembling an extra full-file
 JavaScript buffer. Downloads have no fixed time limit; Cancel can stop a stalled transfer.
-This is still an in-memory application: staged files, extracted LD, and runtime arrays
-must fit in available browser memory. Arrays can occupy substantially more memory
-than the archives, especially with many mixture components. Multiple
-chromosomes are supported, but whole-genome memory use has not been validated.
+This is still an in-memory application: the current archive, its extracted LD store,
+and runtime arrays must fit in available browser memory. Arrays can occupy
+substantially more memory than the archive, especially with many mixture components.
+For multi-chromosome inputs, LD archives are downloaded and fitted in chromosome
+order, and each archive and model are released before the next download begins.
+An archive containing several chromosomes must itself fit in memory while it is
+processed, so separate chromosome archives provide the lowest peak usage.
 Up to 64 files per input type and 50,000 ZIP entries per archive are accepted.
 Archive traversal paths, symlinks, and duplicate paths are rejected.
 Streaming remote Zarr access, multiple worker threads,

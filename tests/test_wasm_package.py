@@ -21,7 +21,7 @@ def assets(tmp_path):
         (root / name).write_text("test static content")
     wheel = root / "wheels/test.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
-        for name in ("e_step_cpp", "math_utils", "c_utils", "score_cpp", "variant_cpp"):
+        for name in ("e_step_cpp", "c_utils", "score_cpp", "variant_cpp"):
             archive.writestr(f"{name}.cpython-313-wasm32-emscripten.so", b"\0asmtest")
     digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
     (root / "runtime.json").write_text(json.dumps({

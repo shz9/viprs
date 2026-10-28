@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {EXAMPLE, resolveDataURL, globMatcher, selectLocalFiles, expandDataURL} from "../docs/webapp/sources.mjs";
+import {EXAMPLE, resolveDataURL, globMatcher, selectLocalFiles, expandDataURL, gwasCatalogDirectory, resolveGWASCatalog} from "../docs/webapp/sources.mjs";
 const base = "https://example.org/viprs/webapp/";
 
 test("supplied HF URI resolves to the actual LD archive", () => {
@@ -78,4 +78,34 @@ test("unsupported hosts, unmatched patterns, API failures and excessive matches 
 test("explicit URLs bypass listing APIs and retain query strings", async () => {
   const url = "https://example.org/chr_22.zip?download=1";
   assert.deepEqual(await expandDataURL(url, base, () => assert.fail("must not list")), [url]);
+});
+
+test("GWAS Catalog accessions resolve to their thousand-study FTP bin", () => {
+  assert.equal(gwasCatalogDirectory("gcst005195"), "https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/GCST005001-GCST006000/GCST005195/");
+  assert.equal(gwasCatalogDirectory("GCST90000001"), "https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/GCST90000001-GCST90001000/GCST90000001/");
+  assert.throws(() => gwasCatalogDirectory("005195"), /such as GCST/);
+});
+
+test("GWAS Catalog discovery rejects GRCh38 harmonisation and selects build 37", async () => {
+  const directory = gwasCatalogDirectory("GCST005195");
+  const fetcher = async url => ({ok: true, text: async () => {
+    if (url.endsWith("study.h.tsv.gz-meta.yaml")) return "genome_assembly: GRCh38\nis_harmonised: true\n";
+    if (url.endsWith("harmonised/")) return [
+      '<a href="study.h.tsv.gz">harmonised</a>',
+      '<a href="study.h.tsv.gz-meta.yaml">metadata</a>',
+      '<a href="study-build37.f.tsv.gz">formatted build 37</a>',
+    ].join("");
+    return '<a href="harmonised/">harmonised</a><a href="raw.tsv.gz">raw</a>';
+  }});
+  assert.deepEqual(await resolveGWASCatalog("GCST005195", fetcher), [directory + "harmonised/study-build37.f.tsv.gz"]);
+
+  const rawOnly = async url => ({ok: true, text: async () => url.endsWith("-meta.yaml")
+    ? "genome_assembly: GRCh37\n"
+    : '<a href="study.tsv.gz">data</a><a href="study.tsv.gz-meta.yaml">metadata</a>'});
+  assert.deepEqual(await resolveGWASCatalog("GCST005195", rawOnly), [directory + "study.tsv.gz"]);
+});
+
+test("GWAS Catalog discovery reports missing and unusable studies", async () => {
+  await assert.rejects(resolveGWASCatalog("GCST005195", async () => ({ok: false, status: 404})), /No GWAS Catalog/);
+  await assert.rejects(resolveGWASCatalog("GCST005195", async () => ({ok: true, text: async () => '<a href="study-buildGRCh38.tsv.gz">data</a>'})), /no GRCh37\/hg19/);
 });

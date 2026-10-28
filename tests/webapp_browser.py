@@ -22,7 +22,9 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 def wait_for_run(page):
     page.wait_for_function("document.querySelector('#run').disabled === false", timeout=300000)
     if page.locator("#status-badge").text_content() == "Error":
-        raise AssertionError(page.locator("#log").inner_text())
+        raise AssertionError(
+            page.locator("#status").inner_text() + "\n" + page.locator("#log").inner_text()
+        )
     assert page.locator("#results").is_visible()
 
 
@@ -69,6 +71,9 @@ def main():
             assert report["iterations"] < report["options"]["max_iter"]
             assert not report["runtime_reused"]
             assert report["timings"]["fit_seconds"] > 0
+            assert report["wasm_simd"]
+            assert not report["blas"]
+            assert report["linear_operator"] == "minimal LinearOperator"
             assert all("wasm32-emscripten.so" in path for path in report["extensions"].values())
             assert len(report["elbo"]) > 3
             assert all(math.isfinite(v) for v in report["elbo"])
@@ -149,7 +154,7 @@ def main():
             assert "zip" in page.locator("#status").inner_text().lower()
             assert len(workers) == 1
             page.locator("#model").select_option("VIPRS")
-            page.locator("#sumstats-format").select_option("fastGWA")
+            page.locator("#sumstats-format").select_option("fastgwa")
             # Explicit hf:// and GitHub blob URL inputs use the same full datasets.
             page.locator("#sumstats-source").select_option("urls")
             page.locator("#ld-source").select_option("urls")
