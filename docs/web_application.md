@@ -109,9 +109,11 @@ from the first two bytes and renames the staged file with the appropriate suffix
 without copying its contents. Python reads that file once; large inputs retain only
 parser-recognized columns, use 32-bit storage for non-positional numeric fields,
 categorically encode allele columns, and discard the staged compressed file after
-parsing. This prevents optional GWAS-SSF
-metadata from triggering pandas' second full-width consolidation allocation and
-releases the input bytes before LD and model arrays are loaded. Hosted Hugging Face
+parsing. Optional or missing GWAS-SSF rsIDs are inferred from the matching LD panel
+using chromosome positions, producing magenpy's canonical `SNP` field and filtering
+out variants absent from that panel before harmonization. This prevents optional
+GWAS-SSF metadata from triggering pandas' second full-width consolidation allocation
+and releases the input bytes before LD and model arrays are loaded. Hosted Hugging Face
 LD archives remain remote: `GWADataLoader` resolves the `hf://` glob and its `LDMatrix` objects
 request ZIP ranges through the Hugging Face filesystem as they are needed. Uploaded
 and custom HTTP(S) LD archives retain the local staged path. For example,

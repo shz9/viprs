@@ -205,6 +205,87 @@ def _compact_sumstats_parser(parser):
     return parser
 
 
+def _configure_sumstats_parser(parser):
+    """Accept current GWAS-SSF aliases before normalizing to magenpy names."""
+
+    def drop_na_from_available_alternatives(table):
+        """Keep rows satisfying any identity/statistic alternative."""
+        keep = np.ones(len(table), dtype=bool)
+        for alternatives in parser.get_essential_col_groups():
+            group_valid = np.zeros(len(table), dtype=bool)
+            found_alternative = False
+            for columns in alternatives:
+                if all(column in table.columns for column in columns):
+                    found_alternative = True
+                    group_valid |= table[list(columns)].notna().all(axis=1).to_numpy()
+            if found_alternative:
+                keep &= group_valid
+        return table.loc[keep]
+
+    if getattr(parser, "format_name", None) == "ssf":
+        parser.col_name_converter.update(
+            {
+                # ``rsid`` is the GWAS-SSF spelling, while some Catalog
+                # documentation and older exports use ``rs_id``.
+                "rs_id": "SNP",
+                "odds_ratio": "OR",
+            }
+        )
+    # GWAS-SSF makes rsid optional. The base parser otherwise selects the SNP
+    # identity alternative merely because the column exists, dropping rows
+    # whose rsid is #NA despite complete CHR/POS identity.
+    parser.drop_na_from_essential_cols = drop_na_from_available_alternatives
+    return parser
+
+
+def _ensure_ld_harmonization_schema(sumstats, ld, chromosome):
+    """Give magenpy an SNP-keyed table, inferring optional rsIDs from LD."""
+    table = sumstats.table
+    if "SNP" in table:
+        missing_snp = table["SNP"].isna() | table["SNP"].isin(
+            ("", "#NA", "NA", "N/A")
+        )
+    else:
+        missing_snp = None
+
+    if (missing_snp is None or missing_snp.any()) and "POS" not in table:
+        raise ValueError(
+            f"Summary statistics for chromosome {chromosome} contain neither "
+            "magenpy's SNP column nor a POS column that can be matched to LD."
+        )
+
+    if missing_snp is None or missing_snp.any():
+        reference = ld.to_snp_table(col_subset=("POS", "SNP"))
+        reference = reference.dropna(subset=("POS", "SNP")).drop_duplicates(
+            subset="POS", keep=False
+        )
+        if "SNP" not in table or missing_snp.all():
+            # rsID is optional in GWAS-SSF. A reference-left inner join both adds
+            # magenpy's required SNP field and avoids retaining millions of variants
+            # that cannot occur in the current LD panel.
+            table = table.drop(columns="SNP", errors="ignore")
+            table = reference.merge(table, how="inner", on="POS", sort=False)
+        else:
+            lookup = reference.set_index("POS")["SNP"]
+            table.loc[missing_snp, "SNP"] = table.loc[
+                missing_snp, "POS"
+            ].map(lookup)
+
+    valid_snp = table["SNP"].notna() & ~table["SNP"].isin(
+        ("", "#NA", "NA", "N/A")
+    )
+    duplicated_snp = table["SNP"].duplicated(keep=False)
+    if not valid_snp.all() or duplicated_snp.any():
+        table = table.loc[valid_snp & ~duplicated_snp].copy()
+    sumstats.table = table
+
+    if len(sumstats.table) == 0:
+        raise ValueError(
+            f"No chromosome {chromosome} summary-statistics positions matched "
+            "the selected LD reference. Check that both inputs use GRCh37/hg19."
+        )
+
+
 class BrowserFitSession:
     """Accumulate a run while keeping at most one LD archive loaded at a time."""
 
@@ -235,9 +316,11 @@ class BrowserFitSession:
         # hundreds of MiB to the parsing peak. Use compact storage only for large
         # staged inputs, preserving the established float64 numerics for ordinary
         # files and small regression fixtures.
-        parser = get_sumstats_parser(
-            self.options.get("sumstats_format", "fastgwa")
-        )(None)
+        parser = _configure_sumstats_parser(
+            get_sumstats_parser(
+                self.options.get("sumstats_format", "fastgwa")
+            )(None)
+        )
         compact = (
             sum(Path(path).stat().st_size for path in self.sumstats_paths)
             >= 64 * 1024**2
@@ -249,7 +332,9 @@ class BrowserFitSession:
             loader.read_summary_statistics(
                 [str(path) for path in self.sumstats_paths],
                 parser=parser,
-                drop_duplicated=True,
+                # Optional/missing GWAS-SSF rsIDs must first be inferred from
+                # the LD panel; deduplicate after that normalization step.
+                drop_duplicated=False,
             )
             tables = loader.sumstats_table or {}
             loader.sumstats_table = None
@@ -295,6 +380,10 @@ class BrowserFitSession:
                 )
             # Keep parsed summaries across sequential local archives, while
             # GWADataLoader performs the actual cross-source harmonization.
+            for chromosome, sumstats in selected.items():
+                _ensure_ld_harmonization_schema(
+                    sumstats, gdl.ld[chromosome], chromosome
+                )
             gdl.sumstats_table = selected
             gdl.harmonize_data()
             chromosome_loaders = gdl.split_by_chromosome()

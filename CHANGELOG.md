@@ -38,6 +38,8 @@ summary-statistics inputs in both `viprs_fit` and the browser application.
 downloading large range-capable GWAS Catalog files in parallel, parsing summary statistics once, projecting
 large inputs to model-relevant columns with compact numeric storage and categorical alleles, releasing staged
 summary files after parsing, and releasing chromosome data and local LD archives incrementally.
+- Normalized browser GWAS-SSF inputs to magenpy's canonical schema before harmonization, including support
+for alternate rsID and odds-ratio headers and LD-based SNP inference when optional rsIDs are absent.
 - Improved the browser interface with clearer source selection, model configuration and prior visualization,
 runtime and convergence status, timing summaries, result filtering, download controls, responsive styling,
 and more actionable validation and network errors.

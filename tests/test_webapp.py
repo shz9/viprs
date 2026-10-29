@@ -205,7 +205,7 @@ def test_large_catalog_parser_projects_and_compacts_columns(tmp_path):
 
     source = tmp_path / "catalog.tsv"
     source.write_text(
-        "chromosome\tbase_pair_location\trsid\teffect_allele\tother_allele\t"
+        "chromosome\tbase_pair_location\trs_id\teffect_allele\tother_allele\t"
         "beta\tstandard_error\teffect_allele_frequency\tp_value\tn\t"
         + "\t".join(f"unused_{index}" for index in range(10))
         + "\n22\t101\trs1\tA\tG\t0.1\t0.02\t0.3\t1e-6\t10000\t"
@@ -213,7 +213,9 @@ def test_large_catalog_parser_projects_and_compacts_columns(tmp_path):
         + "\n"
     )
     parser = browser._compact_sumstats_parser(
-        get_sumstats_parser("gwascatalog")(None)
+        browser._configure_sumstats_parser(
+            get_sumstats_parser("gwascatalog")(None)
+        )
     )
 
     table = parser.parse(source)
@@ -263,6 +265,37 @@ def test_compact_categorical_alleles_harmonize_with_ld(
         for table in loader.sumstats_table.values()
     )
     loader.cleanup()
+
+
+def test_catalog_without_optional_rsid_is_keyed_from_ld(
+    multichrom_inputs, tmp_path
+):
+    import pandas as pd
+
+    summaries, archives, _, _ = multichrom_inputs
+    position_only = []
+    for index, summary in enumerate(summaries):
+        table = pd.read_csv(summary, sep="\t")
+        if index == 0:
+            table.drop(columns="SNP", inplace=True)
+        else:
+            table["SNP"] = "#NA"
+        path = tmp_path / f"position-only-{index}.tsv"
+        table.to_csv(path, sep="\t", index=False)
+        position_only.append(path)
+
+    rows, report = browser.native_fit(
+        position_only,
+        archives,
+        dict(OPTIONS, sumstats_format="magenpy"),
+    )
+
+    assert report["variants"] == 96
+    assert {row["SNP"] for row in rows} == {
+        f"test_chr{chromosome}_{index}"
+        for chromosome in (21, 22)
+        for index in range(48)
+    }
 
 
 @pytest.mark.parametrize("compressed", [False, True])
