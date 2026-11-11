@@ -13,7 +13,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # macos-15-intel is an Intel runner; macos-14 is Apple Silicon.
+        # macos-15-intel is an Intel runner; macos-15 is Apple Silicon.
         # Do not include macos-latest here because it can duplicate arm64 wheel
         # filenames and race/overwrite files when artifacts are merged before upload.
         os:
@@ -21,7 +21,7 @@ jobs:
             ubuntu-latest,
             windows-latest,
             macos-15-intel,
-            macos-14,
+            macos-15,
           ]
     env:
       CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"

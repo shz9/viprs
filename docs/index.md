@@ -24,6 +24,7 @@ The American Journal of Human Genetics, 110(5), 741–761. https://doi.org/10.10
 * [Getting Started](getting_started.md)
 * [VIPRS web app](https://shz9.github.io/viprs/webapp/)
 * [Command Line Scripts](commandline/overview.md)
+* [LD Browser](https://shz9.github.io/ld_browser/)
 * [Download Reference LD matrices](download_ld.md)
 * [Project homepage on `GitHub`](https://github.com/shz9/viprs)
 * [Sister package `magenpy`](https://github.com/shz9/magenpy)
