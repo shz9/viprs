@@ -8,6 +8,8 @@ pushes to the default branch also update this history.
 
 | Commit ID | Date | Model | Configurations | Phenotype | Accuracy | Runtime | Sumstats | LD |
 |---|---|---|---|---|---:|---:|---|---|
+| [`7a14e54`](https://github.com/shz9/viprs/commit/7a14e541d891aa7ec0409a6cd95de66aee81059f) | 2026-11-11 | VIPRS |  | height | 0.336217 | 19.41 s | [HEIGHT](https://zenodo.org/records/14612130/files/HEIGHT.tar.gz) | [EUR](https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz) |
+| [`7a14e54`](https://github.com/shz9/viprs/commit/7a14e541d891aa7ec0409a6cd95de66aee81059f) | 2026-11-11 | VIPRSMix(K=4) |  | height | 0.343417 | 27.16 s | [HEIGHT](https://zenodo.org/records/14612130/files/HEIGHT.tar.gz) | [EUR](https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz) |
 | [`ef1ba14`](https://github.com/shz9/viprs/commit/ef1ba14e5bd844148f0e1697f7be143c8f82c087) | 2026-10-29 | VIPRS |  | height | 0.336213 | 19.29 s | [HEIGHT](https://zenodo.org/records/14612130/files/HEIGHT.tar.gz) | [EUR](https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz) |
 | [`ef1ba14`](https://github.com/shz9/viprs/commit/ef1ba14e5bd844148f0e1697f7be143c8f82c087) | 2026-10-29 | VIPRSMix(K=4) |  | height | 0.343417 | 38.79 s | [HEIGHT](https://zenodo.org/records/14612130/files/HEIGHT.tar.gz) | [EUR](https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz) |
 | [`86ec20d`](https://github.com/shz9/viprs/commit/86ec20dea44d4d9d3b6e3fab0c115dfba7fac1c4) | 2026-10-28 | VIPRS |  | height | 0.336213 | 20.39 s | [HEIGHT](https://zenodo.org/records/14612130/files/HEIGHT.tar.gz) | [EUR](https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz) |
