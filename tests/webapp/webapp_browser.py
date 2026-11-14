@@ -67,6 +67,8 @@ def main():
             report = report_download(page, ARTIFACTS / "run.json")
             assert report["variants"] > 10000
             assert report["model"] == "VIPRS"
+            assert report["magenpy_version"] == "0.2.5"
+            assert report["options"]["components"] == 1
             assert report["converged"], report["message"]
             assert report["iterations"] < report["options"]["max_iter"]
             assert not report["runtime_reused"]
@@ -85,6 +87,18 @@ def main():
             assert len(rows) == report["variants"]
             assert all(math.isfinite(float(row["BETA"])) and 0 <= float(row["PIP"]) <= 1 for row in rows)
             print(f"Default run: {report['variants']} variants, {report['iterations']} iterations, converged={report['converged']}.", flush=True)
+            # The example's canonical effect columns are also accepted by LDAK.
+            # Verify a changed selection reaches a reused runtime and is recorded.
+            page.locator("#sumstats-format").select_option("ldak")
+            page.locator("#run").click()
+            wait_for_run(page)
+            ldak_report = report_download(page, ARTIFACTS / "example-ldak.json")
+            assert ldak_report["options"]["sumstats_format"] == "ldak"
+            assert ldak_report["runtime_reused"]
+            assert ldak_report["elbo"] == report["elbo"]
+            assert ldak_report["variants"] == report["variants"]
+            assert "Summary statistics format: ldak;" in page.locator("#log").text_content(), page.locator("#log").text_content()
+            page.locator("#sumstats-format").select_option("fastgwa")
             page.set_viewport_size({"width": 1440, "height": 1000})
             page.evaluate("window.scrollTo(0, 0)")
             page.screenshot(path=str(ARTIFACTS / "desktop.png"), full_page=True)
@@ -180,7 +194,13 @@ def main():
             }""")
             page.locator("#run").click()
             page.wait_for_function("document.querySelector('#status-badge').textContent === 'Error'")
-            assert "Fitting completed" in page.locator("#status").inner_text()
+            assert page.locator("#activity-title").inner_text() == "Results could not be prepared"
+            assert "Simulated download allocation failure" in page.locator("#status").inner_text()
+            issue_body = page.locator("#report-error").evaluate("el => new URL(el.href).searchParams.get('body')")
+            issue_summary = json.loads(issue_body.split("```json\n")[1].split("\n```")[0])
+            assert issue_summary["options"]["model"] == "VIPRS"
+            assert issue_summary["options"]["components"] == 1
+            assert issue_summary["runtime"]["magenpy_version"] == "0.2.5"
             assert page.locator("#run").is_enabled()
             assert "running" not in page.locator("#activity").get_attribute("class")
             assert page.locator("#results").is_hidden()

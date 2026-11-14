@@ -25,6 +25,7 @@ from magenpy_release import (
 
 ROOT = Path(__file__).resolve().parents[2]
 PYODIDE_VERSION = "0.28.3"
+MAGENPY_VERSION = "0.2.5"
 PURE_WHEELS = {
     "zarr": (
         "2.18.7",
@@ -176,6 +177,11 @@ setup(name={name!r}, version={version!r}, packages=find_packages(),
 
 
 def bundle(provenance):
+    if provenance.get("magenpy", {}).get("version") != MAGENPY_VERSION:
+        raise ValueError(
+            f"The web app requires magenpy {MAGENPY_VERSION}. "
+            "Rebuild with tools/wasm/build.py before bundling."
+        )
     wheels = []
     for name in ("magenpy", "viprs"):
         version = provenance[name]["version"]
@@ -237,7 +243,7 @@ def main():
     parser.add_argument("--package", choices=["magenpy", "viprs"])
     parser.add_argument(
         "--magenpy-release",
-        default="v0.2.5",
+        default=f"v{MAGENPY_VERSION}",
         help="GitHub release tag (default: v0.2.5), or latest.",
     )
     args = parser.parse_args()

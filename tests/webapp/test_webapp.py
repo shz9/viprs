@@ -99,6 +99,9 @@ def test_bundle_contains_real_webassembly_extensions():
                     assert name.endswith("cpython-313-wasm32-emscripten.so")
                     assert wheel.read(name)[:4] == b"\x00asm"
                     modules.append(name)
+            if path.name.startswith("magenpy-"):
+                assert path.name.startswith("magenpy-0.2.5-")
+                assert "magenpy/utils/chromosome_utils.py" in wheel.namelist()
             if path.name.startswith("viprs-"):
                 # The fitted model and its C++ kernel source are the actual repository implementation.
                 for source in ["viprs/model/VIPRS.py", "viprs/model/VIPRSMix.py", "viprs/model/vi/e_step.hpp"]:
@@ -440,7 +443,30 @@ def test_multi_store_archive_rejects_conflicting_builds(multichrom_inputs, tmp_p
         browser.inspect_browser_ld_build(archive)
 
 
-def test_cached_format_guidance_matches_pinned_parsers():
+@pytest.mark.parametrize("linesep", ["\n", "\r\n"], ids=["unix", "windows"])
+def test_cached_format_guidance_matches_pinned_parsers(monkeypatch, linesep):
+    monkeypatch.setattr(os, "linesep", linesep)
     import runpy
     render = runpy.run_path(str(ASSETS.parents[1] / "tools/wasm/format_help.py"))["render_format_help"]
-    assert (ASSETS / "formats.js").read_text() == render()
+    assert (ASSETS / "formats.js").read_text(encoding="utf-8") == render()
+
+
+@pytest.mark.parametrize("fmt", ["fastgwa", "ldak", "magenpy"])
+def test_compatible_formats_accept_shared_effect_columns(tmp_path, fmt):
+    source = tmp_path / "example.fastGWA"
+    source.write_text("CHR\tSNP\tPOS\tA1\tA2\tN\tAF1\tBETA\tSE\tP\n"
+                      "22\trs1\t1\tA\tG\t10000\t0.3\t0.1\t0.02\t5.733e-7\n")
+    table = browser.BrowserFitSession(source, {"sumstats_format": fmt}).sumstats_tables[22]
+    assert table.table["SNP"].tolist() == ["rs1"]
+    assert table.table["N"].tolist() == [10000]
+    assert table.z_score.tolist() == pytest.approx([5])
+
+
+def test_selected_format_controls_column_conversion(tmp_path):
+    source = tmp_path / "ldak.tsv"
+    source.write_text("Chromosome\tBasepair\tPredictor\tA1\tA2\tn\tStat\tDirection\n"
+                      "22\t1\trs1\tA\tG\t10000\t25\t-1\n")
+    session = browser.BrowserFitSession(source, {"sumstats_format": "ldak"})
+    assert session.sumstats_tables[22].z_score.tolist() == pytest.approx([-5])
+    with pytest.raises(ValueError, match="fastgwa.*chromosome column"):
+        browser.BrowserFitSession(source, {"sumstats_format": "fastgwa"})

@@ -360,8 +360,13 @@ class BrowserFitSession:
                 columns = sorted(available.intersection(parser.column_dtypes))
             # The parser exposes drop_na; SumstatsTable.from_file does not.
             # LD arrives later, so retain missing IDs until they can be inferred.
-            table = SumstatsTable(parser.parse(str(path), col_subset=columns, drop_na=False),
-                                  genome_build=self.options.get("sumstats_genome_build"))
+            parsed = parser.parse(str(path), col_subset=columns, drop_na=False)
+            if "CHR" not in parsed.columns:
+                raise ValueError(
+                    f"The selected {self.options.get('sumstats_format', 'fastgwa')} format "
+                    "did not identify a chromosome column. Check the format and file headers."
+                )
+            table = SumstatsTable(parsed, genome_build=self.options.get("sumstats_genome_build"))
             chromosomes = get_present_chromosomes(table.table["CHR"], dropna=False)
             if len(chromosomes) == 1 and pd.notna(chromosomes[0]):
                 tables[chromosomes[0]] = table

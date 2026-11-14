@@ -66,6 +66,47 @@ test("memory failure releases controls and requires restart; stale messages are 
 test("formats and help are available without starting an inference worker", () => {
   const {get, workers} = page();
   assert.equal(workers.length, 0);
-  assert(get("sumstats-format").options.some(option => option.value === "gwascatalog"));
+  assert(get("sumstats-format").options.some(option => option.value === "gwascatalog" && option.text === "GWAS Catalog"));
+  assert(get("sumstats-format").options.some(option => option.value === "fastgwa" && option.text === "GCTA fastGWA"));
+  const options = get("sumstats-format").options;
+  assert.equal(options.length, 9);
+  assert.equal(new Set(options.map(option => option.text)).size, 9);
+  assert(!options.some(option => ["plink", "ssf", "gwas-ssf", "sumher", "megaprs"].includes(option.value)));
+  assert(options.some(option => option.value === "plink2" && option.text === "PLINK 2"));
   assert.equal(get("sumstats-format-info").disabled, false);
+});
+
+
+test("requests and error reports use the selected model's effective components", async () => {
+  for (const [model, stored, expected] of [["VIPRS", "3", 1], ["VIPRSMix", "3", 3], ["VIPRSMix", "9", 9], ["VIPRS", "9", 1]]) {
+    const {get, workers, blobs, submit} = page();
+    get("model").value = model;
+    get("components").value = stored;
+    get("model").handlers.change();
+    get("sumstats-catalog-id").value = "GCST005195";
+    submit();
+    const worker = workers[0];
+    assert.equal(worker.request.options.components, expected);
+    const error = globalThis.VIPRSErrors.describe(new Error("Unreadable summary statistics"), "sumstats");
+    worker.onmessage({data: {type: "error", id: worker.request.id, error}});
+    const report = JSON.parse(await blobs.get(get("download-error").href).text());
+    assert.equal(report.session.options.components, expected);
+    const body = new URL(get("report-error").href).searchParams.get("body");
+    const summary = JSON.parse(body.split("```json\n")[1].split("\n```")[0]);
+    assert.equal(summary.options.components, expected);
+    assert.equal(summary.options.model, model);
+  }
+});
+
+
+test("changing the example format propagates the selection to the worker", () => {
+  for (const format of ["fastgwa", "ldak", "regenie"]) {
+    const {get, workers, submit} = page();
+    get("demo").handlers.click();
+    get("sumstats-format").value = format;
+    get("sumstats-format").handlers.change();
+    assert.equal(get("sumstats-format").disabled, false);
+    submit();
+    assert.equal(workers[0].request.options.sumstats_format, format);
+  }
 });

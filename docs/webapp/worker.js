@@ -8,17 +8,28 @@ function diagnostic(error) { return VIPRSErrors.describe(error, errorStage, erro
 const emit = (type, fields = {}) => self.postMessage({type, ...fields});
 
 async function localText(path) {
-  const response = await fetch(new URL(path, self.location.href));
+  // These files change independently of immutable, hash-pinned wheels.
+  // Never let a cached manifest select wheels from an earlier local build.
+  const response = await fetch(new URL(path, self.location.href), {cache: "no-store"});
   if (!response.ok) throw new Error(`Cannot load ${path} (HTTP ${response.status}).`);
   return response.text();
+}
+
+function validateManifest(manifest) {
+  if (manifest.pyodide_version !== PYODIDE_VERSION || !manifest.wheels?.length) {
+    throw new Error("The VIPRS WASM bundle is missing or incompatible. Rebuild it with tools/wasm/build.py.");
+  }
+  const magenpyWheels = manifest.wheels.filter(path => /\/magenpy-[^/]+\.whl(?:#|$)/.test(path));
+  if (magenpyWheels.length !== 1 || !/\/magenpy-0\.2\.5-/.test(magenpyWheels[0])) {
+    const found = magenpyWheels.map(path => path.split("/").at(-1).split("#")[0]).join(", ") || "no magenpy wheel";
+    throw new Error(`This web app requires magenpy 0.2.5; the manifest lists ${found}. Rebuild the WASM bundle with tools/wasm/build.py and reload the page.`);
+  }
 }
 
 async function initialize() {
   const start = performance.now();
   const manifest = JSON.parse(await localText("runtime.json"));
-  if (manifest.pyodide_version !== PYODIDE_VERSION || !manifest.wheels?.length) {
-    throw new Error("The VIPRS WASM bundle is missing or incompatible. Rebuild it with tools/wasm/build.py.");
-  }
+  validateManifest(manifest);
   emit("runtime-status", {message: "Loading runtime"});
   importScripts(INDEX_URL + "pyodide.js");
   const pyodide = await loadPyodide({indexURL: INDEX_URL});
@@ -36,10 +47,11 @@ from tqdm import tqdm
 tqdm.monitor_interval = 0
 import viprs, magenpy
 `);
+  const versions = JSON.parse(await pyodide.runPythonAsync('json.dumps({"magenpy_version": magenpy.__version__, "viprs_version": viprs.__version__})'));
   await pyodide.runPythonAsync(await localText("inference.py"));
   pyodide.globals.delete("packages_json");
   const initializationSeconds = (performance.now() - start) / 1000;
-  emit("ready", {seconds: initializationSeconds, runtime: {pyodide_version: PYODIDE_VERSION, wheels: manifest.wheels}});
+  emit("ready", {seconds: initializationSeconds, runtime: {pyodide_version: PYODIDE_VERSION, ...versions, wheels: manifest.wheels}});
   return {pyodide, manifest, initializationSeconds};
 }
 
@@ -310,6 +322,7 @@ self.onmessage = async ({data}) => {
       emit("phase", {id: data.id, message: {sumstats: "Reading summary statistics", ld: "Loading LD reference", harmonization: "Matching summary statistics to LD", inference: "Fitting model", results: "Preparing results"}[stage] || stage});
     });
     setStage("sumstats", data.sumstats.map(s => s.file?.name || s.url).join(", "));
+    emit("log", {id: data.id, message: `Reading summary statistics with the ${data.options.sumstats_format} format.`});
     await pyodide.runPythonAsync("start_request(request_json)");
     requestStarted = true;
     // The parsed chromosome tables no longer depend on their compressed input.
@@ -339,7 +352,7 @@ self.onmessage = async ({data}) => {
     setStage("results");
     output = JSON.parse(await pyodide.runPythonAsync("finish_request()"));
     requestFinished = true;
-    emit("log", {id: data.id, message: `Inputs streamed in ${downloadSeconds.toFixed(1)}s. Model: ${data.options.model}; components: ${data.options.components}; maximum iterations: ${data.options.max_iter}; tolerance: ${data.options.tolerance}; seed: ${data.options.seed}.`});
+    emit("log", {id: data.id, message: `Inputs streamed in ${downloadSeconds.toFixed(1)}s. Summary statistics format: ${data.options.sumstats_format}; model: ${data.options.model}; components: ${data.options.components}; maximum iterations: ${data.options.max_iter}; tolerance: ${data.options.tolerance}; seed: ${data.options.seed}.`});
     output.report.pyodide_version = PYODIDE_VERSION;
     output.report.wheels = manifest.wheels;
     output.report.runtime_reused = runsStarted > 1;

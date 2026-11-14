@@ -295,10 +295,11 @@ regression tests install the same release source using the generated
 browser still loads its bundled local copy of the wheel, so the release is resolved
 at build time, never each time a visitor opens the app.
 
-For a repeatable release selection, pass `--magenpy-release v0.2.5` (or another
-published tag). The default is `--magenpy-release v0.2.5`. An explicit
-`--magenpy-release latest` selects the latest stable release. `build-info.json` records `magenpy.origin` as `release-asset`
-or `source-build`, along with the selected tag, commit, and checksums.
+The application requires magenpy v0.2.5; the default is
+`--magenpy-release v0.2.5`. Bundling rejects other versions, including stale
+provenance passed to `--bundle-only`. The browser also rejects manifests that
+reference a different version. `build-info.json` records `magenpy.origin` as
+`release-asset` or `source-build`, along with the selected tag, commit, and checksums.
 
 Install [uv](https://docs.astral.sh/uv/) and Git, then from the repository root run:
 

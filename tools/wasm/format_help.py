@@ -65,7 +65,7 @@ def get_sumstats_format_help():
             "name": name, "separator": "Tabs" if separator == "\t" else "Whitespace (spaces or tabs)",
             "separator_symbol": r"\t" if separator == "\t" else r"\s+",
             "columns": [[column, names.get(column, column)] for column in formatted],
-            "example": formatted.to_csv(index=False, sep="\t" if separator == "\t" else " ", float_format="%.6g"),
+            "example": formatted.to_csv(index=False, sep="\t" if separator == "\t" else " ", float_format="%.6g", lineterminator="\n"),
             "notes": notes, "url": url,
         }
         for alias in parser_type.aliases:
@@ -79,4 +79,4 @@ def render_format_help():
 
 
 if __name__ == "__main__":
-    (Path(__file__).resolve().parents[2] / "docs/webapp/formats.js").write_text(render_format_help())
+    (Path(__file__).resolve().parents[2] / "docs/webapp/formats.js").write_text(render_format_help(), encoding="utf-8", newline="\n")

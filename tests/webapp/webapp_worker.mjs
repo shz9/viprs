@@ -275,3 +275,25 @@ test("A first archive staged for metadata is reused for fitting", async () => {
   assert.deepEqual(seen, ["/run/ld-first"]);
   assert(removed.includes("/run/ld-first"));
 });
+
+
+test("stale magenpy bundles fail during runtime setup with rebuild guidance", () => {
+  const context = worker();
+  const manifest = {pyodide_version: "0.28.3", wheels: ["./wheels/magenpy-0.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl#sha256=test"]};
+  assert.doesNotThrow(() => context.validateManifest(manifest));
+  for (const wheels of [[], [manifest.wheels[0].replace("0.2.5", "0.2.3")], [manifest.wheels[0], manifest.wheels[0]]]) {
+    assert.throws(() => context.validateManifest({...manifest, wheels}), /Rebuild/);
+  }
+});
+
+
+test("runtime manifest and Python adapter bypass stale browser cache", async () => {
+  const context = worker();
+  context.fetch = async (url, options) => {
+    assert.equal(options.cache, "no-store");
+    return {ok: true, text: async () => "fresh contents"};
+  };
+  for (const path of ["runtime.json", "inference.py"]) {
+    assert.equal(await context.localText(path), "fresh contents");
+  }
+});

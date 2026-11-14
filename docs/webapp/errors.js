@@ -42,7 +42,7 @@
     const summary = {error: {category: report.error.category, stage: report.error.stage,
       message: report.error.message.slice(0, 250), source: report.error.source?.slice(0, 150)},
       options: report.session?.options, environment: {...report.environment, browser: report.environment?.browser?.slice(0, 200)},
-      runtime: {pyodide_version: report.runtime?.pyodide_version}};
+      runtime: {pyodide_version: report.runtime?.pyodide_version, magenpy_version: report.runtime?.magenpy_version, viprs_version: report.runtime?.viprs_version}};
     const attachment = "\n\nAttach the downloaded viprs-error.json after reviewing it for private information. Input file contents are not included.";
     let body = "### What happened\n" + report.error.title +
       "\n\n### Steps to reproduce\n1. [Describe your inputs and steps]\n2. [Describe expected behavior]\n\n### Session summary\n```json\n" +

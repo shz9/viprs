@@ -15,12 +15,16 @@ import tempfile
 import threading
 
 from playwright.sync_api import sync_playwright
-from magenpy.parsers.sumstats_parsers import get_supported_sumstats_formats
 
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "build/wasm/browser-test"
-SUMSTATS_FORMATS = sorted(get_supported_sumstats_formats(include_aliases=True))
+SUMSTATS_FORMATS = sorted(["magenpy", "plink2", "plink1.9", "cojo", "fastgwa", "gwascatalog", "saige", "regenie", "ldak"])
 FORMAT_HELP = runpy.run_path(str(ROOT / "tools/wasm/format_help.py"))["get_sumstats_format_help"]()
+FORMAT_LABELS = {
+    "magenpy": "Magenpy", "plink2": "PLINK 2", "plink1.9": "PLINK 1.9",
+    "cojo": "GCTA-COJO", "fastgwa": "GCTA fastGWA", "gwascatalog": "GWAS Catalog",
+    "saige": "SAIGE", "regenie": "REGENIE", "ldak": "LDAK / SumHer / MegaPRS",
+}
 MOCK_WORKER = """
 self.postMessage({type: "ready", seconds: 0.01});
 self.onmessage = ({data}) => {
@@ -63,11 +67,12 @@ def main():
             page.on("pageerror", lambda error: errors.append(str(error)))
             requests = []
             page.on("request", lambda request: requests.append(request.url))
-            page.route("**/worker.js", lambda route: route.fulfill(content_type="text/javascript", body=MOCK_WORKER))
+            page.route("**/worker.js*", lambda route: route.fulfill(content_type="text/javascript", body=MOCK_WORKER))
             page.goto(f"http://127.0.0.1:{server.server_port}/webapp/")
             assert page.locator("#runtime-state").get_attribute("data-state") == "idle"
             assert len(page.workers) == 0
-            assert page.locator("#sumstats-format option").all_text_contents() == SUMSTATS_FORMATS
+            assert page.locator("#sumstats-format option").all_text_contents() == [FORMAT_LABELS[alias] for alias in SUMSTATS_FORMATS]
+            assert page.locator("#sumstats-format option").evaluate_all("options => options.map(option => option.value)") == SUMSTATS_FORMATS
             assert page.locator("#ld-source").input_value() == "hosted"
             assert page.locator("#sumstats-source").input_value() == "catalog"
             assert page.locator("#sumstats-source option").all_text_contents()[0] == "GWAS Catalog ID"
@@ -91,7 +96,7 @@ def main():
             for alias in SUMSTATS_FORMATS:
                 page.locator("#sumstats-format").select_option(alias)
                 page.locator("#sumstats-format-info").click()
-                assert FORMAT_HELP[alias]["name"] in page.locator("#sumstats-format-title").inner_text()
+                assert page.locator("#sumstats-format-title").inner_text() == FORMAT_LABELS[alias]
                 assert page.locator("#sumstats-format-example").text_content() == FORMAT_HELP[alias]["example"]
                 assert page.locator("#sumstats-format-docs").get_attribute("target") == "_blank"
                 page.locator("#sumstats-format-close").click()
@@ -258,7 +263,7 @@ def main():
             assert page.locator(".prs-threshold").evaluate("el => getComputedStyle(el).animationName") == "none"
             assert not errors, errors
             browser.close()
-            print("Passed: format guides for every alias, keyboard/backdrop dismissal, mobile dialogs, 15 independent source combinations, GWAS Catalog input, hosted ancestry/glob, separate folders, example shortcut, threshold, table rendering, new-tab links, footer, reduced motion, and six viewport widths.")
+            print("Passed: format guides for each distinct format, keyboard/backdrop dismissal, mobile dialogs, 15 independent source combinations, GWAS Catalog input, hosted ancestry/glob, separate folders, example shortcut, threshold, table rendering, new-tab links, footer, reduced motion, and six viewport widths.")
     finally:
         server.shutdown()
         server.server_close()

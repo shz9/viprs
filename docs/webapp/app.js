@@ -6,6 +6,16 @@ let worker = null, runtimeState = "idle", activeRun = null, nextRun = 0;
 let session = null, runtimeInfo = null, errorURL = null;
 let timer = null, startedAt = 0, downloadURLs = [], resultRows = {};
 const sumstatsFormatHelp = SUMSTATS_FORMAT_HELP;
+const sumstatsFormatAliases = {
+  plink: "plink2", ssf: "gwascatalog", "gwas-ssf": "gwascatalog",
+  sumher: "ldak", megaprs: "ldak",
+};
+const sumstatsFormatLabels = {
+  magenpy: "Magenpy", plink2: "PLINK 2", "plink1.9": "PLINK 1.9",
+  cojo: "GCTA-COJO", fastgwa: "GCTA fastGWA", gwascatalog: "GWAS Catalog",
+  saige: "SAIGE", regenie: "REGENIE", ldak: "LDAK / SumHer / MegaPRS",
+};
+const formatLabel = format => sumstatsFormatLabels[format] || sumstatsFormatHelp[format]?.name || format;
 
 function syncInputs() {
   for (const kind of ["ld", "sumstats"]) {
@@ -23,15 +33,16 @@ function syncInputs() {
 }
 function setSumstatsFormats(formats) {
   if (!Array.isArray(formats) || !formats.length) throw new Error("The runtime did not report any summary-statistics formats.");
-  const select = $("sumstats-format"), current = select.value;
-  select.replaceChildren(...formats.map((format) => new Option(format, format)));
+  formats = [...new Set(formats.map(format => sumstatsFormatAliases[format] || format))].sort();
+  const select = $("sumstats-format"), current = sumstatsFormatAliases[select.value] || select.value;
+  select.replaceChildren(...formats.map((format) => new Option(formatLabel(format), format)));
   select.value = formats.includes(current) ? current : formats.includes("fastgwa") ? "fastgwa" : formats[0];
   syncInputs();
 }
 function renderFormatHelp() {
   const guide = sumstatsFormatHelp[$("sumstats-format").value];
   if (!guide) return;
-  $("sumstats-format-title").textContent = `${guide.name} · ${$("sumstats-format").value}`;
+  $("sumstats-format-title").textContent = formatLabel($("sumstats-format").value);
   $("sumstats-format-separator-name").textContent = guide.separator;
   $("sumstats-format-separator-symbol").textContent = guide.separator_symbol;
   $("sumstats-format-notes").textContent = guide.notes;
@@ -79,7 +90,7 @@ function syncGenomeBuild() {
   const source = $("ld-source").value;
   $("ld-custom-build-inputs").hidden = ["hosted", "example"].includes(source);
   $("ld-build-guidance").textContent = source === "hosted"
-    ? "Choose the reference dataset that matches your GWAS."
+    ? "Choose the LD reference dataset that matches your GWAS."
     : build ? `Match summary statistics to ${buildLabel(build)}.`
     : "Genome build is read from LD metadata. Select it above only if missing.";
   $("catalog-build-hint").textContent = build
@@ -222,7 +233,7 @@ function clearError() {
 }
 function captureSession() {
   return {
-    options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "catalog" ? "gwascatalog" : $("sumstats-format").value, ld_genome_build: selectedLDBuild()},
+    options: {model: $("model").value, components: $("model").value === "VIPRSMix" ? Number($("components").value) : 1, seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "catalog" ? "gwascatalog" : $("sumstats-format").value, ld_genome_build: selectedLDBuild()},
     inputs: Object.fromEntries(["sumstats", "ld"].map(kind => {
       const source = $(kind + "-source").value;
       let inputs;
@@ -266,7 +277,7 @@ function beginTimer() {
 function startWorker() {
   worker?.terminate();
   runtimeStatus("loading", "Preparing runtime");
-  const current = new Worker(new URL("worker.js", import.meta.url));
+  const current = new Worker(new URL("worker.js?v=runtime-0.2.5", import.meta.url));
   worker = current;
   current.onmessage = ({data}) => {
     if (worker !== current) return;
@@ -404,7 +415,7 @@ $("inference-form").addEventListener("submit", (event) => {
     stage = "validation";
     const request = {
       type: "run", id: ++nextRun, sumstats, ld,
-      options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "catalog" ? "gwascatalog" : $("sumstats-format").value, ld_genome_build: selectedLDBuild()},
+      options: {...session.options},
     };
     if (!worker) startWorker();
     activeRun = request.id;

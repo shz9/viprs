@@ -40,3 +40,14 @@ def test_staged_viprs_wheel_is_inference_only_and_simd_enabled(tmp_path, monkeyp
     for dependency in ("scipy", "scikit-learn", "statsmodels", "joblib", "psutil"):
         assert dependency not in setup
     assert "VIPRSGrid" not in (target / "viprs/model/__init__.py").read_text()
+
+
+def test_bundle_rejects_stale_magenpy_before_using_existing_wheels():
+    with pytest.raises(ValueError, match="requires magenpy 0.2.5"):
+        build.bundle({"magenpy": {"version": "0.2.3"}})
+
+
+def test_wasm_magenpy_pin_matches_native_dependency():
+    import tomllib
+    dependencies = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]
+    assert f"magenpy=={build.MAGENPY_VERSION}" in dependencies
