@@ -7,7 +7,7 @@
 # http://localhost:8888
 
 
-FROM python:3.11-slim-buster
+FROM python:3.13-slim-bookworm
 
 LABEL authors="Shadi Zabad"
 LABEL version="0.1"

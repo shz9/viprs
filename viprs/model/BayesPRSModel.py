@@ -299,13 +299,16 @@ class BayesPRSModel:
         if gdl is None:
             gdl = self.gdl
 
+        from magenpy.utils.chromosome_utils import (
+            chromosome_sort_key,
+            normalize_chromosome_column,
+        )
+
         if parameter_table is None:
             parameter_table = self.to_table(per_chromosome=True)
         else:
-            parameter_table = {
-                c: parameter_table.loc[parameter_table["CHR"] == c,]
-                for c in parameter_table["CHR"].unique()
-            }
+            parameter_table = normalize_chromosome_column(parameter_table.copy(deep=False))
+            parameter_table = dict(tuple(parameter_table.groupby("CHR", observed=True)))
 
         snp_tables = gdl.to_snp_table(
             col_subset=["CHR", "SNP", "POS", "A1", "A2"], per_chromosome=True
@@ -316,7 +319,8 @@ class BayesPRSModel:
         post_var_beta = {}
 
         common_chroms = sorted(
-            list(set(snp_tables.keys()).intersection(set(parameter_table.keys())))
+            list(set(snp_tables.keys()).intersection(set(parameter_table.keys()))),
+            key=chromosome_sort_key,
         )
 
         from magenpy.utils.model_utils import merge_snp_tables

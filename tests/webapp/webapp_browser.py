@@ -10,7 +10,7 @@ import threading
 
 from playwright.sync_api import sync_playwright
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "build" / "wasm" / "browser-test"
 
 
@@ -52,8 +52,8 @@ def main():
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(f"http://127.0.0.1:{server.server_port}/webapp/")
             assert page.locator("#engine").count() == 0
-            page.wait_for_function("document.querySelector('#runtime-state').dataset.state === 'ready'", timeout=180000)
-            assert len(workers) == 1
+            assert page.locator("#runtime-state").get_attribute("data-state") == "idle"
+            assert len(workers) == 0
             assert "Select your inputs" in page.locator("#status").inner_text()
             assert not any("chr_22.zip" in url or "fastGWA.gz" in url for url in requests)
             page.screenshot(path=str(ARTIFACTS / "initial.png"), full_page=True)
@@ -122,7 +122,7 @@ def main():
             assert mixture_report["variants"] == report["variants"]
             # Exercise both models across two chromosomes using real Zarr fixtures.
             multi = data_dir / "multi"
-            assert multi.exists(), "Generate fixtures with: .venv/bin/python tests/webapp_fixtures.py"
+            assert multi.exists(), "Generate fixtures with: .venv/bin/python tests/webapp/webapp_fixtures.py"
             page.locator("#sumstats-source").select_option("files")
             page.locator("#ld-source").select_option("files")
             page.locator("#sumstats-format").select_option("magenpy")
@@ -184,10 +184,12 @@ def main():
             assert page.locator("#run").is_enabled()
             assert "running" not in page.locator("#activity").get_attribute("class")
             assert page.locator("#results").is_hidden()
-            # Initialization failures surface before a run and can be retried.
+            # Initialization failures surface on Run and can be retried.
             retry_page = browser.new_page()
             retry_page.route("**/runtime.json", lambda route: route.fulfill(status=503, body="Unavailable"))
             retry_page.goto(f"http://127.0.0.1:{server.server_port}/webapp/")
+            retry_page.locator("#demo").click()
+            retry_page.locator("#run").click()
             retry_page.wait_for_function("document.querySelector('#runtime-state').dataset.state === 'error'")
             assert retry_page.locator("#retry-runtime").is_visible()
             retry_page.unroute("**/runtime.json")
@@ -196,7 +198,7 @@ def main():
             retry_page.close()
             assert not errors, errors
             browser.close()
-            print("Passed: actual WASM extensions, real chr22 inference, eager initialization, runtime reuse, VIPRSMix, multiple chromosomes, downloads, uploads, cancellation/rerun, initialization retry, mobile layout.")
+            print("Passed: actual WASM extensions, real chr22 inference, on-demand initialization, runtime reuse, VIPRSMix, multiple chromosomes, downloads, uploads, cancellation/rerun, initialization retry, mobile layout.")
     finally:
         server.shutdown()
         server.server_close()

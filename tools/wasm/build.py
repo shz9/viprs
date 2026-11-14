@@ -1,4 +1,4 @@
-"""Compile VIPRS and reuse the latest magenpy release's WASM wheel when available.
+"""Compile VIPRS and reuse the pinned magenpy release's WASM wheel when available.
 
 Run with the Python 3.13 environment described in requirements-build.txt.
 All compatibility changes are applied to build/wasm copies, never to the source tree.
@@ -237,8 +237,8 @@ def main():
     parser.add_argument("--package", choices=["magenpy", "viprs"])
     parser.add_argument(
         "--magenpy-release",
-        default="latest",
-        help="GitHub release tag, or latest (default).",
+        default="v0.2.5",
+        help="GitHub release tag (default: v0.2.5), or latest.",
     )
     args = parser.parse_args()
     if sys.version_info[:2] != (3, 13):

@@ -4,10 +4,10 @@ from pathlib import Path
 
 import magenpy.utils.system_utils as system_utils
 import pandas as pd
-import viprs.utils.data_utils as data_utils
+import magenpy.utils.gwas_catalog as gwas_catalog
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FIT_CLI = runpy.run_path(PROJECT_ROOT / "bin/viprs_fit")
 
 
@@ -47,7 +47,7 @@ def test_check_args_accepts_hugging_face_ld_path(monkeypatch):
 
 def test_check_args_resolves_gwas_catalog_accession(monkeypatch):
     url = "https://ftp.ebi.ac.uk/study.tsv.gz"
-    monkeypatch.setattr(data_utils, "resolve_gwas_catalog", lambda accession: url)
+    monkeypatch.setattr(gwas_catalog, "resolve_gwas_catalog", lambda accession: url)
     monkeypatch.setattr(
         system_utils,
         "get_filenames",

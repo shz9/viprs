@@ -3,11 +3,12 @@ import {readFileSync} from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
-const workerSource = readFileSync(new URL("../docs/webapp/worker.js", import.meta.url), "utf8");
+const workerSource = readFileSync(new URL("../../docs/webapp/worker.js", import.meta.url), "utf8");
 
 function worker(fetchInput = () => { throw new Error("Unexpected fetch"); }) {
   const context = vm.createContext({
     URL, performance,
+    importScripts: () => vm.runInContext(readFileSync(new URL("../../docs/webapp/errors.js", import.meta.url), "utf8"), context),
     self: {location: {href: "https://example.org/webapp/worker.js"}, postMessage() {}},
     fetch: (url, options) => String(url).endsWith("/runtime.json")
       ? new Promise(() => {}) : fetchInput(url, options),
@@ -241,4 +242,36 @@ test("failed summary staging does not rename a partial input", async () => {
   const FS = filesystem(() => { throw new Error("Out of memory"); });
   FS.rename = () => assert.fail("must not rename after failed staging");
   await assert.rejects(worker().stageInput({file: {size: 2, stream: () => stream}}, FS, "/sumstats-0", true), /Out of memory/);
+});
+
+
+test("Catalog resolution follows inspected LD metadata before downloading statistics", async () => {
+  const context = worker(), calls = [], globals = new Map();
+  const data = {options: {ld_genome_build: "GRCh38"}, ld: [{url: "hf://datasets/panel/EUR/chr_*.zip", stream: true}], sumstats: [{catalog: "GCST005195"}]};
+  const pyodide = {globals, FS: {open() { assert.fail("Hosted metadata must not stage an archive"); }},
+    runPython(code) { calls.push("metadata"); assert.match(code, /inspect_browser_ld_build/); assert.equal(globals.get("ld_expected_build"), "GRCh38"); return "GRCh38"; },
+    async runPythonAsync(code) { calls.push("catalog"); assert.match(code, /genome_build=catalog_genome_build/); assert.equal(globals.get("catalog_genome_build"), "GRCh38"); return "https://example.org/build38.tsv.gz"; }};
+  await context.prepareCatalogInputs(data, pyodide, "/run");
+  assert.deepEqual(calls, ["metadata", "catalog"]);
+  assert.equal(data.options.sumstats_genome_build, "GRCh38");
+  assert.equal(data.sumstats[0].url, "https://example.org/build38.tsv.gz");
+  assert.equal(globals.size, 0);
+});
+
+test("Conflicting LD metadata stops Catalog lookup", async () => {
+  const context = worker();
+  const data = {options: {ld_genome_build: "GRCh37"}, ld: [{url: "hf://datasets/panel/EUR/chr_*.zip", stream: true}], sumstats: [{catalog: "GCST005195"}]};
+  const pyodide = {globals: new Map(), runPython() { throw new Error("conflicting genome builds"); }, runPythonAsync() { assert.fail("Catalog lookup must not run"); }};
+  await assert.rejects(context.prepareCatalogInputs(data, pyodide, "/run"), /conflicting/);
+});
+
+
+test("A first archive staged for metadata is reused for fitting", async () => {
+  const context = worker(), seen = [], removed = [];
+  await context.fitLDArchives(
+    [{file: {name: "chr1.zip"}, staged_path: "/run/ld-first"}],
+    {open() { assert.fail("Do not stage the first archive twice"); }, unlink(path) { removed.push(path); }},
+    "/run", async path => seen.push(path));
+  assert.deepEqual(seen, ["/run/ld-first"]);
+  assert(removed.includes("/run/ld-first"));
 });

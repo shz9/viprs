@@ -10,7 +10,7 @@ import zipfile
 import pytest
 
 spec = importlib.util.spec_from_file_location(
-    "magenpy_release", Path(__file__).resolve().parents[1] / "tools/wasm/magenpy_release.py")
+    "magenpy_release", Path(__file__).resolve().parents[2] / "tools/wasm/magenpy_release.py")
 release_tools = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release_tools)
 
@@ -123,17 +123,18 @@ def test_duplicate_assets_are_rejected(release):
 
 
 def test_build_skips_magenpy_staging_and_compiler_when_asset_exists(release, tmp_path, monkeypatch):
-    # The build CLI needs tomllib (Python 3.11+); other resolver tests also run on 3.10.
-    pytest.importorskip("tomllib")
     import sys
-    tools_dir = Path(__file__).resolve().parents[1] / "tools/wasm"
+    tools_dir = Path(__file__).resolve().parents[2] / "tools/wasm"
     monkeypatch.syspath_prepend(str(tools_dir))
     build_spec = importlib.util.spec_from_file_location("viprs_wasm_build", tools_dir / "build.py")
     build = importlib.util.module_from_spec(build_spec)
     build_spec.loader.exec_module(build)
     monkeypatch.setattr(build, "BUILD", tmp_path / "build")
     monkeypatch.setattr(build, "WHEELS", tmp_path / "wheels")
-    monkeypatch.setattr(build, "resolve_release", lambda _: release)
+    def resolve_pinned_release(tag):
+        assert tag == "v0.2.5"
+        return release
+    monkeypatch.setattr(build, "resolve_release", resolve_pinned_release)
     monkeypatch.setattr(build, "reuse_wheel", release_tools.reuse_wheel)
     monkeypatch.setattr(release_tools, "read_url", lambda _: wheel_bytes())
     monkeypatch.setattr(build, "stage", lambda *_: pytest.fail("Released WASM must not be staged"))

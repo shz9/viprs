@@ -11,7 +11,7 @@ import pytest
 
 
 def load_evaluate_module():
-    script = Path(__file__).parents[1] / "bin" / "viprs_evaluate"
+    script = Path(__file__).parents[2] / "bin" / "viprs_evaluate"
     loader = importlib.machinery.SourceFileLoader("viprs_evaluate_cli", str(script))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
@@ -36,7 +36,7 @@ def test_individual_evaluation_mode_is_backwards_compatible(evaluate_cli):
 
 
 def test_individual_evaluation_still_runs_end_to_end(tmp_path):
-    script = Path(__file__).parents[1] / "bin" / "viprs_evaluate"
+    script = Path(__file__).parents[2] / "bin" / "viprs_evaluate"
     prs_file = tmp_path / "scores.prs"
     phenotype_file = tmp_path / "phenotypes.txt"
     output_file = tmp_path / "performance"
@@ -191,3 +191,9 @@ def test_summary_evaluation_rejects_individual_metrics(evaluate_cli, tmp_path):
 
     with pytest.raises(ValueError, match="Unsupported summary-statistics metric"):
         evaluate_cli.evaluate_summary_statistics(args)
+
+
+def test_sumstats_formats_follow_magenpy_registry(evaluate_cli):
+    from magenpy.parsers.sumstats_parsers import get_supported_sumstats_formats
+    action = next(action for action in evaluate_cli.build_parser()._actions if action.dest == "sumstats_format")
+    assert set(action.choices) == set(get_supported_sumstats_formats(include_aliases=True)) | {"custom"}

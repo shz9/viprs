@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("tomllib")
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 TOOLS = ROOT / "tools" / "wasm"
 sys.path.insert(0, str(TOOLS))
 spec = importlib.util.spec_from_file_location("viprs_wasm_build", TOOLS / "build.py")

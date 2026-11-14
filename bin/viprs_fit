@@ -79,7 +79,7 @@ def check_args(args):
         return path.startswith(("https://", "http://"))
 
     def resolve_sumstats(path_attr, format_attr):
-        from viprs.utils.data_utils import (
+        from magenpy.utils.gwas_catalog import (
             is_gwas_catalog_accession,
             resolve_gwas_catalog,
         )

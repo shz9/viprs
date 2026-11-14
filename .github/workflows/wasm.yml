@@ -73,11 +73,14 @@ jobs:
           python -m pip install -e ".[test]" -r build/wasm/native-test-requirements.txt playwright
           python -m playwright install --with-deps chromium
 
+      - name: Generate static format guidance
+        run: python tools/wasm/format_help.py
+
       - name: Validate wheels and run native and URL tests
         run: |
-          python -m pytest tests/test_webapp.py tests/test_wasm_build.py tests/test_wasm_package.py tests/test_magenpy_release.py -q
-          node --test tests/webapp_sources.mjs tests/webapp_worker.mjs
-          python tests/webapp_fixtures.py
+          python -m pytest tests/webapp/test_webapp.py tests/packaging/test_wasm_build.py tests/packaging/test_wasm_package.py tests/packaging/test_magenpy_release.py -q
+          node --test tests/webapp/webapp_sources.mjs tests/webapp/webapp_worker.mjs tests/webapp/webapp_errors.mjs tests/webapp/webapp_error_ui.mjs
+          python tests/webapp/webapp_fixtures.py
 
       - name: Package the web application
         run: |
@@ -87,7 +90,7 @@ jobs:
       - name: Test the packaged application in Chromium
         env:
           VIPRS_WEBAPP_ROOT: ${{ github.workspace }}/build/wasm/package-test
-        run: python tests/webapp_browser.py
+        run: python tests/webapp/webapp_browser.py
 
       - name: Name this build artifact
         id: artifact

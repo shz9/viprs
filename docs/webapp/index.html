@@ -88,40 +88,43 @@
       <form id="inference-form">
         <fieldset id="controls" class="configuration-panels">
           <section class="card input-card ld-card" aria-labelledby="ld-heading">
-            <div class="section-heading"><div><p class="section-kicker">02 · Reference data</p><h2 id="ld-heading">LD reference</h2></div><span class="source-badge">Local + cloud</span></div>
+            <p id="ld-error" class="input-error" tabindex="-1" hidden></p>
+            <div class="section-heading"><div><p class="section-kicker">02 · Reference data</p><h2 id="ld-heading">LD reference</h2></div></div>
             <label for="ld-source">LD source</label>
-            <select id="ld-source"><option value="hosted">Hosted UK Biobank matrices</option><option value="files">Local ZIP archives</option><option value="folder">Local folder · glob patterns</option><option value="urls">Custom URLs · files or globs</option><option value="example">Example · European LD, chromosome 22</option></select>
+            <select id="ld-source"><option value="hosted">Hosted matrices</option><option value="files">Local ZIP archives</option><option value="folder">Local folder · glob patterns</option><option value="urls">Custom URLs · files or globs</option><option value="example">Example · European LD, chromosome 22</option></select>
             <div id="ld-hosted-inputs" class="hosted-source-card">
-              <div class="hosted-heading"><strong>UK Biobank LD reference</strong><span class="source-badge">HapMap3</span></div>
-              <p class="hint">Choose the ancestry matching your GWAS. The hosted pattern selects all chromosomes.</p>
+              <div class="format-label"><label for="ld-cohort">Reference dataset</label><button id="ld-dataset-info" class="info-button" type="button" aria-label="About the selected LD dataset" aria-haspopup="dialog" aria-controls="ld-dataset-dialog" title="Dataset details">i</button></div>
+              <select id="ld-cohort"><option value="ukb">UK Biobank · GRCh37</option><option value="hgdp-1kg">HGDP + 1000 Genomes · GRCh38</option></select>
               <label for="ld-ancestry">Ancestry</label>
               <select id="ld-ancestry"><option value="EUR">EUR · European</option><option value="AFR">AFR · African</option><option value="AMR">AMR · Admixed American</option><option value="CSA">CSA · Central/South Asian</option><option value="EAS">EAS · East Asian</option><option value="MID">MID · Middle Eastern</option></select>
-              <label for="ld-hosted-path">All-chromosome path</label><output id="ld-hosted-path" class="hosted-path" for="ld-ancestry">hf://datasets/shz9/ukb-ld/EUR/chr_*.zip</output>
-              <p class="hint">Hosted archives are streamed on demand while fitting; they are not downloaded in full first. To select fewer chromosomes, use custom URLs or globs.</p>
-              <details class="reference-details"><summary>Dataset details</summary><p class="hint">LD between HapMap3 variants from imputed UK Biobank genotypes, with approximately independent LD blocks. <a href="https://huggingface.co/datasets/shz9/ukb-ld" target="_blank" rel="noopener noreferrer">View dataset ↗</a></p></details>
+              <label for="ld-hosted-path">All-chromosome path</label>
+              <output id="ld-hosted-path" class="hosted-path" for="ld-cohort ld-ancestry" aria-label="Selected LD archive path">hf://datasets/shz9/ukb-ld/EUR/chr_*.zip</output>
             </div>
             <div id="ld-files-inputs" hidden><label for="ld-file">LD archives</label><input id="ld-file" type="file" accept=".zip" multiple><p class="hint">ZIP archives containing magenpy Zarr stores. Files stay on your computer.</p><p id="ld-file-summary" class="selection-summary" role="status"></p></div>
             <div id="ld-folder-inputs" hidden><label for="ld-folder">LD folder</label><input id="ld-folder" type="file" webkitdirectory multiple><label for="ld-pattern">LD archive patterns</label><textarea id="ld-pattern" rows="2" spellcheck="false">**/chr_*.zip</textarea><p class="hint">One pattern per line, relative to this folder. ** includes subfolders.</p><p id="ld-folder-summary" class="selection-summary" role="status">Choose a folder to see matching file counts.</p></div>
             <div id="ld-urls-inputs" hidden><label for="ld-url">LD reference URLs or globs</label><textarea id="ld-url" rows="3" placeholder="hf://datasets/shz9/ukb-ld/EUR/chr_*.zip" spellcheck="false"></textarea><p class="hint">One ZIP URL or pattern per line. Globs are supported for public Hugging Face datasets and GitHub repositories; other HTTP hosts require explicit URLs and CORS access.</p></div>
-            <div id="ld-example-inputs" class="example-box" hidden><span class="chromosome" aria-hidden="true"><b>22</b></span><div class="example-copy"><strong>UK Biobank · European LD</strong><span>Chromosome 22 · HapMap3 variants</span></div><div class="example-links"><a href="https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip" target="_blank" rel="noopener noreferrer">LD ↗</a></div></div>
+            <div id="ld-example-inputs" class="example-box" hidden><span class="chromosome" aria-hidden="true"><b>22</b></span><div class="example-copy"><strong>UK Biobank · European LD</strong><span>Chromosome 22 · HapMap3 · GRCh37</span></div><div class="example-links"><a href="https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip" target="_blank" rel="noopener noreferrer">LD ↗</a></div></div>
+            <div id="ld-custom-build-inputs" hidden><label for="ld-custom-build">Genome build (if missing from metadata)</label><select id="ld-custom-build"><option value="">Detect from archive metadata</option><option value="GRCh37">GRCh37</option><option value="GRCh38">GRCh38</option></select></div>
+            <p id="ld-build-guidance" class="data-rule" role="status">Choose the reference dataset that matches your GWAS.</p>
           </section>
 
           <section class="card input-card sumstats-card" aria-labelledby="sumstats-heading">
+            <p id="sumstats-error" class="input-error" tabindex="-1" hidden></p>
             <div class="section-heading"><div><p class="section-kicker">01 · GWAS data</p><h2 id="sumstats-heading">Summary statistics</h2></div></div>
             <label for="sumstats-source">Summary statistics source</label>
             <select id="sumstats-source"><option value="catalog">GWAS Catalog ID</option><option value="files">Local files</option><option value="folder">Local folder · glob patterns</option><option value="urls">Hosted URLs · files or globs</option></select>
-            <div id="sumstats-catalog-inputs"><label for="sumstats-catalog-id">GWAS Catalog study accession</label><input id="sumstats-catalog-id" type="text" placeholder="GCST005195" autocomplete="off" spellcheck="false"><p class="hint">Enter a GCST accession. GRCh37/hg19 summary statistics are downloaded from the <a href="https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/" target="_blank" rel="noopener noreferrer">GWAS Catalog FTP server ↗</a> using parallel byte ranges when the server supports them.</p></div>
+            <div id="sumstats-catalog-inputs"><label for="sumstats-catalog-id">GWAS Catalog study accession</label><input id="sumstats-catalog-id" type="text" placeholder="GCST005195" autocomplete="off" spellcheck="false"><p class="hint">Enter a GCST accession. <span id="catalog-build-hint">We will look for GRCh37 summary statistics to match the LD reference.</span> Files are downloaded from the <a href="https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/" target="_blank" rel="noopener noreferrer">GWAS Catalog FTP server ↗</a> using parallel byte ranges when the server supports them.</p></div>
             <div id="sumstats-files-inputs" hidden><label for="sumstats-file">Summary statistics files</label><input id="sumstats-file" type="file" multiple><p class="hint">One combined file or one file per chromosome; plain text or gzip. Files stay on your computer.</p><p id="sumstats-file-summary" class="selection-summary" role="status"></p></div>
             <div id="sumstats-folder-inputs" hidden><label for="sumstats-folder">Summary statistics folder</label><input id="sumstats-folder" type="file" webkitdirectory multiple><label for="sumstats-pattern">Summary statistics patterns</label><textarea id="sumstats-pattern" rows="2" spellcheck="false">**/*</textarea><p class="hint">One pattern per line, relative to this folder. ** includes subfolders.</p><p id="sumstats-folder-summary" class="selection-summary" role="status">Choose a folder to see matching file counts.</p></div>
             <div id="sumstats-urls-inputs" hidden><label for="sumstats-url">Summary statistics URLs or globs</label><textarea id="sumstats-url" rows="3" placeholder="One URL or pattern per line" spellcheck="false"></textarea><p class="hint">Globs are supported for public Hugging Face datasets and GitHub repositories. Other HTTP hosts and relative URLs require explicit paths; remote hosts must allow CORS access.</p></div>
-            <label for="sumstats-format">Summary statistics format</label><select id="sumstats-format" disabled><option value="">Loading formats…</option></select>
-            <p class="data-rule">Choose summary statistics independently of your LD source. Variants are matched to the reference before fitting.</p>
+            <div class="format-label"><label for="sumstats-format">Summary statistics format</label><button id="sumstats-format-info" class="info-button" type="button" aria-label="About the selected summary statistics format" aria-haspopup="dialog" aria-controls="sumstats-format-dialog" title="Format columns and example" disabled>i</button></div><select id="sumstats-format" disabled><option value="gwascatalog">gwascatalog</option></select>
+            <p class="data-rule">Use the same genome build as your LD reference. GWAS Catalog lookup follows the LD build; coordinates are not automatically lifted between builds.</p>
           </section>
 
           <section class="card model-card">
             <div class="section-heading"><h2 class="panel-title"><svg class="panel-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h7m4 0h5M4 17h3m4 0h9"/><circle cx="13" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Model</h2></div>
             <div class="model-settings">
-              <label for="model">Prior on the genetic architecture</label><select id="model"><option value="VIPRS">VIPRS · Spike and slab</option><option value="VIPRSMix">VIPRSMix · Sparse Mixture of Gaussians</option></select>
+              <label for="model">Prior on the genetic architecture</label><select id="model"><option value="VIPRS">Spike and slab</option><option value="VIPRSMix">Sparse Mixture of Gaussians</option></select>
               <p id="model-help" class="hint">A point mass at zero and one Gaussian component for nonzero effects.</p>
               <div id="mixture-settings" hidden><label for="components">Non-null mixture components</label><input id="components" type="number" min="1" max="9" step="1" value="3" disabled required><p class="hint">Choose up to nine Gaussian effect-size components in addition to the point mass at zero.</p></div>
               <details class="advanced"><summary>Optimization settings</summary><div class="two-columns"><div><label for="max-iter">Maximum iterations</label><input id="max-iter" type="number" min="3" max="5000" step="1" value="1000" required></div><div><label for="tolerance">Convergence tolerance</label><input id="tolerance" type="number" min="0.000000000001" max="0.01" step="any" value="0.000001" required></div><div><label for="seed">Random seed</label><input id="seed" type="number" min="0" max="4294967295" step="1" value="0" required></div></div></details>
@@ -144,14 +147,19 @@
       </form>
 
       <aside class="card monitor" aria-labelledby="monitor-heading">
-        <div class="section-heading"><h2 id="monitor-heading">Inference</h2><span id="status-badge" class="status">Ready</span></div>
+        <div class="section-heading"><h2 id="monitor-heading" class="panel-title"><svg class="panel-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m13 2-9 12h7l-1 8 10-12h-7l1-8Z"/></svg>Inference</h2><span id="status-badge" class="status">Ready</span></div>
         <div class="run-placeholder"><div id="activity" class="activity" aria-hidden="true"><span></span><span></span><span></span></div><div class="run-message"><h3 id="activity-title">Ready for inference</h3><p id="status" role="status" aria-live="polite">Select your inputs and model.</p><p id="elapsed-line" class="elapsed-line" hidden>Elapsed <span id="elapsed">—</span></p></div></div>
+        <div id="error-support" class="error-support" tabindex="-1" role="alert" hidden>
+          <p id="error-advice"></p>
+          <div class="downloads"><a id="download-error" class="button" download="viprs-error.json">Export diagnostics ↓</a><a id="report-error" class="button" target="_blank" rel="noopener noreferrer">Report on GitHub ↗</a></div>
+          <p class="hint">Includes technical error details, session settings, input names and sources, and browser information. File contents are excluded; URL credentials and query strings are removed. Review before sharing. GitHub opens a draft for you to review and submit; attach the report for full details.</p>
+        </div>
         <div class="actions"><button id="run" class="primary" type="submit" form="inference-form">Run inference <span aria-hidden="true">→</span></button><button id="cancel" type="button" disabled>Cancel</button></div>
         <p class="privacy"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 018 0v2M3 7h10v7H3z"/></svg>Files are processed locally. There is no app byte cap; the current wasm32 runtime has a non-configurable 4 GiB ceiling, and the browser may allow less.</p>
         <div id="metrics" class="metrics" hidden><div><span>Variants</span><strong id="variants">—</strong></div><div><span>Chromosomes</span><strong id="chromosomes">—</strong></div><div><span>Iterations</span><strong id="iterations">—</strong></div></div>
         <p id="timing-summary" class="timing-summary" hidden></p>
-        <div class="runtime-area"><span id="runtime-state" class="runtime-state" data-state="loading" role="status"><span class="runtime-dot" aria-hidden="true"></span><span id="runtime-text">Preparing runtime</span></span><button id="retry-runtime" type="button" class="text-button" hidden>Retry</button></div>
-        <details class="activity-details"><summary>Technical log</summary><pre id="log" aria-label="Activity log">Preparing the inference environment…</pre></details>
+        <div class="runtime-area"><span id="runtime-state" class="runtime-state" data-state="idle" role="status"><span class="runtime-dot" aria-hidden="true"></span><span id="runtime-text">Starts when you run inference</span></span><button id="retry-runtime" type="button" class="text-button" hidden>Retry</button></div>
+        <details class="activity-details"><summary>Technical log</summary><pre id="log" aria-label="Activity log">Inference environment will load when you run an analysis.</pre></details>
       </aside>
     </div>
 
@@ -162,6 +170,26 @@
       <div class="table-scroll" tabindex="0" role="region" aria-label="Posterior effect estimates"><table><thead><tr><th scope="col">CHR</th><th scope="col">SNP</th><th scope="col">A1</th><th scope="col">A2</th><th scope="col">PIP</th><th scope="col">BETA</th><th scope="col">VAR_BETA</th></tr></thead><tbody id="result-rows"></tbody></table></div>
       <p class="table-note">Top 20 variants by posterior inclusion probability (PIP). A1 is the effect allele; BETA and VAR_BETA are the posterior mean and variance. Downloads contain the complete fitted result.</p>
     </section>
+
+    <dialog id="ld-dataset-dialog" class="format-dialog" aria-labelledby="ld-panel-name" aria-describedby="ld-panel-description">
+      <div class="format-dialog-heading"><div><p class="section-kicker">LD dataset details</p><h2 id="ld-panel-name">UK Biobank</h2><div class="panel-badges"><span id="ld-snp-set" class="source-badge" aria-label="Variant set">HapMap3</span><span id="ld-genome-build" class="source-badge" aria-label="Genome build">GRCh37</span></div></div><button id="ld-dataset-close" type="button" aria-label="Close dataset details" autofocus>×</button></div>
+      <p id="ld-panel-description">LD between HapMap3 variants from imputed UK Biobank genotypes, with approximately independent LD blocks.</p>
+      <h3>Archive access</h3>
+      <p>All chromosomes are included. Archives are streamed on demand during fitting. To select fewer chromosomes, choose Custom URLs and enter a chromosome-specific path or pattern.</p>
+      <a id="ld-panel-link" class="format-docs" href="https://huggingface.co/datasets/shz9/ukb-ld" target="_blank" rel="noopener noreferrer">View dataset ↗</a>
+    </dialog>
+
+    <dialog id="sumstats-format-dialog" class="format-dialog" aria-labelledby="sumstats-format-title" aria-describedby="sumstats-format-intro">
+      <div class="format-dialog-heading"><div><p class="section-kicker">Summary statistics guide</p><h2 id="sumstats-format-title"></h2></div><button id="sumstats-format-close" type="button" aria-label="Close format guide" autofocus>×</button></div>
+      <p id="sumstats-format-intro">Use a header row with case-sensitive column names, followed by one row per variant. Plain text and gzip files are supported.</p>
+      <p><strong>Separator:</strong> <span id="sumstats-format-separator"><span id="sumstats-format-separator-name"></span> (<code id="sumstats-format-separator-symbol"></code>)</span></p>
+      <p id="sumstats-format-notes"></p>
+      <p class="format-requirements">For this browser, include chromosome labels, variant IDs or positions, effect alleles, per-variant sample sizes, and signed association statistics (for example, Z or BETA with SE). Match the genome build shown for the selected LD reference.</p>
+      <h3>Example · two illustrative variants</h3><p class="hint">A compatible layout; redundant statistics can be omitted. These variants and values are illustrative.</p>
+      <pre id="sumstats-format-example" tabindex="0" aria-label="Example summary statistics"></pre>
+      <details><summary>Columns in this example</summary><div class="format-columns"><table><thead><tr><th scope="col">Column</th><th scope="col">Meaning</th></tr></thead><tbody id="sumstats-format-columns"></tbody></table></div></details>
+      <a id="sumstats-format-docs" class="format-docs" target="_blank" rel="noopener noreferrer">Original format documentation ↗</a>
+    </dialog>
 
     <footer>
       <p>VIPRS Browser <span aria-hidden="true">•</span> Built with Codex <span aria-hidden="true">•</span> Maintained by: <a href="https://shz9.github.io/" target="_blank" rel="noopener noreferrer">Shadi Zabad</a>, University of Oxford</p>

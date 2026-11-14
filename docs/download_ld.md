@@ -119,6 +119,40 @@ For programmatic access, computation, and downstream processing, consult the doc
 [`magenpy`](https://shz9.github.io/magenpy/). This sister Python package implements the specialized data
 structures used to store and process these large-scale LD matrices.
 
+## Downloading matrices with Python
+
+Use `download_ld_matrix` to save archives locally. Specify an ancestry code;
+Hugging Face and the UK Biobank panel are the defaults:
+
+```python
+from viprs.utils.data_utils import download_ld_matrix
+
+paths = download_ld_matrix("LD_matrices", ancestry="EUR", chromosome=[21, 22])
+# LD_matrices/ukb/EUR/chr_21.zip and chr_22.zip
+
+# HGDP + 1000 Genomes uses GRCh38/hg38 positions:
+paths = download_ld_matrix(
+    "LD_matrices", ancestry="AFR", panel="hgdp-1kg", chromosome=22
+)
+
+# Zenodo supplies a complete ancestry archive, without chromosome selection:
+paths = download_ld_matrix(
+    "LD_matrices", ancestry="EUR", panel="hgdp-1kg", source="zenodo"
+)
+# LD_matrices/hgdp-1kg/EUR/EUR.tar.gz
+```
+
+The helper returns a list of local `pathlib.Path` objects. With Hugging Face,
+omitting `chromosome` downloads all 22 autosomes. Downloaded ZIP files can be
+passed directly to `magenpy`. Zenodo archives must be extracted before use, as
+shown below. When `huggingface_hub` is installed, the helper automatically uses
+its `hf_hub_download` interface. Otherwise, it streams downloads over HTTP.
+The Hub interface stages files locally before moving them into place, without
+keeping a second archive in the global Hub cache. Hub transfer failures are
+reported rather than silently switching to HTTP. No Hugging Face package is required.
+Existing files are reused unless `overwrite=True` is supplied. Interrupted
+transfers do not replace completed files; retrying reuses completed chromosomes.
+
 ## Downloading matrices from Zenodo
 
 To download a matrix archive from Zenodo, select the record for the desired cohort and set `population` to

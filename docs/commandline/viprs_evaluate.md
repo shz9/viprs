@@ -157,7 +157,7 @@ Which outputs the following help message:
 usage: viprs_evaluate [-h] [--prs-file PRS_FILE] [--phenotype-file PHENO_FILE] [--phenotype-col PHENO_COL]
                       [--phenotype-likelihood {binomial,infer,gaussian}] [--keep KEEP]
                       [--covariates-file COVARIATES_FILE] [-s SUMSTATS_PATH] [-f FIT_FILES] [-l LD_DIR]
-                      [--sumstats-format {custom,plink1.9,fastgwa,plink2,cojo,gwas-ssf,gwascatalog,magenpy,ssf,saige,plink}]
+                      [--sumstats-format {cojo,custom,fastgwa,gwas-ssf,gwascatalog,ldak,magenpy,megaprs,plink,plink1.9,plink2,regenie,saige,ssf,sumher}]
                       [--custom-sumstats-mapper CUSTOM_SUMSTATS_MAPPER] [--custom-sumstats-sep CUSTOM_SUMSTATS_SEP]
                       [--gwas-sample-size GWAS_SAMPLE_SIZE] [--temp-dir TEMP_DIR] [--threads THREADS] --output-file
                       OUTPUT_FILE [--metrics METRICS [METRICS ...]] [--log-level {INFO,WARNING,ERROR,DEBUG,CRITICAL}]
@@ -188,7 +188,7 @@ options:
   -l LD_DIR, --ld-dir LD_DIR
                         The path to LD matrices for the validation/test dataset. This can be a directory or wildcard
                         of the form ld/chr_*.
-  --sumstats-format {custom,plink1.9,fastgwa,plink2,cojo,gwas-ssf,gwascatalog,magenpy,ssf,saige,plink}
+  --sumstats-format {cojo,custom,fastgwa,gwas-ssf,gwascatalog,ldak,magenpy,megaprs,plink,plink1.9,plink2,regenie,saige,ssf,sumher}
                         The format of the validation/test summary statistics file(s).
   --custom-sumstats-mapper CUSTOM_SUMSTATS_MAPPER
                         Comma-separated column mappings for custom summary statistics, e.g.

@@ -50,4 +50,4 @@ def make_multichrom_inputs(directory):
 
 
 if __name__ == "__main__":
-    make_multichrom_inputs(Path(__file__).resolve().parents[1] / "build/wasm/test-data/multi")
+    make_multichrom_inputs(Path(__file__).resolve().parents[2] / "build/wasm/test-data/multi")

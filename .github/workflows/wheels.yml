@@ -24,7 +24,7 @@ jobs:
             macos-15,
           ]
     env:
-      CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
+      CIBW_BUILD: "cp311-* cp312-* cp313-*"
       CIBW_SKIP: "pp* cp36-* *-musllinux_* *win32 *_i686 *_s390x"
 
     steps:
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/setup-python@v5
         name: Install Python
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5

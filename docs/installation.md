@@ -7,7 +7,7 @@ to ensure that a `C/C++` Compiler (with appropriate flags) is present on your sy
 
 Building the `viprs` package requires the following dependencies:
 
-* `python` (3.10, 3.11, 3.12, or 3.13)
+* `python` (3.11, 3.12, or 3.13)
 * `C/C++` Compilers
 * `cython`
 * `numPy` 
@@ -26,7 +26,7 @@ If you can use `Anaconda` or `miniconda` to manage your Python environment, we *
 a new environment with the required dependencies as follows:
 
 ```bash
-python_version=3.11  # Supported versions are 3.10, 3.11, 3.12, and 3.13
+python_version=3.13  # Supported versions are 3.11, 3.12, and 3.13
 conda create --name "viprs_env" -c anaconda -c conda-forge python=$python_version compilers pkg-config openblas -y
 conda activate viprs_env
 ```
@@ -51,7 +51,7 @@ If you use [`uv`](https://docs.astral.sh/uv/) to manage Python environments, you
 with a supported Python version and install `viprs` into it as follows:
 
 ```bash
-uv venv --python 3.11 viprs_env
+uv venv --python 3.13 viprs_env
 source viprs_env/bin/activate
 uv pip install viprs
 ```
@@ -82,7 +82,7 @@ it is recommended that you install the package in a virtual environment. Here's 
 example of how to install `viprs` on a SLURM-based cluster:
 
 ```bash
-module load python/3.11
+module load python/3.13
 python3 -m venv viprs_env  # Assumes venv is available
 source viprs_env/bin/activate
 python -m pip install --upgrade pip

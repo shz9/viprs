@@ -16,6 +16,13 @@ from pathlib import Path, PurePosixPath
 import numpy as np
 
 
+def _report_stage(stage):
+    """Report precise failure context when hosted in the browser worker."""
+    callback = globals().get("stage_callback")
+    if callback is not None:
+        callback(stage)
+
+
 def ensure_huggingface_compat():
     """Stub terminal-only modules unavailable inside a Pyodide web worker."""
     if sys.platform != "emscripten":
@@ -28,9 +35,9 @@ def ensure_huggingface_compat():
         sys.modules.setdefault(name, types.ModuleType(name))
 
 
-async def resolve_browser_gwas_catalog(accession, read_text=None):
+async def resolve_browser_gwas_catalog(accession, read_text=None, genome_build="GRCh37"):
     """Resolve a Catalog accession using the browser's HTTP transport."""
-    from viprs.utils.data_utils import resolve_gwas_catalog_async
+    from magenpy.utils.gwas_catalog import resolve_gwas_catalog
 
     if read_text is None:
         from pyodide.http import pyfetch
@@ -53,7 +60,112 @@ async def resolve_browser_gwas_catalog(accession, read_text=None):
                 )
             return await response.string()
 
-    return await resolve_gwas_catalog_async(accession, read_text)
+    from magenpy.utils.model_utils import normalize_genome_build
+
+    genome_build = normalize_genome_build(genome_build)
+    if genome_build not in ("GRCh37", "GRCh38"):
+        raise ValueError("Select or detect GRCh37/hg19 or GRCh38/hg38 before GWAS Catalog lookup.")
+    if genome_build == "GRCh38":
+        # magenpy 0.2.5 only resolves GRCh37. Reuse its directory/link parsing
+        # for the missing GRCh38 path; retain its resolver below for GRCh37.
+        import re
+        from urllib.parse import unquote, urlsplit
+        from magenpy.utils.gwas_catalog import gwas_catalog_directory, _listing_links
+
+        directory = gwas_catalog_directory(accession)
+        links = _listing_links(await read_text(directory), directory)
+        if directory + "harmonised/" in links:
+            links += _listing_links(await read_text(directory + "harmonised/"), directory + "harmonised/")
+        candidates = sorted(
+            (url for url in links if re.search(r"\.tsv(?:\.gz)?$", urlsplit(url).path, re.I)),
+            key=lambda url: (not url.endswith(".h.tsv.gz"), not url.endswith(".f.tsv.gz"), url),
+        )
+        for url in candidates:
+            match = re.search(r"(?:grch|build(?:grch)?|hg)(37|38|19)(?![0-9])", unquote(urlsplit(url).path), re.I)
+            if match:
+                if normalize_genome_build(match.group(1)) == genome_build:
+                    return url
+                continue
+            if url + "-meta.yaml" not in links:
+                continue
+            try:
+                metadata = await read_text(url + "-meta.yaml")
+            except Exception:
+                continue
+            match = re.search(r"(?:^|\n)\s*genome_assembly\s*:\s*[\"']?([^\s#\"']+)", metadata, re.I)
+            if match and normalize_genome_build(match.group(1)) == genome_build:
+                return url
+        raise ValueError("This accession has no GRCh38/hg38 summary-statistics file. Choose a study in this build or a matching LD panel; no automatic liftover is performed.")
+
+    # magenpy's resolver is synchronous. Replay it against fetched documents
+    # so it owns discovery/build selection while browser I/O stays asynchronous.
+    # BaseException lets cache misses escape its optional-metadata error handler.
+    class FetchRequired(BaseException):
+        pass
+
+    documents = {}
+
+    def cached_text(url):
+        if url not in documents:
+            raise FetchRequired(url)
+        value = documents[url]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    while True:
+        try:
+            return resolve_gwas_catalog(accession, cached_text)
+        except FetchRequired as pending:
+            url = pending.args[0]
+            try:
+                documents[url] = await read_text(url)
+            except Exception as error:
+                documents[url] = error
+
+
+def inspect_browser_ld_build(path, expected_build=None):
+    """Read LD metadata before downloading build-specific Catalog statistics."""
+    from magenpy import LDMatrix
+    from magenpy.utils.model_utils import normalize_genome_build, validate_harmonization_builds
+
+    expected_build = normalize_genome_build(expected_build)
+    if str(path).startswith(("hf://", "http://", "https://")):
+        if str(path).startswith("hf://"):
+            ensure_huggingface_compat()
+            if any(char in str(path) for char in "*?["):
+                from magenpy.utils.system_utils import glob_hf_path
+                paths = glob_hf_path(path)
+                if not paths:
+                    raise ValueError("No LD matrices match the selected panel.")
+                path = paths[0]
+        ld = LDMatrix.from_path(path)
+        try:
+            builds = [normalize_genome_build(ld.genome_build)]
+        finally:
+            ld.release()
+            close = getattr(ld.store, "close", None)
+            if close is not None:
+                close()
+    else:
+        import zarr
+        # Inspect nested or multi-chromosome ZIPs without extracting LD chunks.
+        with zarr.ZipStore(str(path), mode="r") as store:
+            names = set(store.keys())
+            roots = [name[:-len(".zgroup")] for name in names
+                     if name.endswith(".zgroup") and name[:-len(".zgroup")] + "matrix/.zgroup" in names]
+            matrices = {root: LDMatrix(zarr.open_group(store=store, path=root.rstrip("/"), mode="r")) for root in roots}
+            if not matrices:
+                raise ValueError("No magenpy LD stores found in the selected ZIP.")
+            validate_harmonization_builds({"LD": matrices})
+            builds = [normalize_genome_build(ld.genome_build) for ld in matrices.values()]
+    known = {build for build in builds if build is not None}
+    if expected_build is not None and known and known != {expected_build}:
+        raise ValueError(f"Selected genome build {expected_build} conflicts with LD metadata: {sorted(known)}.")
+    build = next(iter(known), expected_build)
+    if build not in ("GRCh37", "GRCh38"):
+        raise ValueError("LD metadata does not specify GRCh37 or GRCh38. Select the genome build for your custom LD input before GWAS Catalog lookup.")
+    return build
 
 
 def ensure_linear_operator():
@@ -159,85 +271,6 @@ def unpack_ld(archive_path, destination):
     return [str(p) for p in roots]
 
 
-def _compact_sumstats_parser(parser):
-    """Restrict a parser to model-relevant columns and bounded numeric dtypes.
-
-    Catalog GWAS-SSF files may contain many optional numeric columns. Leaving
-    those columns to pandas' inference defeats the canonical dtype map and can
-    make its BlockManager allocate another full-width float64 matrix while it
-    constructs the DataFrame. Parser-declared raw fields are retained because
-    format-specific post-processing may need them.
-    """
-    converters = parser.col_name_converter or {}
-    position_columns = {"POS"} | {
-        raw for raw, output in converters.items() if output == "POS"
-    }
-
-    def compact_dtypes(dtypes):
-        return {
-            column: (
-                np.float32
-                if np.dtype(dtype) == np.dtype(np.float64)
-                and column not in position_columns
-                else dtype
-            )
-            for column, dtype in dtypes.items()
-        }
-
-    parser.column_dtypes = compact_dtypes(parser.column_dtypes)
-    parser.raw_column_dtypes = compact_dtypes(parser.raw_column_dtypes)
-    # Alleles have a tiny vocabulary but otherwise become millions of Python
-    # string references. Categories preserve pandas compatibility while storing
-    # one small integer code per row.
-    for column in ("A1", "A2"):
-        if column in parser.column_dtypes:
-            parser.column_dtypes[column] = "category"
-    for column in ("REF", "ALT", "ALT1"):
-        if column in parser.raw_column_dtypes:
-            parser.raw_column_dtypes[column] = "category"
-    retained_columns = (
-        set(parser.get_standard_cols())
-        | set(parser.column_dtypes)
-        | set(parser.raw_column_dtypes)
-        | set(converters)
-    )
-    parser.read_csv_kwargs["usecols"] = retained_columns.__contains__
-    return parser
-
-
-def _configure_sumstats_parser(parser):
-    """Accept current GWAS-SSF aliases before normalizing to magenpy names."""
-
-    def drop_na_from_available_alternatives(table):
-        """Keep rows satisfying any identity/statistic alternative."""
-        keep = np.ones(len(table), dtype=bool)
-        for alternatives in parser.get_essential_col_groups():
-            group_valid = np.zeros(len(table), dtype=bool)
-            found_alternative = False
-            for columns in alternatives:
-                if all(column in table.columns for column in columns):
-                    found_alternative = True
-                    group_valid |= table[list(columns)].notna().all(axis=1).to_numpy()
-            if found_alternative:
-                keep &= group_valid
-        return table.loc[keep]
-
-    if getattr(parser, "format_name", None) == "ssf":
-        parser.col_name_converter.update(
-            {
-                # ``rsid`` is the GWAS-SSF spelling, while some Catalog
-                # documentation and older exports use ``rs_id``.
-                "rs_id": "SNP",
-                "odds_ratio": "OR",
-            }
-        )
-    # GWAS-SSF makes rsid optional. The base parser otherwise selects the SNP
-    # identity alternative merely because the column exists, dropping rows
-    # whose rsid is #NA despite complete CHR/POS identity.
-    parser.drop_na_from_essential_cols = drop_na_from_available_alternatives
-    return parser
-
-
 def _ensure_ld_harmonization_schema(sumstats, ld, chromosome):
     """Give magenpy an SNP-keyed table, inferring optional rsIDs from LD."""
     table = sumstats.table
@@ -259,30 +292,28 @@ def _ensure_ld_harmonization_schema(sumstats, ld, chromosome):
         reference = reference.dropna(subset=("POS", "SNP")).drop_duplicates(
             subset="POS", keep=False
         )
-        if "SNP" not in table or missing_snp.all():
-            # rsID is optional in GWAS-SSF. A reference-left inner join both adds
-            # magenpy's required SNP field and avoids retaining millions of variants
-            # that cannot occur in the current LD panel.
-            table = table.drop(columns="SNP", errors="ignore")
-            table = reference.merge(table, how="inner", on="POS", sort=False)
-        else:
-            lookup = reference.set_index("POS")["SNP"]
-            table.loc[missing_snp, "SNP"] = table.loc[
-                missing_snp, "POS"
-            ].map(lookup)
+        # magenpy owns position-based ID inference. Preserve supplied IDs when
+        # only part of the input needs inference, and exclude ambiguous positions.
+        original = table["SNP"].copy() if missing_snp is not None else None
+        reference["CHR"] = chromosome
+        sumstats.infer_snp_id(reference, allow_na=True)
+        if original is not None:
+            table["SNP"] = np.where(missing_snp, table["SNP"], original)
 
     valid_snp = table["SNP"].notna() & ~table["SNP"].isin(
         ("", "#NA", "NA", "N/A")
     )
-    duplicated_snp = table["SNP"].duplicated(keep=False)
-    if not valid_snp.all() or duplicated_snp.any():
-        table = table.loc[valid_snp & ~duplicated_snp].copy()
-    sumstats.table = table
+    if not valid_snp.all():
+        table = table.loc[valid_snp]
+    from magenpy.parsers.sumstats_parsers import SumstatsParser
+
+    sumstats.table = SumstatsParser.drop_na_from_essential_cols(table)
+    sumstats.drop_duplicates()
 
     if len(sumstats.table) == 0:
         raise ValueError(
             f"No chromosome {chromosome} summary-statistics positions matched "
-            "the selected LD reference. Check that both inputs use GRCh37/hg19."
+            "the selected LD reference. Check that both inputs use the same genome build."
         )
 
 
@@ -290,6 +321,7 @@ class BrowserFitSession:
     """Accumulate a run while keeping at most one LD archive loaded at a time."""
 
     def __init__(self, sumstats_paths, options):
+        _report_stage("validation")
         self.max_iter, self.tolerance = validate_options(options)
         self.options = options
         self.sumstats_paths = (
@@ -304,47 +336,44 @@ class BrowserFitSession:
         self.preparation_seconds = 0.0
         self.fit_seconds = 0.0
         self.linear_operator = None
+        _report_stage("sumstats")
         self.sumstats_tables = self._read_summary_statistics()
 
     def _read_summary_statistics(self):
-        """Parse summary statistics once, using bounded browser-friendly dtypes."""
-        from magenpy import GWADataLoader
+        """Parse summary statistics once using magenpy's optimized parser."""
+        from magenpy import SumstatsTable
+        from magenpy.utils.chromosome_utils import get_present_chromosomes
         from magenpy.parsers.sumstats_parsers import get_sumstats_parser
+        import pandas as pd
 
-        # pandas otherwise consolidates every numeric GWAS-SSF column into a
-        # second block. At eight million rows, optional float64 columns can add
-        # hundreds of MiB to the parsing peak. Use compact storage only for large
-        # staged inputs, preserving the established float64 numerics for ordinary
-        # files and small regression fixtures.
-        parser = _configure_sumstats_parser(
-            get_sumstats_parser(
-                self.options.get("sumstats_format", "fastgwa")
-            )(None)
-        )
-        compact = (
-            sum(Path(path).stat().st_size for path in self.sumstats_paths)
-            >= 64 * 1024**2
-        )
-        if compact:
-            _compact_sumstats_parser(parser)
-        with tempfile.TemporaryDirectory(prefix="viprs-browser-sumstats-") as work:
-            loader = GWADataLoader(temp_dir=str(Path(work) / "temp"), threads=1)
-            loader.read_summary_statistics(
-                [str(path) for path in self.sumstats_paths],
-                parser=parser,
-                # Optional/missing GWAS-SSF rsIDs must first be inferred from
-                # the LD panel; deduplicate after that normalization step.
-                drop_duplicated=False,
-            )
-            tables = loader.sumstats_table or {}
-            loader.sumstats_table = None
-            loader.cleanup()
+        # Project wide Catalog files with magenpy's column-selection API.
+        # Specialized formats retain their derived fields (e.g. LDAK Z/SAIGE N).
+        parser_type = get_sumstats_parser(self.options.get("sumstats_format", "fastgwa"))
+        tables = {}
+        for path in self.sumstats_paths:
+            parser = parser_type(None)
+            columns = None
+            if parser.format_name in ("magenpy", "ssf"):
+                header = pd.read_csv(str(path), nrows=0, **parser.read_csv_kwargs).columns
+                converter = parser.col_name_converter or {}
+                available = {converter.get(column, column) for column in header}
+                columns = sorted(available.intersection(parser.column_dtypes))
+            # The parser exposes drop_na; SumstatsTable.from_file does not.
+            # LD arrives later, so retain missing IDs until they can be inferred.
+            table = SumstatsTable(parser.parse(str(path), col_subset=columns, drop_na=False),
+                                  genome_build=self.options.get("sumstats_genome_build"))
+            chromosomes = get_present_chromosomes(table.table["CHR"], dropna=False)
+            if len(chromosomes) == 1 and pd.notna(chromosomes[0]):
+                tables[chromosomes[0]] = table
+            else:
+                tables.update(table.split_by_chromosome())
         if not tables:
             raise ValueError("No summary statistics could be read from the supplied inputs.")
-        return {str(chromosome): table for chromosome, table in tables.items()}
+        return tables
 
     def fit_ld_archive(self, ld_path, remaining_archives=0, progress_callback=None):
         """Stream or extract, fit, and release one LD archive at a time."""
+        _report_stage("ld")
         self.linear_operator = self.linear_operator or ensure_linear_operator()
         if str(ld_path).startswith("hf://"):
             ensure_huggingface_compat()
@@ -354,9 +383,9 @@ class BrowserFitSession:
         preparation_start = time.perf_counter()
         with tempfile.TemporaryDirectory(prefix="viprs-browser-ld-") as work:
             # GWADataLoader expands hf:// globs and delegates each store to
-            # LDMatrix.from_path. Local browser uploads first need safe ZIP
-            # extraction because Pyodide's filesystem does not expose them as
-            # native ZipStore paths.
+            # LDMatrix.from_path. Extract local uploads to support archives
+            # containing nested or multiple stores; magenpy's local ZipStore
+            # reader requires a single store at the archive root.
             ld_stores = (
                 str(ld_path)
                 if str(ld_path).startswith("hf://")
@@ -364,16 +393,23 @@ class BrowserFitSession:
             )
             gdl = GWADataLoader(
                 ld_store_files=ld_stores,
+                genome_build=self.options.get("ld_genome_build"),
                 temp_dir=str(Path(work) / "temp"),
                 threads=1,
             )
+            from magenpy.utils.model_utils import normalize_genome_build, validate_harmonization_builds
+
+            validate_harmonization_builds({"LD": gdl.ld or {}})
+            known_builds = {normalize_genome_build(ld.genome_build) for ld in (gdl.ld or {}).values()} - {None}
+            if known_builds:
+                self.options["ld_genome_build"] = next(iter(known_builds))
+            _report_stage("harmonization")
             selected = {}
             for chromosome in gdl.ld or {}:
-                key = str(chromosome)
-                if key in self.sumstats_tables:
-                    selected[chromosome] = self.sumstats_tables.pop(key)
+                if chromosome in self.sumstats_tables:
+                    selected[chromosome] = self.sumstats_tables.pop(chromosome)
             if not selected:
-                available = ", ".join(sorted(self.sumstats_tables, key=str)) or "none"
+                available = ", ".join(map(str, sorted(self.sumstats_tables, key=str))) or "none"
                 raise ValueError(
                     "The LD chromosome does not occur in the summary statistics "
                     f"(remaining summary chromosomes: {available})."
@@ -387,7 +423,9 @@ class BrowserFitSession:
             gdl.sumstats_table = selected
             gdl.harmonize_data()
             chromosome_loaders = gdl.split_by_chromosome()
-            chromosomes = sorted(chromosome_loaders)
+            from magenpy.utils.chromosome_utils import chromosome_sort_key
+
+            chromosomes = sorted(chromosome_loaders, key=chromosome_sort_key)
             self.preparation_seconds += time.perf_counter() - preparation_start
 
             for index, chromosome in enumerate(chromosomes):
@@ -398,6 +436,7 @@ class BrowserFitSession:
                     )
                 chromosome_gdl = chromosome_loaders[chromosome]
                 model = None
+                _report_stage("inference")
                 fit_start = time.perf_counter()
                 try:
                     variants = int(chromosome_gdl.n_snps)
@@ -422,6 +461,7 @@ class BrowserFitSession:
                             f"{self.model_name} optimization failed for chromosome "
                             f"{chromosome}: {model.optim_result.message}"
                         )
+                    _report_stage("results")
                     self.chromosome_rows[chromosome_key] = json.loads(
                         model.to_table().to_json(
                             orient="records", double_precision=15
@@ -451,6 +491,7 @@ class BrowserFitSession:
         """Combine chromosome results after every LD archive has been released."""
         import magenpy
         from magenpy.stats.ld import c_utils
+        from magenpy.utils.chromosome_utils import chromosome_sort_key, normalize_chromosome
 
         from viprs import __version__
         from viprs.model.vi import e_step_cpp
@@ -459,7 +500,7 @@ class BrowserFitSession:
             raise ValueError("No chromosomes were fitted from the supplied LD inputs.")
         chromosomes = sorted(
             self.chromosome_results,
-            key=lambda value: (not value.isdigit(), int(value) if value.isdigit() else value),
+            key=lambda value: chromosome_sort_key(normalize_chromosome(value)),
         )
         elbo_histories = [self.chromosome_results[c]["elbo"] for c in chromosomes]
         elbo = [
@@ -488,6 +529,7 @@ class BrowserFitSession:
             "options": self.options,
             "seed": self.seed,
             "magenpy_version": magenpy.__version__,
+            "genome_build": self.options.get("ld_genome_build"),
             "extensions": {"viprs": e_step_cpp.__file__, "magenpy": c_utils.__file__},
             "wasm_simd": bool(getattr(e_step_cpp, "check_simd_support", lambda: False)()),
             "blas": bool(e_step_cpp.check_blas_support()),

@@ -9,6 +9,7 @@ import http.server
 import itertools
 import json
 import os
+import runpy
 from pathlib import Path
 import tempfile
 import threading
@@ -16,11 +17,12 @@ import threading
 from playwright.sync_api import sync_playwright
 from magenpy.parsers.sumstats_parsers import get_supported_sumstats_formats
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "build/wasm/browser-test"
 SUMSTATS_FORMATS = sorted(get_supported_sumstats_formats(include_aliases=True))
+FORMAT_HELP = runpy.run_path(str(ROOT / "tools/wasm/format_help.py"))["get_sumstats_format_help"]()
 MOCK_WORKER = """
-self.postMessage({type: "ready", seconds: 0.01, sumstats_formats: __SUMSTATS_FORMATS__});
+self.postMessage({type: "ready", seconds: 0.01});
 self.onmessage = ({data}) => {
   self.postMessage({type: "log", id: data.id, message: "REQUEST " + JSON.stringify({
     sumstats: data.sumstats.map(s => s.url || s.file?.name || s.catalog),
@@ -35,7 +37,7 @@ self.onmessage = ({data}) => {
       timings: {preparation_seconds: 0.1, fit_seconds: 0.2, run_seconds: 0.3}}
   }});
 };
-""".replace("__SUMSTATS_FORMATS__", json.dumps(SUMSTATS_FORMATS))
+"""
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -59,9 +61,12 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1100})
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
+            requests = []
+            page.on("request", lambda request: requests.append(request.url))
             page.route("**/worker.js", lambda route: route.fulfill(content_type="text/javascript", body=MOCK_WORKER))
             page.goto(f"http://127.0.0.1:{server.server_port}/webapp/")
-            page.wait_for_function("document.querySelector('#runtime-state').dataset.state === 'ready'")
+            assert page.locator("#runtime-state").get_attribute("data-state") == "idle"
+            assert len(page.workers) == 0
             assert page.locator("#sumstats-format option").all_text_contents() == SUMSTATS_FORMATS
             assert page.locator("#ld-source").input_value() == "hosted"
             assert page.locator("#sumstats-source").input_value() == "catalog"
@@ -70,7 +75,72 @@ def main():
             assert page.locator("#sumstats-catalog-id").input_value() == ""
             assert page.locator("#sumstats-format").input_value() == "gwascatalog"
             assert page.locator("#sumstats-format").is_disabled()
+            page.locator("#sumstats-format-info").click()
+            assert page.locator("#sumstats-format-dialog").is_visible()
+            assert "GWAS Catalog" in page.locator("#sumstats-format-title").inner_text()
+            assert page.locator("#sumstats-format-separator").inner_text() == r"Tabs (\t)"
+            assert "base_pair_location" in page.locator("#sumstats-format-example").inner_text()
+            assert page.locator("#sumstats-format-docs").get_attribute("href").startswith("https://www.ebi.ac.uk/")
+            page.keyboard.press("Escape")
+            assert not page.locator("#sumstats-format-dialog").is_visible()
+            assert page.locator("#sumstats-format-info").evaluate("el => el === document.activeElement")
+            page.locator("#sumstats-format-info").click()
+            page.mouse.click(2, 2)
+            assert not page.locator("#sumstats-format-dialog").is_visible()
+            page.locator("#sumstats-source").select_option("files")
+            for alias in SUMSTATS_FORMATS:
+                page.locator("#sumstats-format").select_option(alias)
+                page.locator("#sumstats-format-info").click()
+                assert FORMAT_HELP[alias]["name"] in page.locator("#sumstats-format-title").inner_text()
+                assert page.locator("#sumstats-format-example").text_content() == FORMAT_HELP[alias]["example"]
+                assert page.locator("#sumstats-format-docs").get_attribute("target") == "_blank"
+                page.locator("#sumstats-format-close").click()
+            page.locator("#sumstats-source").select_option("catalog")
+            assert len(page.workers) == 0
+            assert not any("pyodide" in url or url.endswith("runtime.json") or url.endswith("worker.js") for url in requests)
             assert page.locator("#ld-hosted-path").text_content() == "hf://datasets/shz9/ukb-ld/EUR/chr_*.zip"
+            assert page.locator("#ld-source option").all_text_contents()[0] == "Hosted matrices"
+            assert page.locator("#ld-hosted-path").is_visible()
+            page.locator("#ld-dataset-info").click()
+            assert page.locator("#ld-dataset-dialog").is_visible()
+            assert page.locator("#ld-panel-name").inner_text() == "UK Biobank"
+            assert page.locator("#ld-genome-build").inner_text() == "GRCh37"
+            assert "ukb-ld" in page.locator("#ld-panel-link").get_attribute("href")
+            page.keyboard.press("Escape")
+            assert not page.locator("#ld-dataset-dialog").is_visible()
+            assert page.locator("#ld-dataset-info").evaluate("el => el === document.activeElement")
+            page.locator("#ld-dataset-info").click()
+            page.mouse.click(2, 2)
+            assert not page.locator("#ld-dataset-dialog").is_visible()
+            assert "GRCh37" in page.locator("#ld-genome-build").inner_text()
+            assert "GRCh37" in page.locator("#catalog-build-hint").inner_text()
+            page.locator("#ld-source").select_option("files")
+            assert page.locator("#ld-custom-build-inputs").is_visible()
+            assert "metadata first" in page.locator("#catalog-build-hint").inner_text()
+            page.locator("#ld-custom-build").select_option("GRCh38")
+            assert "GRCh38" in page.locator("#catalog-build-hint").inner_text()
+            page.locator("#ld-custom-build").select_option("")
+            page.locator("#ld-source").select_option("hosted")
+            page.locator("#ld-cohort").select_option("hgdp-1kg")
+            assert "/hgdp-1kg-ld/EUR/" in page.locator("#ld-hosted-path").text_content()
+            assert "GRCh38" in page.locator("#ld-genome-build").inner_text()
+            assert page.locator("#ld-snp-set").inner_text() == "MAF > 1%"
+            page.locator("#ld-dataset-info").click()
+            assert page.locator("#ld-panel-name").inner_text() == "HGDP + 1000 Genomes"
+            assert "hgdp-1kg-ld" in page.locator("#ld-panel-link").get_attribute("href")
+            page.locator("#ld-dataset-close").click()
+            assert "GRCh38" in page.locator("#catalog-build-hint").inner_text()
+            page.locator("#ld-hosted-inputs").screenshot(path=str(ARTIFACTS / "ld-hgdp-desktop.png"))
+            page.locator("#ld-ancestry").select_option("AFR")
+            assert "/hgdp-1kg-ld/AFR/" in page.locator("#ld-hosted-path").text_content()
+            page.locator("#sumstats-catalog-id").fill("GCST005195")
+            page.locator("#run").click()
+            page.wait_for_function("!document.querySelector('#run').disabled")
+            request = json.loads(page.locator("#log").text_content().split("REQUEST ")[-1].splitlines()[0])
+            assert request["options"]["ld_genome_build"] == "GRCh38"
+            page.locator("#sumstats-catalog-id").fill("")
+            page.locator("#ld-cohort").select_option("ukb")
+            page.locator("#ld-ancestry").select_option("EUR")
             assert page.locator(".sumstats-card").evaluate("(el) => el.getBoundingClientRect().left") < page.locator(".ld-card").evaluate("(el) => el.getBoundingClientRect().left")
             assert page.locator(".resource-links a").evaluate_all("links => links.every(a => a.target === '_blank' && a.rel.includes('noopener'))")
             assert "User guide" not in page.locator(".resource-links").inner_text()
@@ -144,7 +214,37 @@ def main():
             page.locator("#ld-ancestry").select_option("EUR")
             for width in [1440, 1000, 800, 760, 390, 320]:
                 page.set_viewport_size({"width": width, "height": 1000})
-                assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), width
+                for cohort in ["ukb", "hgdp-1kg"]:
+                    page.locator("#ld-cohort").select_option(cohort)
+                    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), (width, cohort)
+            page.locator("#ld-hosted-inputs").screenshot(path=str(ARTIFACTS / "ld-hgdp-mobile.png"))
+            page.locator("#ld-cohort").select_option("ukb")
+            for width in [1440, 390, 320]:
+                page.set_viewport_size({"width": width, "height": 844})
+                page.locator("#sumstats-format-info").click()
+                assert page.locator("#sumstats-format-dialog").is_visible()
+                for _ in range(6):
+                    page.keyboard.press("Tab")
+                    # Chromium can move focus to browser chrome (activeElement
+                    # becomes body); underlying form controls must stay inert.
+                    assert page.evaluate("document.activeElement === document.body || document.querySelector('#sumstats-format-dialog').contains(document.activeElement)")
+                assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                bounds = page.locator("#sumstats-format-dialog").bounding_box()
+                assert bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width
+                page.screenshot(path=str(ARTIFACTS / f"format-help-{width}.png"))
+                page.locator("#sumstats-format-close").click()
+            for width in [1440, 390, 320]:
+                page.set_viewport_size({"width": width, "height": 844})
+                page.locator("#ld-dataset-info").click()
+                assert page.locator("#ld-dataset-dialog").is_visible()
+                for _ in range(6):
+                    page.keyboard.press("Tab")
+                    assert page.evaluate("document.activeElement === document.body || document.querySelector('#ld-dataset-dialog').contains(document.activeElement)")
+                bounds = page.locator("#ld-dataset-dialog").bounding_box()
+                assert bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width
+                assert page.locator("#ld-dataset-dialog").evaluate("el => el.scrollWidth <= el.clientWidth")
+                page.screenshot(path=str(ARTIFACTS / f"ld-details-{width}.png"))
+                page.locator("#ld-dataset-close").click()
             page.set_viewport_size({"width": 390, "height": 844})
             page.evaluate("window.scrollTo(0, 0)")
             page.screenshot(path=str(ARTIFACTS / "ui-mobile.png"))
@@ -158,7 +258,7 @@ def main():
             assert page.locator(".prs-threshold").evaluate("el => getComputedStyle(el).animationName") == "none"
             assert not errors, errors
             browser.close()
-            print("Passed: 15 independent source combinations, GWAS Catalog input, hosted ancestry/glob, separate folders, example shortcut, threshold, table rendering, new-tab links, footer, reduced motion, and six viewport widths.")
+            print("Passed: format guides for every alias, keyboard/backdrop dismissal, mobile dialogs, 15 independent source combinations, GWAS Catalog input, hosted ancestry/glob, separate folders, example shortcut, threshold, table rendering, new-tab links, footer, reduced motion, and six viewport widths.")
     finally:
         server.shutdown()
         server.server_close()

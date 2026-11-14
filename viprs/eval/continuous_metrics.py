@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from magenpy.stats.transforms.phenotype import adjust_for_covariates
 
 from .eval_utils import fit_linear_model
 
@@ -75,9 +76,7 @@ def r2_residualized_target(true_val, pred_val, covariates):
     :return: The residualized R^2 value
     """
 
-    resid_true_val = fit_linear_model(true_val, covariates, add_intercept=True)
-
-    return r2(resid_true_val.resid, pred_val)
+    return r2(adjust_for_covariates(true_val, covariates), pred_val)
 
 
 def incremental_r2(true_val, pred_val, covariates=None, return_all_r2=False):
@@ -131,7 +130,7 @@ def partial_correlation(true_val, pred_val, covariates):
     :return: The partial correlation coefficient
     """
 
-    true_response = fit_linear_model(true_val, covariates, add_intercept=True)
-    pred_response = fit_linear_model(pred_val, covariates, add_intercept=True)
+    true_residuals = adjust_for_covariates(true_val, covariates)
+    pred_residuals = adjust_for_covariates(pred_val, covariates)
 
-    return np.corrcoef(true_response.resid, pred_response.resid)[0, 1]
+    return np.corrcoef(true_residuals, pred_residuals)[0, 1]

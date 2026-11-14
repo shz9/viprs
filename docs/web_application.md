@@ -12,8 +12,8 @@ device, so your input data is not uploaded to a remote server.
     source. You don't need it to use VIPRS in the browser.
 
 The application runs the actual `VIPRS` and `VIPRSMix` interfaces in a Pyodide Web Worker.
-Each build compiles VIPRS from the checked-out source and uses the latest published
-magenpy release, plus pinned Zarr storage dependencies. A compatible magenpy WASM
+Each build compiles VIPRS from the checked-out source and uses the pinned magenpy v0.2.5
+release, plus pinned Zarr storage dependencies. A compatible magenpy WASM
 release asset is reused; if absent, its released source is compiled. Exact versions,
 commits, and the magenpy wheel's origin are recorded in the generated build manifest.
 The Cython/C++ inference and LD kernels execute in WebAssembly on the user's device.
@@ -52,11 +52,33 @@ and the default data downloads. Use HTTP(S); opening `index.html` with `file://`
 not support the worker and asset requests. The application documentation links point
 to the built MkDocs site.
 
+Format choices and help are shipped as a small static asset generated from the pinned
+magenpy parsers. They are available without starting Python. The inference worker
+and scientific runtime start on the first valid **Run inference** request; cancelling
+terminates the worker without warming a replacement. To regenerate format guidance,
+run `python tools/wasm/format_help.py` in an environment with the pinned magenpy release.
+
+The information button beside **Summary statistics format** opens a guide for the
+selected format, with its separator and symbol (`\t` for tabs or `\s+` for whitespace), column meanings, a header and two example rows,
+and a link to the original software or format documentation. Examples use the same
+magenpy format definitions as the input reader. Close the guide with Escape, the
+close button, or a click outside the pop-up.
+
 ## Hosted references and example data
 
+GWAS Catalog lookup reads the selected LD matrix metadata first and requests the same
+genome build. Conflicting declared and stored builds stop the run. For custom ZIPs or
+URLs with no build metadata, select the build explicitly. Catalog files in a different
+build are rejected; the app does not perform coordinate liftover. A local archive
+staged for metadata is reused during fitting. Subsequent chromosomes are checked
+against the same build, and the detected build is included in the run report.
+
 LD and summary statistics have independent source selectors. The initial selection
-is hosted UK Biobank LD plus local summary statistics. The hosted LD card selects
-an ancestry and shows the all-chromosome glob,
+is hosted UK Biobank LD plus GWAS Catalog summary statistics. Under **Hosted matrices**,
+choose a cohort/biobank and ancestry. The selector shows the supported build upfront,
+and the card displays both the variant set and genome-build badges. UK Biobank uses
+GRCh37/hg19 and HapMap3; HGDP + 1000 Genomes uses GRCh38/hg38 and variants with MAF > 1%.
+The hosted LD card shows the all-chromosome glob,
 `hf://datasets/shz9/ukb-ld/EUR/chr_*.zip` by default. Hosted archives remain remote
 and are read through magenpy's range-backed Zarr store while fitting; use custom
 URLs or globs to select fewer chromosomes. Each input also
@@ -254,7 +276,7 @@ Build wheels locally after changing VIPRS source, or let GitHub Actions build th
 Generated wheels and manifests are ignored by Git; keep the build scripts and app
 source in the repository.
 The build script uses an isolated copy of the working tree under `build/wasm/`,
-preserves existing source edits, and resolves magenpy's latest stable GitHub release
+preserves existing source edits, and resolves magenpy's pinned v0.2.5 GitHub release
 to an exact commit once per build. It looks for a matching
 `magenpy-VERSION-cp313-cp313-pyodide_2025_0_wasm32.whl` release asset. Native wheels,
 other Python/Pyodide ABIs, and wheels for another package version are not reused.
@@ -270,12 +292,12 @@ The source archive checksum is recorded in build provenance.
 The selected release is recorded in `build/wasm/magenpy-release.json`. Native
 regression tests install the same release source using the generated
 `build/wasm/native-test-requirements.txt`, even when its WASM wheel is reused. The
-browser still loads its bundled local copy of the wheel, so "latest" is resolved
+browser still loads its bundled local copy of the wheel, so the release is resolved
 at build time, never each time a visitor opens the app.
 
-For a repeatable release selection, pass `--magenpy-release v0.2.2` (or another
-published tag). The default is `--magenpy-release latest`, which excludes draft and
-prerelease releases. `build-info.json` records `magenpy.origin` as `release-asset`
+For a repeatable release selection, pass `--magenpy-release v0.2.5` (or another
+published tag). The default is `--magenpy-release v0.2.5`. An explicit
+`--magenpy-release latest` selects the latest stable release. `build-info.json` records `magenpy.origin` as `release-asset`
 or `source-build`, along with the selected tag, commit, and checksums.
 
 Install [uv](https://docs.astral.sh/uv/) and Git, then from the repository root run:
@@ -338,7 +360,7 @@ Once the magenpy workflow has been committed and pushed, an existing release can
 be backfilled without changing its tag, for example:
 
 ```sh
-gh workflow run wasm.yml --repo shz9/magenpy --ref master -f release_tag=v0.2.2 -f publish=true
+gh workflow run wasm.yml --repo shz9/magenpy --ref master -f release_tag=v0.2.5 -f publish=true
 ```
 
 Use the appropriate default branch if it differs. This command publishes assets;
@@ -351,11 +373,11 @@ VIPRS safely uses the source-build fallback for that same release.
 ## Verification
 
 ```sh
-python -m pytest tests/test_webapp.py tests/test_wasm_build.py tests/test_wasm_package.py tests/test_magenpy_release.py
-node --test tests/webapp_sources.mjs tests/webapp_worker.mjs
-python tests/webapp_fixtures.py
-uv run --no-project --with playwright python tests/webapp_browser.py
-uv run --no-project --with 'magenpy>=0.2.3' --with playwright python tests/webapp_ui.py
+python -m pytest tests/webapp/test_webapp.py tests/packaging/test_wasm_build.py tests/packaging/test_wasm_package.py tests/packaging/test_magenpy_release.py
+node --test tests/webapp/webapp_sources.mjs tests/webapp/webapp_worker.mjs
+python tests/webapp/webapp_fixtures.py
+uv run --no-project --with playwright python tests/webapp/webapp_browser.py
+uv run --no-project --with 'magenpy==0.2.5' --with playwright python tests/webapp/webapp_ui.py
 ```
 
 The UI-only browser check uses a stub worker to verify the 15 combinations of

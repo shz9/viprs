@@ -12,6 +12,8 @@ STATIC_FILES = (
     "index.html",
     "app.css",
     "app.js",
+    "formats.js",
+    "errors.js",
     "worker.js",
     "inference.py",
     "sources.mjs",

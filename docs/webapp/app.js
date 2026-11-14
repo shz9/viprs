@@ -1,7 +1,11 @@
-import {EXAMPLE, resolveDataURL, selectLocalFiles} from "./sources.mjs";
+import "./errors.js";
+import {SUMSTATS_FORMAT_HELP} from "./formats.js";
+import {EXAMPLE, HOSTED_LD_PANELS, LD_ANCESTRIES, resolveDataURL, selectLocalFiles} from "./sources.mjs";
 const $ = (id) => document.getElementById(id);
-let worker = null, runtimeState = "loading", activeRun = null, nextRun = 0;
+let worker = null, runtimeState = "idle", activeRun = null, nextRun = 0;
+let session = null, runtimeInfo = null, errorURL = null;
 let timer = null, startedAt = 0, downloadURLs = [], resultRows = {};
+const sumstatsFormatHelp = SUMSTATS_FORMAT_HELP;
 
 function syncInputs() {
   for (const kind of ["ld", "sumstats"]) {
@@ -13,7 +17,9 @@ function syncInputs() {
   if ($("sumstats-source").value === "catalog" && Array.from($("sumstats-format").options).some(option => option.value === "gwascatalog")) {
     $("sumstats-format").value = "gwascatalog";
   }
-  $("sumstats-format").disabled = runtimeState !== "ready" || $("sumstats-source").value === "catalog";
+  $("sumstats-format").disabled = $("sumstats-source").value === "catalog";
+  $("sumstats-format-info").disabled = !sumstatsFormatHelp[$("sumstats-format").value];
+  syncGenomeBuild();
 }
 function setSumstatsFormats(formats) {
   if (!Array.isArray(formats) || !formats.length) throw new Error("The runtime did not report any summary-statistics formats.");
@@ -22,10 +28,82 @@ function setSumstatsFormats(formats) {
   select.value = formats.includes(current) ? current : formats.includes("fastgwa") ? "fastgwa" : formats[0];
   syncInputs();
 }
-function syncHostedLD() {
-  $("ld-hosted-path").value = `hf://datasets/shz9/ukb-ld/${$("ld-ancestry").value}/chr_*.zip`;
+function renderFormatHelp() {
+  const guide = sumstatsFormatHelp[$("sumstats-format").value];
+  if (!guide) return;
+  $("sumstats-format-title").textContent = `${guide.name} · ${$("sumstats-format").value}`;
+  $("sumstats-format-separator-name").textContent = guide.separator;
+  $("sumstats-format-separator-symbol").textContent = guide.separator_symbol;
+  $("sumstats-format-notes").textContent = guide.notes;
+  $("sumstats-format-example").textContent = guide.example;
+  $("sumstats-format-docs").href = guide.url;
+  $("sumstats-format-columns").replaceChildren(...guide.columns.map(([column, meaning]) => {
+    const row = document.createElement("tr");
+    for (const value of [column, meaning]) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.append(cell);
+    }
+    return row;
+  }));
 }
+$("sumstats-format-info").addEventListener("click", () => {
+  renderFormatHelp();
+  $("sumstats-format-dialog").showModal();
+});
+$("ld-dataset-info").addEventListener("click", () => $("ld-dataset-dialog").showModal());
+for (const name of ["sumstats-format", "ld-dataset"]) {
+  const dialog = $(name + "-dialog");
+  $(name + "-close").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (event) => {
+    if (event.target !== dialog) return;
+    const bounds = dialog.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
+  });
+}
+$("sumstats-format").addEventListener("change", () => {
+  syncInputs();
+  if ($("sumstats-format-dialog").open) renderFormatHelp();
+});
+function selectedLDBuild() {
+  const source = $("ld-source").value;
+  if (source === "hosted") return HOSTED_LD_PANELS[$("ld-cohort").value || "ukb"].genome_build;
+  if (source === "example") return "GRCh37";
+  return $("ld-custom-build").value || null;
+}
+function buildLabel(build) {
+  return build === "GRCh37" || build === "GRCh38" ? build : "an unknown genome build";
+}
+function syncGenomeBuild() {
+  const build = selectedLDBuild();
+  const source = $("ld-source").value;
+  $("ld-custom-build-inputs").hidden = ["hosted", "example"].includes(source);
+  $("ld-build-guidance").textContent = source === "hosted"
+    ? "Choose the reference dataset that matches your GWAS."
+    : build ? `Match summary statistics to ${buildLabel(build)}.`
+    : "Genome build is read from LD metadata. Select it above only if missing.";
+  $("catalog-build-hint").textContent = build
+    ? `We will look for ${buildLabel(build)} summary statistics to match the LD reference.`
+    : "We will read the LD metadata first, then look for summary statistics in the same genome build.";
+}
+function syncHostedLD() {
+  const panel = HOSTED_LD_PANELS[$("ld-cohort").value || "ukb"];
+  const previous = $("ld-ancestry").value;
+  $("ld-ancestry").replaceChildren(...panel.ancestries.map(code => new Option(`${code} · ${LD_ANCESTRIES[code]}`, code)));
+  $("ld-ancestry").value = panel.ancestries.includes(previous) ? previous : panel.ancestries[0];
+  $("ld-hosted-path").value = `hf://datasets/${panel.repository}/${$("ld-ancestry").value}/chr_*.zip`;
+  $("ld-panel-name").textContent = panel.name;
+  $("ld-snp-set").textContent = panel.snp_set;
+  $("ld-genome-build").textContent = panel.build_label;
+  $("ld-panel-description").textContent = panel.description;
+  $("ld-panel-link").href = `https://huggingface.co/datasets/${panel.repository}`;
+  syncGenomeBuild();
+}
+$("ld-cohort").replaceChildren(...Object.entries(HOSTED_LD_PANELS).map(([id, panel]) => new Option(`${panel.name} · ${panel.build_label}`, id)));
+$("ld-cohort").value = "ukb";
+$("ld-cohort").addEventListener("change", syncHostedLD);
 $("ld-ancestry").addEventListener("change", syncHostedLD);
+$("ld-custom-build").addEventListener("change", syncGenomeBuild);
 function syncModel() {
   const mixture = $("model").value === "VIPRSMix";
   const componentInput = $("components");
@@ -133,8 +211,51 @@ function finish() {
   $("controls").disabled = false; $("demo").disabled = false;
   $("run").disabled = runtimeState === "error"; $("cancel").disabled = true;
 }
-function fail(message) {
-  log(message); status("Error", "The analysis could not complete", message, true); finish();
+function clearError() {
+  if (errorURL) URL.revokeObjectURL(errorURL);
+  errorURL = null;
+  $("error-support").hidden = true;
+  for (const kind of ["sumstats", "ld"]) {
+    $(kind + "-error").hidden = true;
+    document.querySelector("." + kind + "-card").classList.remove("has-error");
+  }
+}
+function captureSession() {
+  return {
+    options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "catalog" ? "gwascatalog" : $("sumstats-format").value, ld_genome_build: selectedLDBuild()},
+    inputs: Object.fromEntries(["sumstats", "ld"].map(kind => {
+      const source = $(kind + "-source").value;
+      let inputs;
+      if (["files", "folder"].includes(source)) inputs = Array.from($(kind + (source === "files" ? "-file" : "-folder")).files).map(file => ({name: file.name, bytes: file.size, last_modified: file.lastModified}));
+      else inputs = source === "catalog" ? $("sumstats-catalog-id").value : source === "hosted" ? $("ld-hosted-path").value : source === "example" ? EXAMPLE[kind] : $(kind + "-url").value;
+      return [kind, {source, inputs, ...(source === "folder" ? {pattern: $(kind + "-pattern").value} : {})}];
+    })),
+  };
+}
+function fail(error, stage = "runtime") {
+  const detail = error?.category ? error : VIPRSErrors.describe(error, stage);
+  clearError();
+  log(detail.title + ": " + detail.message);
+  status("Error", detail.title, detail.message, true);
+  finish();
+  $("error-advice").textContent = detail.advice;
+  const report = VIPRSErrors.safeReport({schema_version: 1, timestamp: new Date().toISOString(),
+    error: detail, session: session || captureSession(), runtime: runtimeInfo,
+    environment: {page: location.origin + location.pathname, browser: navigator.userAgent,
+      language: navigator.language, device_memory_gb: navigator.deviceMemory ?? null, hardware_concurrency: navigator.hardwareConcurrency},
+    log: $("log").textContent,
+  });
+  errorURL = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], {type: "application/json"}));
+  $("download-error").href = errorURL;
+  $("report-error").href = VIPRSErrors.issueURL(report);
+  $("error-support").hidden = false;
+  const kind = ["sumstats", "ld"].includes(detail.stage) ? detail.stage : null;
+  if (kind) {
+    $(kind + "-error").textContent = detail.title + ": " + detail.message;
+    $(kind + "-error").hidden = false;
+    document.querySelector("." + kind + "-card").classList.add("has-error");
+    $(kind + "-error").focus();
+  } else $("error-support").focus();
 }
 function beginTimer() {
   startedAt = performance.now(); $("elapsed").textContent = "0s";
@@ -149,10 +270,13 @@ function startWorker() {
   worker = current;
   current.onmessage = ({data}) => {
     if (worker !== current) return;
+    if (data.type === "ld-metadata") {
+      $("ld-build-guidance").textContent = `LD genome build: ${buildLabel(data.genome_build)}. Match your summary statistics to this build.`;
+      $("catalog-build-hint").textContent = `Looking for ${buildLabel(data.genome_build)} summary statistics.`;
+    }
     if (data.type === "runtime-status") runtimeStatus("loading", data.message);
     if (data.type === "ready") {
-      try { setSumstatsFormats(data.sumstats_formats); }
-      catch (error) { runtimeStatus("error", "Initialization failed"); fail(error.message); return; }
+      runtimeInfo = data.runtime || runtimeInfo;
       runtimeStatus("ready", "Runtime ready");
       syncInputs();
       if (activeRun === null && $("status-badge").textContent === "Ready") {
@@ -161,7 +285,7 @@ function startWorker() {
       log(`Runtime initialized in ${data.seconds.toFixed(1)}s; ready for reuse.`);
     }
     if (data.type === "init-error") {
-      runtimeStatus("error", "Initialization failed"); fail(data.message);
+      runtimeStatus("error", "Initialization failed"); fail(data.error || data.message);
     }
     if (data.type === "log" && (data.id == null || data.id === activeRun)) log(data.message);
     if (data.id !== activeRun || activeRun === null) return;
@@ -178,19 +302,24 @@ function startWorker() {
       try { showResult(data.result); }
       catch (error) {
         releaseResults();
-        fail(`Fitting completed, but the results could not be displayed: ${error.message || error}`);
+        fail(error, "results");
       }
     }
-    if (data.type === "error") fail(data.message);
+    if (data.type === "error") {
+      if (["memory", "cleanup"].includes(data.error?.category)) {
+        current.terminate(); worker = null; runtimeStatus("error", "Restart runtime before retrying");
+      }
+      fail(data.error || data.message);
+    }
   };
   current.onerror = (event) => {
     if (worker !== current) return;
     event.preventDefault(); current.terminate(); worker = null;
     runtimeStatus("error", "Runtime unavailable");
-    fail(event.message || "The worker could not start. Check the connection and serve this page over HTTP.");
+    fail(event.message || "The worker stopped without providing an error message.", "worker");
   };
 }
-$("retry-runtime").addEventListener("click", () => { try { startWorker(); } catch (error) { runtimeStatus("error", "Runtime unavailable"); fail(error.message); } });
+$("retry-runtime").addEventListener("click", () => { clearError(); session = null; status("Ready", "Preparing runtime", "You can run inference when the runtime is ready."); try { startWorker(); } catch (error) { runtimeStatus("error", "Runtime unavailable"); fail(error.message); } });
 
 function sourceInputs(kind) {
   const source = $(kind + "-source").value;
@@ -264,29 +393,36 @@ function showResult(result) {
 $("inference-form").addEventListener("submit", (event) => {
   event.preventDefault();
   if (activeRun !== null) return;
-  releaseResults();
+  releaseResults(); clearError(); session = captureSession();
+  let stage = "runtime";
   try {
-    if (!worker || runtimeState === "error") throw new Error("Initialize the runtime before starting inference.");
+    if (runtimeState === "error") throw new Error("Restart the runtime before starting inference.");
+    stage = "sumstats";
+    const sumstats = sourceInputs("sumstats");
+    stage = "ld";
+    const ld = sourceInputs("ld");
+    stage = "validation";
     const request = {
-      type: "run", id: ++nextRun,
-      sumstats: sourceInputs("sumstats"), ld: sourceInputs("ld"),
-      options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "catalog" ? "gwascatalog" : $("sumstats-format").value},
+      type: "run", id: ++nextRun, sumstats, ld,
+      options: {model: $("model").value, components: Number($("components").value), seed: Number($("seed").value), max_iter: Number($("max-iter").value), tolerance: Number($("tolerance").value), sumstats_format: $("sumstats-source").value === "catalog" ? "gwascatalog" : $("sumstats-format").value, ld_genome_build: selectedLDBuild()},
     };
+    if (!worker) startWorker();
     activeRun = request.id;
     $("controls").disabled = true; $("demo").disabled = true; $("run").disabled = true; $("cancel").disabled = false;
     $("elapsed-line").hidden = true;
     $("activity").classList.add("running");
     status(runtimeState === "ready" ? "Running" : "Queued", runtimeState === "ready" ? "Preparing inputs" : "Waiting for runtime", "You can cancel this run at any time.");
     worker.postMessage(request);
-  } catch (error) { fail(error.message); }
+  } catch (error) { fail(error, stage); }
 });
 $("cancel").addEventListener("click", () => {
-  worker?.terminate(); worker = null; finish(); releaseResults();
-  status("Cancelled", "Run cancelled", "The runtime is restarting."); log("Run cancelled.");
-  try { startWorker(); } catch (error) { runtimeStatus("error", "Runtime unavailable"); fail(error.message); }
+  worker?.terminate(); worker = null; finish(); releaseResults(); clearError();
+  runtimeStatus("idle", "Starts when you run inference");
+  status("Cancelled", "Run cancelled", "Choose your inputs and run again when ready."); log("Run cancelled; runtime released.");
 });
 $("protocol-warning").hidden = location.protocol !== "file:";
+setSumstatsFormats(Object.keys(sumstatsFormatHelp).sort());
 syncInputs(); syncModel(); syncHostedLD();
 if (location.protocol !== "file:") {
-  try { startWorker(); } catch (error) { runtimeStatus("error", "Runtime unavailable"); fail(error.message); }
+  runtimeStatus("idle", "Starts when you run inference");
 } else { runtimeStatus("error", "HTTP server required"); $("retry-runtime").hidden = true; }

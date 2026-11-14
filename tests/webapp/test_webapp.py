@@ -10,8 +10,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from magenpy.parsers.sumstats_parsers import get_supported_sumstats_formats
 
-ASSETS = Path(__file__).resolve().parents[1] / "docs" / "webapp"
+ASSETS = Path(__file__).resolve().parents[2] / "docs" / "webapp"
 spec = importlib.util.spec_from_file_location("viprs_browser", ASSETS / "inference.py")
 browser = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(browser)
@@ -66,8 +67,8 @@ def test_invalid_options_rejected(options):
         browser.validate_options(dict(OPTIONS, **options))
 
 
-def test_browser_catalog_resolution_uses_shared_python_utility():
-    from viprs.utils.data_utils import gwas_catalog_directory
+def test_browser_catalog_resolution_uses_magenpy():
+    from magenpy.utils.gwas_catalog import gwas_catalog_directory
 
     directory = gwas_catalog_directory("GCST005195")
 
@@ -118,7 +119,7 @@ def test_model_options_rejected(options):
 
 @pytest.fixture
 def multichrom_inputs(tmp_path):
-    from webapp_fixtures import make_multichrom_inputs
+    from tests.webapp.webapp_fixtures import make_multichrom_inputs
     return make_multichrom_inputs(tmp_path)
 
 
@@ -199,26 +200,21 @@ def test_optimization_defaults_match_viprs():
     assert tolerance == defaults["x_abs_tol"].default == defaults["f_abs_tol"].default
 
 
-def test_large_catalog_parser_projects_and_compacts_columns(tmp_path):
+def test_large_catalog_parser_delegates_dtypes_and_projects_columns(tmp_path):
     import numpy as np
     from magenpy.parsers.sumstats_parsers import get_sumstats_parser
 
     source = tmp_path / "catalog.tsv"
     source.write_text(
-        "chromosome\tbase_pair_location\trs_id\teffect_allele\tother_allele\t"
+        "chromosome\tbase_pair_location\trsid\teffect_allele\tother_allele\t"
         "beta\tstandard_error\teffect_allele_frequency\tp_value\tn\t"
         + "\t".join(f"unused_{index}" for index in range(10))
         + "\n22\t101\trs1\tA\tG\t0.1\t0.02\t0.3\t1e-6\t10000\t"
         + "\t".join("1.5" for _ in range(10))
         + "\n"
     )
-    parser = browser._compact_sumstats_parser(
-        browser._configure_sumstats_parser(
-            get_sumstats_parser("gwascatalog")(None)
-        )
-    )
-
-    table = parser.parse(source)
+    session = browser.BrowserFitSession(source, dict(OPTIONS, sumstats_format="gwascatalog"))
+    table = session.sumstats_tables[22].table
 
     assert set(table) == {
         "CHR", "POS", "SNP", "A1", "A2", "BETA", "SE", "MAF", "PVAL", "N"
@@ -228,11 +224,12 @@ def test_large_catalog_parser_projects_and_compacts_columns(tmp_path):
     assert str(table["A1"].dtype) == str(table["A2"].dtype) == "category"
     assert all(
         table[column].dtype == np.float32
-        for column in ("BETA", "SE", "MAF", "PVAL", "N")
+        for column in ("BETA", "SE", "MAF", "N")
     )
+    assert table["PVAL"].dtype == np.float64
 
 
-def test_compact_categorical_alleles_harmonize_with_ld(
+def test_magenpy_categorical_alleles_harmonize_with_ld(
     multichrom_inputs, tmp_path
 ):
     import numpy as np
@@ -245,9 +242,7 @@ def test_compact_categorical_alleles_harmonize_with_ld(
         for index, archive in enumerate(archives)
         for root in browser.unpack_ld(archive, tmp_path / f"compact-{index}")
     ]
-    parser = browser._compact_sumstats_parser(
-        get_sumstats_parser("magenpy")(None)
-    )
+    parser = get_sumstats_parser("magenpy")(None)
     loader = GWADataLoader(
         ld_store_files=roots, temp_dir=str(tmp_path / "compact-temp"), threads=1
     )
@@ -319,3 +314,133 @@ def test_staged_sumstats_are_read_without_copying(multichrom_inputs, tmp_path, m
     assert rows == expected_rows
     assert staged.stat().st_ino == before.st_ino
     assert staged.stat().st_mtime_ns == before.st_mtime_ns
+
+
+@pytest.mark.parametrize("label", ["chr22", "chr:22", "chr_22", "022", "22.0"])
+def test_browser_matches_chromosome_aliases(multichrom_inputs, tmp_path, label):
+    import pandas as pd
+
+    summaries, archives, _, _ = multichrom_inputs
+    table = pd.read_csv(summaries[1], sep="\t")
+    table["CHR"] = label
+    source = tmp_path / "alias.tsv"
+    table.to_csv(source, sep="\t", index=False)
+    rows, report = browser.native_fit(source, archives[1], dict(OPTIONS, sumstats_format="magenpy"))
+    assert report["variants"] == 48
+    assert {row["CHR"] for row in rows} == {22}
+
+
+@pytest.mark.parametrize("fmt,header,row,expected", [
+    ("regenie", "CHROM GENPOS ID ALLELE0 ALLELE1 A1FREQ N BETA SE LOG10P", "chr:22 1 rs1 G A .3 10000 .1 .02 6", {"PVAL": 1e-6}),
+    ("ldak", "Chromosome Basepair Predictor A1 A2 n Stat Direction", "chr_22 1 rs1 A G 10000 25 -1", {"Z": -5}),
+    ("saige", "CHR POS MarkerID Allele1 Allele2 AF_Allele2 AC_Allele2 Tstat", "chr22 1 rs1 G A .3 6000 5", {"N": 10000}),
+])
+def test_browser_preserves_format_derived_statistics(tmp_path, fmt, header, row, expected):
+    source = tmp_path / "derived.tsv"
+    source.write_text(header.replace(" ", "\t") + "\n" + row.replace(" ", "\t") + "\n")
+    session = browser.BrowserFitSession(source, dict(OPTIONS, sumstats_format=fmt))
+    table = session.sumstats_tables[22].table
+    for column, value in expected.items():
+        assert table[column].iloc[0] == pytest.approx(value)
+
+
+def test_ld_schema_infers_only_missing_ids_and_uses_magenpy_duplicate_policy():
+    import numpy as np
+    import pandas as pd
+    from magenpy import SumstatsTable
+
+    table = SumstatsTable(pd.DataFrame({
+        "CHR": [22] * 5,
+        "POS": [1, 2, 3, 3, 4],
+        "SNP": ["supplied", None, "rs3a", "rs3b", "missing-effect"],
+        "A1": ["A"] * 5,
+        "Z": [1., 2., 3., 4., np.nan],
+    }, index=[10, 20, 30, 40, 50]))
+    reference = pd.DataFrame({"POS": [1, 2, 3, 4], "SNP": ["ref1", "ref2", "ref3", "ref4"]})
+    ld = SimpleNamespace(to_snp_table=lambda col_subset: reference.copy())
+
+    browser._ensure_ld_harmonization_schema(table, ld, 22)
+
+    # Supplied IDs survive inference; duplicate coordinates and missing effects
+    # follow magenpy's filtering rules even when the supplied rsIDs differ.
+    assert table.table["SNP"].tolist() == ["supplied", "ref2"]
+    assert table.table["POS"].tolist() == [1, 2]
+
+
+@pytest.mark.parametrize("alias", get_supported_sumstats_formats(include_aliases=True))
+def test_format_help_examples_parse_with_selected_format(alias, tmp_path):
+    from magenpy.parsers.sumstats_parsers import get_sumstats_parser
+
+    import runpy
+    guides = runpy.run_path(str(ASSETS.parents[1] / "tools/wasm/format_help.py"))["get_sumstats_format_help"]()
+    guide = guides[alias]
+    example = tmp_path / "example.tsv"
+    example.write_text(guide["example"])
+    table = browser.BrowserFitSession(example, {"sumstats_format": alias}).sumstats_tables[22]
+    assert len(table.table) == 2
+    assert table.table["N"].tolist() == [10000, 10000]
+    assert table.table["A1"].tolist() == ["A", "C"]
+    assert table.z_score.tolist() == pytest.approx([5, -4])
+    assert guide["separator_symbol"] in (r"\t", r"\s+")
+    assert guide["url"].startswith("https://")
+    assert guide["example"].count("\n") == 3
+    assert guide == guides[get_sumstats_parser(alias).format_name]
+
+
+@pytest.mark.parametrize("prefix", ["", "nested/"])
+@pytest.mark.parametrize("build,expected", [("hg19", "GRCh37"), ("GRCh38", "GRCh38")])
+def test_ld_build_inspection_uses_archive_metadata(multichrom_inputs, tmp_path, build, expected, prefix):
+    from magenpy import LDMatrix
+    import zipfile
+
+    summaries, _, _, _ = multichrom_inputs
+    source = summaries[0].parent / "chr21.zarr"
+    import zarr
+    ld = LDMatrix(zarr.open_group(str(source), mode="a"))
+    ld.set_store_attr("Genome build", build)
+    archive = tmp_path / "metadata.zip"
+    with zipfile.ZipFile(archive, "w") as target:
+        for path in source.rglob("*"):
+            if path.is_file():
+                target.write(path, prefix + str(path.relative_to(source)))
+    assert browser.inspect_browser_ld_build(archive) == expected
+    other = "GRCh38" if expected == "GRCh37" else "GRCh37"
+    with pytest.raises(ValueError, match="conflicts"):
+        browser.inspect_browser_ld_build(archive, other)
+
+
+def test_ld_build_inspection_requires_known_build_or_explicit_fallback(multichrom_inputs):
+    _, archives, _, _ = multichrom_inputs
+    with pytest.raises(ValueError, match="metadata does not specify"):
+        browser.inspect_browser_ld_build(archives[0])
+    assert browser.inspect_browser_ld_build(archives[0], "hg38") == "GRCh38"
+
+
+def test_fitting_rejects_mismatched_ld_and_catalog_builds(multichrom_inputs):
+    summaries, archives, _, _ = multichrom_inputs
+    session = browser.BrowserFitSession(summaries[0], {"sumstats_format": "magenpy", "sumstats_genome_build": "GRCh38", "ld_genome_build": "GRCh37"})
+    with pytest.raises(ValueError, match="conflicting genome builds"):
+        session.fit_ld_archive(archives[0])
+
+
+def test_multi_store_archive_rejects_conflicting_builds(multichrom_inputs, tmp_path):
+    import zarr
+    import zipfile
+    summaries, _, _, _ = multichrom_inputs
+    roots = [summaries[0].parent / f"chr{chromosome}.zarr" for chromosome in (21, 22)]
+    for root, build in zip(roots, ("GRCh37", "GRCh38")):
+        zarr.open_group(str(root), mode="a").attrs["Genome build"] = build
+    archive = tmp_path / "conflicting.zip"
+    with zipfile.ZipFile(archive, "w") as target:
+        for root in roots:
+            for path in root.rglob("*"):
+                if path.is_file():
+                    target.write(path, str(path.relative_to(root.parent)))
+    with pytest.raises(ValueError, match="conflicting genome builds"):
+        browser.inspect_browser_ld_build(archive)
+
+
+def test_cached_format_guidance_matches_pinned_parsers():
+    import runpy
+    render = runpy.run_path(str(ASSETS.parents[1] / "tools/wasm/format_help.py"))["render_format_help"]
+    assert (ASSETS / "formats.js").read_text() == render()

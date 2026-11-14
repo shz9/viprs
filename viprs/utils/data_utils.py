@@ -1,10 +1,10 @@
-import asyncio as _asyncio
 import gzip
-import html as _html
-import re as _re
-from urllib.parse import unquote as _unquote
-from urllib.parse import urljoin as _urljoin
-from urllib.parse import urlsplit as _urlsplit
+import os
+import shutil
+import tempfile
+from numbers import Integral
+from pathlib import Path
+from urllib.request import urlopen
 
 import numpy as np
 import pandas as pd
@@ -29,153 +29,6 @@ PGS_CATALOG_COLUMN_MAP = {
     "other_allele": "A2",
     "effect_weight": "BETA",
 }
-GWAS_CATALOG_SUMSTATS_ROOT = (
-    "https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/"
-)
-
-
-def is_gwas_catalog_accession(value):
-    """Return whether ``value`` is a GWAS Catalog study accession."""
-
-    return isinstance(value, str) and _re.fullmatch(
-        r"GCST\d+", value.strip(), _re.IGNORECASE
-    ) is not None
-
-
-def gwas_catalog_directory(accession):
-    """Return the GWAS Catalog summary-statistics directory for an accession."""
-
-    match = _re.fullmatch(r"GCST(\d+)", str(accession).strip(), _re.IGNORECASE)
-    if match is None:
-        raise ValueError("Enter a GWAS Catalog accession such as GCST005195.")
-
-    number = int(match.group(1))
-    if not 0 < number <= 2**53 - 1:
-        raise ValueError("The GWAS Catalog accession is out of range.")
-
-    width = max(6, len(match.group(1)))
-    start = (number - 1) // 1000 * 1000 + 1
-    study_id = f"GCST{number:0{width}d}"
-    study_range = f"GCST{start:0{width}d}-GCST{start + 999:0{width}d}"
-    return f"{GWAS_CATALOG_SUMSTATS_ROOT}{study_range}/{study_id}/"
-
-
-def _listing_links(listing, directory):
-    origin = _urlsplit(directory)[:2]
-    links = (
-        _urljoin(directory, _html.unescape(match.group(1)))
-        for match in _re.finditer(
-            r"href=[\"']([^\"']+)[\"']", listing, _re.IGNORECASE
-        )
-    )
-    return [
-        url
-        for url in links
-        if _urlsplit(url)[:2] == origin and url.startswith(directory)
-    ]
-
-
-def _is_build_37_filename(url):
-    return _re.search(
-        r"(?:grch37|build(?:grch)?37|hg19)",
-        _unquote(_urlsplit(url).path),
-        _re.IGNORECASE,
-    ) is not None
-
-
-def _metadata_is_build_37(metadata):
-    match = _re.search(
-        r"(?:^|\n)\s*genome_assembly\s*:\s*[\"']?([^\s#\"']+)",
-        metadata,
-        _re.IGNORECASE,
-    )
-    return match is not None and match.group(1).lower() in {
-        "grch37",
-        "hg19",
-        "ncbi37",
-    }
-
-
-async def resolve_gwas_catalog_async(accession, read_text):
-    """Resolve an accession using an async text-fetching callback."""
-
-    directory = gwas_catalog_directory(accession)
-    root_links = _listing_links(await read_text(directory), directory)
-    candidates = []
-
-    harmonised_directory = next(
-        (url for url in root_links if url == directory + "harmonised/"), None
-    )
-    if harmonised_directory:
-        links = _listing_links(
-            await read_text(harmonised_directory), harmonised_directory
-        )
-        for suffix in (".h.tsv.gz", ".f.tsv.gz"):
-            candidates.extend(
-                (url, links)
-                for url in sorted(links)
-                if _urlsplit(url).path.lower().endswith(suffix)
-            )
-
-    candidates.extend(
-        (url, root_links)
-        for url in sorted(root_links)
-        if _re.search(r"\.tsv(?:\.gz)?$", _urlsplit(url).path, _re.IGNORECASE)
-    )
-    for candidate, links in candidates:
-        if _is_build_37_filename(candidate):
-            return candidate
-        metadata_url = next(
-            (url for url in links if url == candidate + "-meta.yaml"), None
-        )
-        if metadata_url:
-            try:
-                metadata = await read_text(metadata_url)
-            except Exception:
-                continue
-            if _metadata_is_build_37(metadata):
-                return candidate
-
-    raise ValueError(
-        "This accession has no GRCh37/hg19 harmonised, formatted, or GWAS-SSF "
-        "summary-statistics file compatible with the default LD reference."
-    )
-
-
-def _read_gwas_catalog_text(url):
-    from urllib.error import HTTPError, URLError
-    from urllib.request import Request, urlopen
-
-    try:
-        with urlopen(Request(url, headers={"User-Agent": "VIPRS"})) as response:
-            encoding = response.headers.get_content_charset() or "utf-8"
-            return response.read().decode(encoding)
-    except HTTPError as error:
-        if error.code == 404:
-            raise FileNotFoundError(
-                "No GWAS Catalog summary statistics were found for this accession."
-            ) from error
-        raise ConnectionError(
-            f"Could not list GWAS Catalog files (HTTP {error.code})."
-        ) from error
-    except URLError as error:
-        raise ConnectionError(
-            "Could not reach the GWAS Catalog FTP server. Check the connection."
-        ) from error
-
-
-def resolve_gwas_catalog(accession, read_text=None):
-    """Resolve an accession to its preferred GRCh37 summary-statistics URL.
-
-    ``read_text`` may be supplied to use a different HTTP transport.
-    """
-
-    fetch = read_text or _read_gwas_catalog_text
-
-    async def async_fetch(url):
-        return fetch(url)
-
-    return _asyncio.run(resolve_gwas_catalog_async(accession, async_fetch))
 
 
 def parse_pgs_catalog_metadata(metadata=None):
@@ -345,15 +198,129 @@ def read_pgs_catalog_scoring_file(f_name):
     return table
 
 
-def download_ld_matrix(target_dir=".", chromosome=None):
+def download_ld_matrix(
+    target_dir=".", chromosome=None, *, ancestry, source="huggingface",
+    panel="ukb", overwrite=False,
+):
+    """Download hosted LD archives locally without extracting them.
+
+    :param target_dir: Destination root. Files are saved under
+        ``<target_dir>/<panel>/<ancestry>/`` to keep reference panels separate.
+    :param chromosome: An autosome number or iterable of autosome numbers (1–22).
+        ``None`` downloads all 22 chromosomes from Hugging Face. Zenodo only
+        provides whole-ancestry archives, so requires ``None``.
+    :param ancestry: One of EUR, CSA, AFR, EAS, MID, or AMR (case insensitive).
+    :param source: ``"huggingface"`` (default) or ``"zenodo"``.
+    :param panel: ``"ukb"`` (UK Biobank, GRCh37/hg19) or ``"hgdp-1kg"``
+        (HGDP + 1000 Genomes, GRCh38/hg38). Match the summary-statistics build.
+    :param overwrite: Replace existing archives if True. Otherwise reuse them.
+    :return: A list of pathlib.Path objects for the downloaded or reused archives.
+        Hugging Face ZIPs can be passed directly to magenpy; Zenodo tar.gz files
+        must be extracted before use.
+
+    Downloads stream to temporary files in the destination directory and are
+    renamed only after completion. A failed download leaves any existing archive
+    intact; successfully downloaded chromosomes are retained for a later retry.
+    When installed, ``huggingface_hub.hf_hub_download`` handles Hugging Face
+    transfers, using a temporary local directory rather than duplicating large
+    archives in the global Hub cache. Otherwise, HTTP streaming is used.
+    Hub download failures are reported directly, without retrying via HTTP.
+    No Hugging Face package or authentication is required for these public files.
     """
-    Download LD matrices for VIPRS software.
+    panels = {"ukb": ("shz9/ukb-ld", "14614207"),
+              "hgdp-1kg": ("shz9/hgdp-1kg-ld", "24147521")}
+    ancestry = str(ancestry).upper()
+    source = str(source).lower()
+    panel = str(panel).lower()
+    if ancestry not in {"EUR", "CSA", "AFR", "EAS", "MID", "AMR"}:
+        raise ValueError("Ancestry must be one of EUR, CSA, AFR, EAS, MID, or AMR.")
+    if source not in {"huggingface", "zenodo"}:
+        raise ValueError("Download source must be 'huggingface' or 'zenodo'.")
+    if panel not in panels:
+        raise ValueError("LD panel must be 'ukb' (hg19) or 'hgdp-1kg' (hg38).")
+    if source == "zenodo" and chromosome is not None:
+        raise ValueError(
+            "Zenodo provides whole-ancestry archives only. Set chromosome=None "
+            "to download the full archive, or use source='huggingface' to select chromosomes."
+        )
 
-    TODO: Update this once data is made available.
+    if chromosome is None:
+        chromosomes = list(range(1, 23))
+    elif isinstance(chromosome, Integral) and not isinstance(chromosome, bool):
+        chromosomes = [int(chromosome)]
+    else:
+        try:
+            chromosomes = list(chromosome)
+        except TypeError as error:
+            raise ValueError("Chromosome must be an integer or iterable of integers from 1 to 22.") from error
+    if not chromosomes or any(
+        isinstance(c, bool) or not isinstance(c, Integral) or not 1 <= c <= 22
+        for c in chromosomes
+    ):
+        raise ValueError("Chromosomes must be integers from 1 to 22; select at least one.")
+    chromosomes = list(dict.fromkeys(int(c) for c in chromosomes))
 
-    :param target_dir: The path or directory where to store the LD matrix
-    :param chromosome: An integer or list of integers with the chromosome numbers for which to download
-    the LD matrices from Zenodo.
-    """
+    repository, record_id = panels[panel]
+    if source == "huggingface":
+        downloads = [
+            (f"chr_{c}.zip", f"https://huggingface.co/datasets/{repository}/resolve/main/{ancestry}/chr_{c}.zip")
+            for c in chromosomes
+        ]
+    else:
+        downloads = [(f"{ancestry}.tar.gz",
+                      f"https://zenodo.org/records/{record_id}/files/{ancestry}.tar.gz?download=1")]
 
-    raise NotImplementedError("This function is not yet implemented.")
+    hf_download = None
+    if source == "huggingface":
+        try:
+            from huggingface_hub import hf_hub_download
+        except ModuleNotFoundError as error:
+            if error.name != "huggingface_hub":
+                raise
+        else:
+            hf_download = hf_hub_download
+
+    destination = Path(target_dir) / panel / ancestry
+    destination.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for filename, url in downloads:
+        path = destination / filename
+        if path.is_file() and not overwrite:
+            if path.stat().st_size == 0:
+                raise ValueError(f"Existing archive is empty: {path}. Use overwrite=True to replace it.")
+            paths.append(path)
+            continue
+        temporary = None
+        try:
+            if hf_download is not None:
+                # Stage on the destination filesystem so completion can use an
+                # atomic rename, including when overwriting an existing archive.
+                with tempfile.TemporaryDirectory(dir=destination, prefix=f".{filename}.") as staging:
+                    downloaded = Path(hf_download(
+                        repo_id=repository, repo_type="dataset", revision="main",
+                        filename=f"{ancestry}/{filename}", local_dir=staging,
+                        force_download=overwrite,
+                    ))
+                    if downloaded.stat().st_size == 0:
+                        raise OSError("The download was empty.")
+                    os.replace(downloaded, path)
+                paths.append(path)
+                continue
+            with urlopen(url, timeout=60) as response:
+                with tempfile.NamedTemporaryFile(dir=destination, prefix=f".{filename}.", suffix=".part", delete=False) as output:
+                    temporary = Path(output.name)
+                    shutil.copyfileobj(response, output, length=1024 * 1024)
+                    downloaded_bytes = output.tell()
+                expected_bytes = response.headers.get("Content-Length")
+                if downloaded_bytes == 0 or (expected_bytes is not None and downloaded_bytes != int(expected_bytes)):
+                    raise OSError("The download was empty or incomplete.")
+            os.replace(temporary, path)
+        except Exception as error:
+            raise OSError(
+                f"Could not download {panel}/{ancestry}/{filename} from {source}: {error}"
+            ) from error
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        paths.append(path)
+    return paths

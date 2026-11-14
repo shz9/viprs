@@ -11,7 +11,7 @@
 #   docker run --rm viprs-cli viprs_score -h
 #   docker run --rm viprs-cli viprs_evaluate -h
 
-FROM python:3.11-slim-bookworm
+FROM python:3.13-slim-bookworm
 
 LABEL org.opencontainers.image.authors="Shadi Zabad" \
       org.opencontainers.image.title="VIPRS CLI" \

@@ -8,7 +8,7 @@ import zipfile
 import pytest
 
 spec = importlib.util.spec_from_file_location(
-    "wasm_package", Path(__file__).resolve().parents[1] / "tools/wasm/package.py")
+    "wasm_package", Path(__file__).resolve().parents[2] / "tools/wasm/package.py")
 packager = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(packager)
 

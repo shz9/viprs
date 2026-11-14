@@ -4,7 +4,7 @@ from argparse import Namespace
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BENCHMARK = runpy.run_path(PROJECT_ROOT / "benchmarks/cli_benchmark.py")
 
 

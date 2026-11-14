@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {EXAMPLE, resolveDataURL, globMatcher, selectLocalFiles, expandDataURL} from "../docs/webapp/sources.mjs";
+import {EXAMPLE, resolveDataURL, globMatcher, selectLocalFiles, expandDataURL} from "../../docs/webapp/sources.mjs";
 const base = "https://example.org/viprs/webapp/";
 
 test("supplied HF URI resolves to the actual LD archive", () => {

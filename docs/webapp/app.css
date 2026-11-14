@@ -57,11 +57,7 @@ h1 { margin: 0; max-width: 650px; font-size: clamp(32px,3.4vw,43px); font-weight
 .model-card { grid-area: model; display: grid; grid-template-columns: minmax(280px,.92fr) minmax(380px,1.08fr); column-gap: 0; align-items: start; }
 .model-card > .section-heading { grid-column: 1 / -1; }
 .model-settings { min-width: 0; padding-right: 34px; }
-.hosted-source-card { margin-top: 18px; padding: 20px; border: 1px solid #c8d9cf; border-radius: 15px; background: #f8fbf8; }
-.hosted-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 13px; }
-.source-badge { padding: 5px 8px; border: 1px solid #bad8c8; border-radius: 999px; background: #edf5f0; color: var(--green); font: 500 9px ui-monospace, monospace; white-space: nowrap; }
 .hosted-path { display: block; padding: 12px; border: 1px solid #c8d9cf; border-radius: 7px; background: #e8f0eb; color: var(--green); font: 12px/1.7 ui-monospace, monospace; overflow-wrap: anywhere; }
-.reference-details { margin-top: 15px; padding-top: 13px; border-top: 1px solid #d8e2dc; }
 .card { margin-bottom: 18px; padding: 26px 28px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.025em; }
@@ -195,3 +191,36 @@ footer { margin-top: 36px; padding: 24px 16px 18px; border-top: 1px solid var(--
   .primary { min-width: 0; flex: 1; }.run-placeholder { gap: 16px; }.monitor { column-gap: 0; }
   .results { padding: 22px 18px; }.results-heading { flex-direction: column; align-items: stretch; }.downloads .button { flex: 1; }.result-toolbar .hint { width: 100%; margin-left: 0; }
 }
+
+.error-support { grid-column: 1 / -1; min-width: 0; padding: 15px; margin: 12px 0; border: 1px solid #c58070; border-radius: 7px; background: #fff6f2; overflow-wrap: anywhere; }
+.error-support > p:first-child { margin-top: 0; font-size: 13px; }
+.error-support .downloads { flex-wrap: wrap; }
+.input-error { color: #8b3025; font-size: 13px; overflow-wrap: anywhere; }
+.has-error { border-color: #c58070; }
+#status { overflow-wrap: anywhere; }
+
+.format-label { display: flex; align-items: center; gap: 8px; margin: 17px 0 7px; }
+.format-label label { margin: 0; }
+.info-button { width: 24px; height: 24px; padding: 0; border-radius: 50%; color: var(--green); font: 600 13px Georgia, serif; }
+.format-dialog { box-sizing: border-box; width: min(720px, calc(100% - 32px)); max-height: calc(100dvh - 48px); padding: clamp(18px, 4vw, 30px); border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); box-shadow: 0 20px 80px #182f2440; overflow: auto; }
+.format-dialog::backdrop { background: #182f2470; }
+.format-dialog-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.format-dialog-heading h2 { margin: 0; }
+.format-dialog-heading button { flex: 0 0 34px; height: 34px; padding: 0; font-size: 24px; font-weight: 400; }
+.format-dialog p { font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.format-dialog h3 { margin: 22px 0 6px; font-size: 14px; }
+.format-dialog .format-requirements { padding: 12px; border-radius: 6px; background: #eef3ed; }
+.format-dialog pre { max-height: 180px; margin-bottom: 18px; color: var(--ink); font-size: 11px; white-space: pre; overflow-wrap: normal; tab-size: 8; }
+.format-columns { overflow-x: auto; margin-top: 10px; }
+.format-columns th { position: static; }
+.format-columns td, .format-columns th { padding: 8px; text-align: left; font-size: 12px; }
+.format-columns td:nth-child(2) { white-space: normal; font-family: inherit; }
+.format-docs { display: inline-block; margin-top: 22px; font-size: 13px; }
+
+
+.format-dialog code { padding: 2px 5px; border-radius: 4px; background: #eef3ed; font-family: ui-monospace, SFMono-Regular, monospace; }
+
+.hosted-source-card { margin-top: 18px; padding: clamp(12px, 3vw, 20px); border: 1px solid #c8d9cf; border-radius: 15px; background: #f8fbf8; }
+.hosted-source-card > .format-label:first-child { margin-top: 0; }
+.panel-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.source-badge { padding: 5px 8px; border: 1px solid #bad8c8; border-radius: 999px; background: #edf5f0; color: var(--green); font: 500 11px ui-monospace, monospace; }

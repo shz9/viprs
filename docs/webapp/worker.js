@@ -1,7 +1,10 @@
-/* One eagerly initialized runtime per worker. A fit() call stays entirely in Python. */
+importScripts("./errors.js");
+/* Created on the first valid Run request; one runtime per worker. A fit() call stays entirely in Python. */
 const PYODIDE_VERSION = "0.28.3";
 const INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
-let currentRun = null, runsStarted = 0;
+let currentRun = null, runsStarted = 0, errorStage = "runtime", errorSource = null;
+function setStage(stage, source = null) { errorStage = stage; errorSource = source; }
+function diagnostic(error) { return VIPRSErrors.describe(error, errorStage, errorSource); }
 const emit = (type, fields = {}) => self.postMessage({type, ...fields});
 
 async function localText(path) {
@@ -36,17 +39,13 @@ import viprs, magenpy
   await pyodide.runPythonAsync(await localText("inference.py"));
   pyodide.globals.delete("packages_json");
   const initializationSeconds = (performance.now() - start) / 1000;
-  const sumstatsFormats = JSON.parse(pyodide.runPython(`
-from magenpy.parsers.sumstats_parsers import get_supported_sumstats_formats
-json.dumps(sorted(get_supported_sumstats_formats(include_aliases=True)))
-`));
-  emit("ready", {seconds: initializationSeconds, sumstats_formats: sumstatsFormats});
+  emit("ready", {seconds: initializationSeconds, runtime: {pyodide_version: PYODIDE_VERSION, wheels: manifest.wheels}});
   return {pyodide, manifest, initializationSeconds};
 }
 
 // Catch immediately, even if the user never submits a job.
 const ready = initialize().catch((error) => {
-  emit("init-error", {message: error.message || String(error)});
+  emit("init-error", {error: diagnostic(error)});
   return null;
 });
 
@@ -167,6 +166,7 @@ async function fitLDArchives(sources, FS, workPath, fitArchive) {
   let downloadSeconds = 0;
   for (let index = 0; index < sources.length; index++) {
     const source = sources[index];
+    setStage("ld", source.file?.name || source.url);
     const path = `${workPath}/ld-current`;
     let stagedPath;
     emit("phase", {
@@ -179,8 +179,8 @@ async function fitLDArchives(sources, FS, workPath, fitArchive) {
       if (source.stream) {
         await fitArchive(source.url, sources.length - index - 1);
       } else {
-        stagedPath = await stageInput(source, FS, path);
-        downloadSeconds += (performance.now() - downloadStart) / 1000;
+        stagedPath = source.staged_path || await stageInput(source, FS, path);
+        if (!source.staged_path) downloadSeconds += (performance.now() - downloadStart) / 1000;
         await fitArchive(stagedPath, sources.length - index - 1);
       }
     } finally {
@@ -195,6 +195,37 @@ async function fitLDArchives(sources, FS, workPath, fitArchive) {
   return downloadSeconds;
 }
 
+async function prepareCatalogInputs(data, pyodide, workPath) {
+  if (!data.sumstats.some(source => source.catalog)) return 0;
+  const start = performance.now(), firstLD = data.ld[0];
+  setStage("ld", firstLD.file?.name || firstLD.url);
+  emit("phase", {id: currentRun, message: "Checking LD genome build", detail: "Reading LD metadata before selecting GWAS Catalog files."});
+  const metadataPath = firstLD.stream ? firstLD.url : await stageInput(firstLD, pyodide.FS, `${workPath}/ld-first`);
+  // Keep a staged first archive for fitting, avoiding a second download or copy.
+  if (!firstLD.stream) firstLD.staged_path = metadataPath;
+  pyodide.globals.set("ld_metadata_path", metadataPath);
+  pyodide.globals.set("ld_expected_build", data.options.ld_genome_build || null);
+  let build;
+  try { build = pyodide.runPython("inspect_browser_ld_build(ld_metadata_path, ld_expected_build)"); }
+  finally { pyodide.globals.delete("ld_metadata_path"); pyodide.globals.delete("ld_expected_build"); }
+  data.options.ld_genome_build = build;
+  data.options.sumstats_genome_build = build;
+  emit("ld-metadata", {id: currentRun, genome_build: build});
+  for (let index = 0; index < data.sumstats.length; index++) {
+    const source = data.sumstats[index];
+    if (!source.catalog) continue;
+    setStage("sumstats", source.catalog);
+    emit("phase", {id: currentRun, message: "Resolving GWAS Catalog study", detail: `Finding ${build} summary statistics for ${source.catalog}.`});
+    pyodide.globals.set("catalog_accession", source.catalog);
+    pyodide.globals.set("catalog_genome_build", build);
+    try {
+      const url = await pyodide.runPythonAsync("await resolve_browser_gwas_catalog(catalog_accession, genome_build=catalog_genome_build)");
+      data.sumstats[index] = {url, parallel: true};
+    } finally { pyodide.globals.delete("catalog_accession"); pyodide.globals.delete("catalog_genome_build"); }
+  }
+  return (performance.now() - start) / 1000;
+}
+
 function sortLDInputs(sources) {
   const key = (source) => source.file
     ? (source.file.webkitRelativePath || source.file.name)
@@ -207,12 +238,14 @@ function sortLDInputs(sources) {
 self.onmessage = async ({data}) => {
   if (data.type !== "run" || currentRun !== null) return;
   currentRun = data.id;
+  setStage("runtime");
   let runtime, workPath, output, failure, requestStarted = false, requestFinished = false;
   try {
     runtime = await ready;
     if (!runtime) return; // init-error has already been delivered.
     const {pyodide, manifest, initializationSeconds} = runtime;
     for (const kind of ["sumstats", "ld"]) {
+      setStage(kind);
       if (!Array.isArray(data[kind]) || !data[kind].length || data[kind].length > 64) {
         throw new Error("Select 1–64 files or URLs for each input type.");
       }
@@ -222,17 +255,12 @@ self.onmessage = async ({data}) => {
     emit("phase", {id: data.id, message: "Preparing inputs", started: true});
     const {expandDataURL} = await import("./sources.mjs");
     for (const kind of ["sumstats", "ld"]) {
+      setStage(kind);
       const expanded = new Map();
       for (const source of data[kind]) {
+        setStage(kind, source.file?.name || source.url || source.catalog);
         if (source.file) expanded.set(source.file.webkitRelativePath || source.file.name, source);
-        else if (source.catalog) {
-          emit("phase", {id: data.id, message: "Resolving GWAS Catalog study", detail: `Finding GRCh37/hg19 summary statistics for ${source.catalog}.`});
-          pyodide.globals.set("catalog_accession", source.catalog);
-          try {
-            const url = await pyodide.runPythonAsync("await resolve_browser_gwas_catalog(catalog_accession)");
-            expanded.set(url, {url, parallel: true});
-          } finally { pyodide.globals.delete("catalog_accession"); }
-        }
+        else if (source.catalog) expanded.set(source.catalog, source);
         else if (kind === "ld" && source.stream && source.url.startsWith("hf://")) {
           // Keep the native URI and glob: GWADataLoader handles both through
           // magenpy's Hugging Face filesystem integration.
@@ -252,9 +280,10 @@ self.onmessage = async ({data}) => {
     const request = {options: data.options, sumstats_paths: []};
     // Stream into the virtual filesystem without assembling another full JS buffer.
     // Summary statistics stay available across chromosomes; LD archives do not.
-    let downloadSeconds = 0;
+    let downloadSeconds = await prepareCatalogInputs(data, pyodide, workPath);
     for (let index = 0; index < data.sumstats.length; index++) {
       const source = data.sumstats[index];
+      setStage("sumstats", source.file?.name || source.url);
       emit("phase", {
         id: data.id,
         message: `${source.file ? "Reading" : "Downloading"} summary statistics`,
@@ -276,6 +305,11 @@ self.onmessage = async ({data}) => {
         message: `Finished chromosome ${chromosome} (${completed} of ${total}).`,
       });
     });
+    pyodide.globals.set("stage_callback", (stage) => {
+      setStage(stage, errorSource);
+      emit("phase", {id: data.id, message: {sumstats: "Reading summary statistics", ld: "Loading LD reference", harmonization: "Matching summary statistics to LD", inference: "Fitting model", results: "Preparing results"}[stage] || stage});
+    });
+    setStage("sumstats", data.sumstats.map(s => s.file?.name || s.url).join(", "));
     await pyodide.runPythonAsync("start_request(request_json)");
     requestStarted = true;
     // The parsed chromosome tables no longer depend on their compressed input.
@@ -302,6 +336,7 @@ self.onmessage = async ({data}) => {
         }
       }
     );
+    setStage("results");
     output = JSON.parse(await pyodide.runPythonAsync("finish_request()"));
     requestFinished = true;
     emit("log", {id: data.id, message: `Inputs streamed in ${downloadSeconds.toFixed(1)}s. Model: ${data.options.model}; components: ${data.options.components}; maximum iterations: ${data.options.max_iter}; tolerance: ${data.options.tolerance}; seed: ${data.options.seed}.`});
@@ -314,7 +349,7 @@ self.onmessage = async ({data}) => {
     });
     output.report.inputs = Object.fromEntries(["sumstats", "ld"].map((kind) =>
       [kind, data[kind].map((source) => source.file ? source.file.name : source.url)]));
-  } catch (error) { failure = error.message || String(error); }
+  } catch (error) { failure = diagnostic(error); }
   finally {
     if (runtime && workPath) {
       const {pyodide} = runtime;
@@ -322,13 +357,14 @@ self.onmessage = async ({data}) => {
         if (requestStarted && !requestFinished) pyodide.runPython("abort_request()");
         pyodide.globals.delete("request_json");
         pyodide.globals.delete("progress_callback");
+        pyodide.globals.delete("stage_callback");
         pyodide.globals.set("work_path", workPath);
         pyodide.runPython("shutil.rmtree(work_path, ignore_errors=True); gc.collect()");
-      } catch (error) { failure = failure || `Could not clean up run files: ${error.message || error}`; }
+      } catch (error) { failure = failure || VIPRSErrors.describe(error, "cleanup"); }
       finally { pyodide.globals.delete("work_path"); }
     }
     currentRun = null;
   }
-  if (failure) emit("error", {id: data.id, message: failure});
+  if (failure) emit("error", {id: data.id, error: failure});
   else if (output) emit("result", {id: data.id, result: output});
 };

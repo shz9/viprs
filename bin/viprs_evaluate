@@ -40,11 +40,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-SUMSTATS_FORMATS = {
-    'plink1.9', 'plink2', 'plink', 'cojo', 'magenpy', 'fastgwa',
-    'ssf', 'gwas-ssf', 'gwascatalog', 'saige', 'custom'
-}
-
 PSEUDO_METRICS = {'Pseudo_Pearson_R', 'Pseudo_R2'}
 
 
@@ -52,6 +47,7 @@ def build_parser():
     """Build the command-line argument parser."""
 
     import argparse
+    from magenpy.parsers.sumstats_parsers import get_supported_sumstats_formats
 
     parser = argparse.ArgumentParser(description="""
         Commandline arguments for evaluating polygenic scores
@@ -87,7 +83,7 @@ def build_parser():
                         help='The path to LD matrices for the validation/test dataset. This can be a directory '
                              'or wildcard of the form ld/chr_*.')
     parser.add_argument('--sumstats-format', dest='sumstats_format', type=str.lower, default='plink',
-                        choices=SUMSTATS_FORMATS,
+                        choices=sorted((*get_supported_sumstats_formats(include_aliases=True), "custom")),
                         help='The format of the validation/test summary statistics file(s).')
     parser.add_argument('--custom-sumstats-mapper', dest='custom_sumstats_mapper', type=str,
                         help='Comma-separated column mappings for custom summary statistics, e.g. '

@@ -47,7 +47,10 @@ def _match_variant_stats(test_gdl, prs_beta_table):
         assert len(beta_cols) > 0, ("The PRS effect sizes table must contain "
                                     "a column named BETA or BETA_0, BETA_1, etc.")
 
-    per_chrom_prs_tables = dict(tuple(prs_beta_table.groupby('CHR')))
+    from magenpy.utils.chromosome_utils import normalize_chromosome_column
+
+    prs_beta_table = normalize_chromosome_column(prs_beta_table.copy(deep=False))
+    per_chrom_prs_tables = dict(tuple(prs_beta_table.groupby("CHR", observed=True)))
 
     for chrom, tab in validation_tab.items():
 

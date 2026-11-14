@@ -20,7 +20,7 @@ env:
   HEIGHT_MD5: cde86c3a4d3d7c8bc451700ef51f74e3
   LD_URL: https://github.com/shz9/viprs/releases/download/v0.1.2/EUR.tar.gz
   LD_SHA256: 24b5014b850a88505ff85fd1a4d2a5992f82d5baba6a7d117fbffb30bdcc0a4f
-  PYTHON_VERSION: "3.12"
+  PYTHON_VERSION: "3.13"
   OMP_NUM_THREADS: "1"
   OPENBLAS_NUM_THREADS: "1"
   MKL_NUM_THREADS: "1"

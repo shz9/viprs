@@ -4,14 +4,14 @@
 # May be useful for sanity checks before pushing changes to the repository.
 
 # Usage:
-# $ bash tests/conda_manual_testing.sh
+# $ bash tests/integration/uv_manual_testing.sh
 
 # ==============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+PROJECT_DIR="$( cd "$SCRIPT_DIR/../.." && pwd )"
 ENV_ROOT="$PROJECT_DIR/.uv-test-envs"
 
 echo "Running tests from: $SCRIPT_DIR"
@@ -22,7 +22,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 # Define supported Python versions.
-python_versions=("3.10" "3.11" "3.12" "3.13")
+python_versions=("3.11" "3.12" "3.13")
 
 # ==============================================================================
 

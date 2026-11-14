@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Serve format choices/help as generated static metadata and defer the Python/WASM
+  runtime until Run; cancelling no longer initializes a replacement worker.
+
+- Group hosted browser LD references by cohort and ancestry, including UK Biobank
+  (GRCh37) and HGDP + 1000 Genomes (GRCh38), with variant-set and build badges.
+- Inspect LD genome-build metadata before GWAS Catalog lookup, support matching
+  GRCh38 files, reject conflicting builds, and report the selected genome build.
+- Include separator symbols in the summary-statistics format guide.
+
+- Pin magenpy to 0.2.5 for native and browser builds, and support Python 3.11–3.13.
+  Use Python 3.13 by default in workflows and containers.
+- Use magenpy chromosome normalization when matching saved effect tables, and
+  its parser registry for evaluation CLI formats.
+- Delegate browser summary-statistics column selection, missing-row filtering,
+  deduplication, and position-based SNP ID inference to magenpy while retaining sequential LD loading.
+- Remove duplicate GWAS Catalog discovery utilities and resolve studies directly
+  through magenpy, including browser requests using an asynchronous transport adapter.
+- Reuse magenpy covariate adjustment for residualized and partial-correlation metrics.
+
 ## [0.1.6] - 2026-10-28
 
 ### Added
