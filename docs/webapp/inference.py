@@ -23,6 +23,12 @@ def _report_stage(stage):
         callback(stage)
 
 
+def _report_progress(stage, state="active", **fields):
+    callback = globals().get("fit_progress_callback")
+    if callback is not None:
+        callback(json.dumps({"stage": stage, "state": state, **fields}))
+
+
 def ensure_huggingface_compat():
     """Stub terminal-only modules unavailable inside a Pyodide web worker."""
     if sys.platform != "emscripten":
@@ -35,7 +41,7 @@ def ensure_huggingface_compat():
         sys.modules.setdefault(name, types.ModuleType(name))
 
 
-async def resolve_browser_gwas_catalog(accession, read_text=None, genome_build="GRCh37"):
+async def resolve_browser_gwas_catalog(accession, read_text=None, genome_build="GRCh37", progress_callback=None):
     """Resolve a Catalog accession using the browser's HTTP transport."""
     from magenpy.utils.gwas_catalog import resolve_gwas_catalog
 
@@ -59,6 +65,21 @@ async def resolve_browser_gwas_catalog(accession, read_text=None, genome_build="
                     f"Could not list GWAS Catalog files (HTTP {response.status})."
                 )
             return await response.string()
+
+    transport = read_text
+
+    async def read_text(url):
+        if progress_callback is not None:
+            progress_callback("request", url)
+        try:
+            text = await transport(url)
+        except BaseException:
+            if progress_callback is not None:
+                progress_callback("failed", url)
+            raise
+        if progress_callback is not None:
+            progress_callback("received", url)
+        return text
 
     from magenpy.utils.model_utils import normalize_genome_build
 
@@ -379,6 +400,7 @@ class BrowserFitSession:
     def fit_ld_archive(self, ld_path, remaining_archives=0, progress_callback=None):
         """Stream or extract, fit, and release one LD archive at a time."""
         _report_stage("ld")
+        _report_progress("ld", detail="Reading LD reference metadata.")
         self.linear_operator = self.linear_operator or ensure_linear_operator()
         if str(ld_path).startswith("hf://"):
             ensure_huggingface_compat()
@@ -409,6 +431,7 @@ class BrowserFitSession:
             if known_builds:
                 self.options["ld_genome_build"] = next(iter(known_builds))
             _report_stage("harmonization")
+            _report_progress("harmonization", detail="Matching chromosomes, variant IDs and alleles.")
             selected = {}
             for chromosome in gdl.ld or {}:
                 if chromosome in self.sumstats_tables:
@@ -432,6 +455,11 @@ class BrowserFitSession:
 
             chromosomes = sorted(chromosome_loaders, key=chromosome_sort_key)
             self.preparation_seconds += time.perf_counter() - preparation_start
+            completed_before = len(self.chromosome_results)
+            total_chromosomes = completed_before + len(chromosomes) if remaining_archives == 0 else None
+            _report_progress("harmonization", "done", completed=completed_before + len(chromosomes),
+                             total=total_chromosomes, archive_fraction=1,
+                             detail=f"Matched {len(chromosomes)} chromosome(s) in this file.")
 
             for index, chromosome in enumerate(chromosomes):
                 chromosome_key = str(chromosome)
@@ -441,49 +469,93 @@ class BrowserFitSession:
                     )
                 chromosome_gdl = chromosome_loaders[chromosome]
                 model = None
-                _report_stage("inference")
+                _report_stage("ld")
                 fit_start = time.perf_counter()
                 try:
                     variants = int(chromosome_gdl.n_snps)
+                    completed = len(self.chromosome_results)
+                    progress_fields = {"chromosome": chromosome_key, "completed": completed,
+                                       "total": total_chromosomes, "model": self.model_name,
+                                       "variants": variants, "archive_fraction": index / len(chromosomes)}
+                    _report_progress("ld", **progress_fields,
+                                     detail=f"Loading chromosome {chromosome_key} LD matrix into memory.")
+                    last_iteration_update = -math.inf
+
+                    def report_iteration(fitted_model):
+                        nonlocal last_iteration_update
+                        iteration = max(0, len(fitted_model.history["ELBO"]) - 1)
+                        now = time.perf_counter()
+                        if iteration == 0 or now - last_iteration_update >= 0.5:
+                            last_iteration_update = now
+                            _report_progress("fitting", **progress_fields, iteration=iteration,
+                                             max_iter=self.max_iter, quiet=True)
+                        return None
+
                     np.random.seed(self.seed)
                     model = (
                         VIPRSMix(
                             chromosome_gdl,
                             K=int(self.options.get("components", 3)),
+                            tracked_params=[report_iteration],
                             threads=1,
                         )
                         if self.model_name == "VIPRSMix"
-                        else VIPRS(chromosome_gdl, threads=1)
+                        else VIPRS(chromosome_gdl, threads=1, tracked_params=[report_iteration])
                     )
+                    _report_progress("ld", "done", **{**progress_fields, "completed": completed + 1,
+                                     "archive_fraction": (index + 1) / len(chromosomes)},
+                                     detail=f"Chromosome {chromosome_key} LD loaded.")
+                    _report_stage("inference")
+                    _report_progress("fitting", **progress_fields, iteration=0, max_iter=self.max_iter)
                     model.fit(
                         max_iter=self.max_iter,
                         x_abs_tol=self.tolerance,
                         f_abs_tol=self.tolerance,
                         disable_pbar=True,
                     )
+                    chromosome_fit_seconds = time.perf_counter() - fit_start
                     if not model.optim_result.valid_optim_result:
                         raise ValueError(
                             f"{self.model_name} optimization failed for chromosome "
                             f"{chromosome}: {model.optim_result.message}"
                         )
                     _report_stage("results")
+                    table = model.to_table()
+                    # These sources have already been harmonized to the fitted LD order.
+                    maf = chromosome_gdl.ld[chromosome].maf
+                    if maf is not None:
+                        table["MAF"] = np.minimum(maf, 1.0 - maf)
+                    summaries = chromosome_gdl.sumstats_table[chromosome]
+                    try:
+                        table["GWAS_Z"] = summaries.z_score
+                    except KeyError:
+                        pass
+                    if "P" in summaries.table:
+                        table["GWAS_P"] = summaries.table["P"].to_numpy()
                     self.chromosome_rows[chromosome_key] = json.loads(
-                        model.to_table().to_json(
-                            orient="records", double_precision=15
-                        )
+                        table.to_json(orient="records", double_precision=15)
                     )
+                    del table, summaries, maf
+                    memory_callback = globals().get("memory_callback")
                     self.chromosome_results[chromosome_key] = {
                         "elbo": [float(value) for value in model.history["ELBO"]],
                         "iterations": int(model.optim_result.nit),
                         "converged": bool(model.optim_result.converged),
                         "message": str(model.optim_result.message),
                         "variants": variants,
+                        "fit_seconds": chromosome_fit_seconds,
+                        "wasm_heap_bytes_at_fit_end": int(memory_callback()) if memory_callback else None,
                     }
                 finally:
                     self.fit_seconds += time.perf_counter() - fit_start
                     chromosome_gdl.cleanup()
                     del model
                     gc.collect()
+                completed = len(self.chromosome_results)
+                _report_progress("fitting", "done", **{**progress_fields, "completed": completed,
+                                 "archive_fraction": (index + 1) / len(chromosomes)},
+                                 iteration=int(self.chromosome_results[chromosome_key]["iterations"]),
+                                 max_iter=self.max_iter)
                 if progress_callback is not None:
                     completed = len(self.chromosome_results)
                     total = completed + len(chromosomes) - index - 1 + remaining_archives
@@ -540,11 +612,12 @@ class BrowserFitSession:
             "blas": bool(e_step_cpp.check_blas_support()),
             "linear_operator": self.linear_operator,
             "elbo": elbo,
+            "chromosome_diagnostics": self.chromosome_results,
             "timings": {
                 "preparation_seconds": self.preparation_seconds,
                 "fit_seconds": self.fit_seconds,
             },
-            "effect_scale": "Unmodified VIPRS posterior estimates; use the appropriate genotype scaling when scoring.",
+            "effect_scale": "BETA is on standardized genotypes. For dosage scoring divide BETA by sqrt(2*MAF*(1-MAF)) using the fitted LD reference frequencies. Scores remain on a standardized phenotype scale; no intercept is fitted.",
         }
         return rows, report
 
@@ -565,7 +638,7 @@ def native_fit(sumstats_paths, ld_paths, options, progress_callback=None):
 def serialize_result(rows, report):
     columns = [
         c
-        for c in ("CHR", "SNP", "POS", "A1", "A2", "PIP", "BETA", "VAR_BETA")
+        for c in ("CHR", "SNP", "POS", "A1", "A2", "PIP", "BETA", "VAR_BETA", "MAF", "GWAS_Z", "GWAS_P")
         if c in rows[0]
     ]
     output = io.StringIO()
@@ -584,8 +657,22 @@ def serialize_result(rows, report):
         group = chromosome_rows.setdefault(str(row["CHR"]), [])
         if len(group) < 20:
             group.append(row)
+    # Bound browser plot payloads while preserving the strongest posterior and
+    # marginal signals on every chromosome. Complete estimates stay in the TSV.
+    limit = 30000
+    if len(rows) <= limit:
+        plot_rows = rows
+    else:
+        chosen = set(np.linspace(0, len(rows) - 1, limit // 2, dtype=int).tolist())
+        for chromosome in report["chromosomes"]:
+            indices = [i for i, row in enumerate(rows) if str(row["CHR"]) == chromosome]
+            budget = max(1, (limit // 2) // len(report["chromosomes"]) // 2)
+            chosen.update(sorted(indices, key=lambda i: rows[i]["PIP"], reverse=True)[:budget])
+            chosen.update(sorted(indices, key=lambda i: abs(rows[i].get("GWAS_Z") or 0), reverse=True)[:budget])
+        plot_rows = [rows[i] for i in sorted(chosen)]
     return json.dumps(
         {
+            "plot_data": {"rows": plot_rows, "total": len(rows), "sampled": len(plot_rows) < len(rows)},
             "rows": ranked[:20],
             "chromosome_rows": chromosome_rows,
             "tsv": output.getvalue(),

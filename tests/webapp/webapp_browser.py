@@ -29,8 +29,9 @@ def wait_for_run(page):
 
 
 def report_download(page, destination):
+    page.select_option("#download-format", "report")
     with page.expect_download() as event:
-        page.locator("#download-report").click()
+        page.locator("#download").click()
     event.value.save_as(destination)
     return json.loads(destination.read_text())
 
@@ -50,6 +51,18 @@ def main():
             page.on("worker", lambda worker: workers.append(worker))
             page.on("request", lambda request: requests.append(request.url))
             page.on("pageerror", lambda error: errors.append(str(error)))
+            page.add_init_script("""
+                window.fitProgressEvents = [];
+                const InferenceWorker = window.Worker;
+                window.Worker = class extends InferenceWorker {
+                    constructor(...args) {
+                        super(...args);
+                        this.addEventListener('message', ({data}) => {
+                            if (data.type === 'stage-progress') window.fitProgressEvents.push(data);
+                        });
+                    }
+                };
+            """)
             page.goto(f"http://127.0.0.1:{server.server_port}/webapp/")
             assert page.locator("#engine").count() == 0
             assert page.locator("#runtime-state").get_attribute("data-state") == "idle"
@@ -65,6 +78,11 @@ def main():
             page.screenshot(path=str(ARTIFACTS / "running.png"), full_page=True)
             wait_for_run(page)
             report = report_download(page, ARTIFACTS / "run.json")
+            for stage in ["sumstats", "harmonization", "fitting"]:
+                assert page.locator(f"#progress-{stage}-row").get_attribute("data-state") == "done"
+                assert page.locator(f"#progress-{stage}").evaluate("p => p.value === p.max")
+            assert page.evaluate("window.fitProgressEvents.some(e => e.stage === 'fitting' && e.heading === 'Fitting VIPRS · chromosome 22 (1/1)')")
+
             assert report["variants"] > 10000
             assert report["model"] == "VIPRS"
             assert report["magenpy_version"] == "0.2.5"
@@ -79,6 +97,8 @@ def main():
             assert all("wasm32-emscripten.so" in path for path in report["extensions"].values())
             assert len(report["elbo"]) > 3
             assert all(math.isfinite(v) for v in report["elbo"])
+            page.locator("#tab-scoring").click()
+            page.select_option("#download-format", "native")
             with page.expect_download() as event:
                 page.locator("#download").click()
             event.value.save_as(ARTIFACTS / "weights.tsv")
@@ -152,6 +172,7 @@ def main():
                 assert multi_report["variants"] == 96
                 assert multi_report["runtime_reused"]
                 assert multi_report["components"] == (3 if model == "VIPRSMix" else 1)
+                page.locator("#tab-table").click()
                 page.locator("#chromosome-filter").select_option("21")
                 assert page.locator("#result-rows tr").count() == 20
                 assert set(page.locator("#result-rows tr td:first-child").all_text_contents()) == {"21"}

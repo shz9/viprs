@@ -6,7 +6,7 @@
   <meta name="description" content="Estimate variant effect sizes and polygenic score weights from GWAS summary statistics and LD reference data with VIPRS.">
   <title>VIPRS · Polygenic score inference in the browser</title>
   <link rel="stylesheet" href="app.css">
-  <script src="app.js?v=runtime-0.2.5" type="module"></script>
+  <script src="app.js?v=runtime-0.2.5-progress-4" type="module"></script>
 </head>
 <body>
   <main>
@@ -149,6 +149,11 @@
       <aside class="card monitor" aria-labelledby="monitor-heading">
         <div class="section-heading"><h2 id="monitor-heading" class="panel-title"><svg class="panel-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m13 2-9 12h7l-1 8 10-12h-7l1-8Z"/></svg>Inference</h2><span id="status-badge" class="status">Ready</span></div>
         <div class="run-placeholder"><div id="activity" class="activity" aria-hidden="true"><span></span><span></span><span></span></div><div class="run-message"><h3 id="activity-title">Ready for inference</h3><p id="status" role="status" aria-live="polite">Select your inputs and model.</p><p id="elapsed-line" class="elapsed-line" hidden>Elapsed <span id="elapsed">—</span></p></div></div>
+        <div id="run-progress" class="run-progress" aria-label="Analysis progress" hidden>
+          <div id="progress-sumstats-row" class="progress-row" data-state="waiting"><div class="progress-label"><label for="progress-sumstats">Summary statistics</label><span id="progress-sumstats-detail">Waiting</span></div><progress id="progress-sumstats" max="1" value="0" aria-label="Summary statistics"></progress></div>
+          <div id="progress-harmonization-row" class="progress-row" data-state="waiting"><div class="progress-label"><label for="progress-harmonization">Harmonization</label><span id="progress-harmonization-detail">Waiting</span></div><progress id="progress-harmonization" max="1" value="0" aria-label="Harmonization"></progress></div>
+          <div id="progress-fitting-row" class="progress-row" data-state="waiting"><div class="progress-label"><label for="progress-fitting">Model fitting</label><span id="progress-fitting-detail">Waiting</span></div><progress id="progress-fitting" max="1" value="0" aria-label="Model fitting"></progress></div>
+        </div>
         <div id="error-support" class="error-support" tabindex="-1" role="alert" hidden>
           <p id="error-advice"></p>
           <div class="downloads"><a id="download-error" class="button" download="viprs-error.json">Export diagnostics ↓</a><a id="report-error" class="button" target="_blank" rel="noopener noreferrer">Report on GitHub ↗</a></div>
@@ -163,12 +168,58 @@
       </aside>
     </div>
 
-    <section id="results" class="card results" hidden>
-      <div class="section-heading results-heading"><div><p class="section-kicker">Results</p><h2>Posterior effect estimates</h2></div><div class="downloads"><a id="download" class="button" download="viprs-weights.tsv">Download weights <span aria-hidden="true">↓</span></a><a id="download-report" class="button" download="viprs-run.json">Run report <span aria-hidden="true">↓</span></a></div></div>
-      <p id="result-summary" class="result-summary"></p>
-      <div class="result-toolbar"><label for="chromosome-filter">Chromosome</label><select id="chromosome-filter"><option value="">All chromosomes</option></select><span id="table-caption" class="hint"></span></div>
-      <div class="table-scroll" tabindex="0" role="region" aria-label="Posterior effect estimates"><table><thead><tr><th scope="col">CHR</th><th scope="col">SNP</th><th scope="col">A1</th><th scope="col">A2</th><th scope="col">PIP</th><th scope="col">BETA</th><th scope="col">VAR_BETA</th></tr></thead><tbody id="result-rows"></tbody></table></div>
-      <p class="table-note">Top 20 variants by posterior inclusion probability (PIP). A1 is the effect allele; BETA and VAR_BETA are the posterior mean and variance. Downloads contain the complete fitted result.</p>
+    <section id="results" class="card results" aria-labelledby="results-title" hidden>
+      <div class="result-navigation">
+      <div class="section-heading results-heading"><div class="results-intro"><p class="section-kicker">Analysis complete</p><h2 id="results-title">Explore your results</h2><p id="result-summary" class="result-summary"></p><p class="result-action-description">Choose a view to examine, visualize or use your results.</p></div><div class="result-download"><div><label for="download-format">Output format</label><select id="download-format"><option value="native">Inferred weights · TSV</option><option value="dosage">Dosage scoring weights · TSV</option><option value="pgs">PGS Catalog scoring file · TXT</option><option value="report">Run report · JSON</option></select></div><a id="download" class="button primary" download="viprs-weights.tsv">Download ↓</a><p id="download-status" class="hint" role="status"></p></div></div>
+      <div class="result-tabs" role="tablist" aria-label="Result actions">
+        <button id="tab-summary" role="tab" aria-selected="true" aria-controls="view-summary" tabindex="0"><span class="action-number">01</span><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 4v16h16M7 15l4-5 4 3 5-7"/></svg></span><strong>Fitting summary</strong><small>Diagnostics &amp; convergence</small></button>
+        <button id="tab-scoring" role="tab" aria-selected="false" aria-controls="view-scoring" tabindex="-1"><span class="action-number">02</span><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m6 1h4"/></svg></span><strong>Scoring instructions</strong><small>Weights to individual scores</small></button>
+        <button id="tab-table" role="tab" aria-selected="false" aria-controls="view-table" tabindex="-1"><span class="action-number">03</span><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11M3 14h18"/></svg></span><strong>Table view</strong><small>Top posterior estimates</small></button>
+        <button id="tab-plots" role="tab" aria-selected="false" aria-controls="view-plots" tabindex="-1"><span class="action-number">04</span><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 12l2-3 3 2 2-4"/></svg></span><strong>Visualization</strong><small>Miami, trumpet, &amp; locus plots</small></button>
+      </div>
+      </div>
+      <div id="view-summary" role="tabpanel" aria-labelledby="tab-summary" tabindex="0">
+        <header class="result-view-heading"><h3>Inference diagnostics</h3><p>Review convergence, chromosome timings and memory.</p></header>
+        <div id="fit-overview" class="fit-overview"></div>
+        <div id="fit-message" class="result-callout"></div>
+        <div class="diagnostic-grid">
+          <article class="result-chart"><h3>ELBO trajectory</h3><label for="diagnostic-chromosome">Chromosome</label><select id="diagnostic-chromosome"></select><div id="elbo-chart"></div><p class="hint">Higher is better. Each trajectory belongs to an independently fitted chromosome.</p></article>
+          <article class="result-chart"><h3>Fitting time by chromosome</h3><div id="runtime-chart"></div><p class="hint">Model initialization and fitting; input transfer, harmonization and cleanup are excluded.</p></article>
+        </div>
+        <details class="diagnostics-details"><summary>Chromosome diagnostics &amp; memory</summary><p class="hint">Memory is the allocated WebAssembly heap at the end of each fit, while model arrays are resident. It can stay allocated after data are freed. This is neither live usage nor total browser memory; peaks between observations are not measured.</p><div class="table-scroll"><table><thead><tr><th scope="col">Chr</th><th scope="col">Variants</th><th scope="col">Iterations</th><th scope="col">Fit time</th><th scope="col">WASM heap at fit end</th><th scope="col">Status</th></tr></thead><tbody id="diagnostic-rows"></tbody></table></div></details>
+      </div>
+      <div id="view-scoring" role="tabpanel" aria-labelledby="tab-scoring" tabindex="0" hidden>
+        <header class="result-view-heading"><h3>Score your target cohort</h3><p>Choose your compute environment, genotype format and scoring software for tailored instructions.</p></header>
+        <div class="scoring-options">
+          <div><label for="biobank-platform">Compute environment</label><select id="biobank-platform"><option value="generic">Linux/Unix Compute environment</option><option value="ukb">UK Biobank · Research Analysis Platform</option><option value="aou">All of Us · Researcher Workbench / Google Cloud</option></select><aside id="platform-guidance" class="platform-guidance" hidden></aside></div>
+          <div class="genotype-choice"><label for="genotype-format">Your genotype data format</label><select id="genotype-format"><option value="pgen">PLINK 2 · PGEN / PVAR / PSAM</option><option value="bed">PLINK 1 · BED / BIM / FAM</option><option value="vcf">VCF · .vcf.gz</option><option value="bgen">BGEN · .bgen + .sample</option></select><p id="scoring-recommendation" class="hint" role="status"></p></div>
+          <div><label for="genotype-layout">Genotype file layout</label><select id="genotype-layout"><option value="combined">One file set containing the target chromosomes</option><option value="chromosomes">Separate files for each chromosome</option></select></div>
+          <div><label for="scoring-tool">Scoring software</label><select id="scoring-tool"><option value="plink">PLINK 2 / PLINK 1.9</option><option value="viprs">VIPRS</option><option value="pgsc">PGS Catalog Calculator · pgsc_calc</option><option value="score">BCFtools Score plugin · VCF / BCF</option></select></div>
+          <div id="execution-options"><label for="execution-runtime">Available software on your compute system</label><select id="execution-runtime"><option value="native">Native software · install if needed</option><option value="docker">Docker</option><option value="apptainer">Apptainer</option><option value="singularity">Singularity</option></select><p class="hint">Select the runtime available on your compute system. The first step checks it.</p></div>
+        </div>
+        <details class="scoring-notes"><summary>Weight format and scaling details</summary><p id="scoring-build" class="result-callout"></p><p id="scoring-availability" class="hint"></p></details>
+        <div class="scoring-workflow" aria-label="Scoring workflow"><span><b>1</b> Match build &amp; alleles</span><span aria-hidden="true">→</span><span><b>2</b> Score dosages</span><span aria-hidden="true">→</span><span><b>3</b> Check overlap &amp; validate</span></div>
+        <div id="scoring-guide" class="scoring-guide"></div>
+      </div>
+      <div id="view-table" role="tabpanel" aria-labelledby="tab-table" tabindex="0" hidden>
+        <header class="result-view-heading"><h3>Inspect inferred effect sizes</h3><p>Browse the top estimates or search the complete result by rsID.</p></header>
+        <div class="result-toolbar"><div class="table-chromosome"><label for="chromosome-filter">Chromosome</label><select id="chromosome-filter"><option value="">All chromosomes</option></select></div><div class="table-search"><label for="table-rsid">Search rsIDs</label><input id="table-rsid" type="search" placeholder="e.g. rs12345, rs67890" aria-describedby="table-search-help" autocomplete="off" spellcheck="false"></div></div>
+        <p id="table-search-help" class="hint">Exact rsID matches across all fitted variants. Separate multiple IDs with commas or spaces. Chromosome selection applies to the search.</p><p id="table-caption" class="hint" role="status"></p><p id="table-empty" class="result-callout" hidden>No matching variants. Check the rsID or try all chromosomes.</p>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Posterior effect estimates"><table><thead><tr><th scope="col">CHR</th><th scope="col">SNP</th><th scope="col">A1</th><th scope="col">A2</th><th scope="col">PIP</th><th scope="col">BETA</th><th scope="col">VAR_BETA</th></tr></thead><tbody id="result-rows"></tbody></table></div>
+        <p class="table-note">Without a search, shows the top 20 variants by posterior inclusion probability (PIP). Search results show up to 200 matches. A1 is the effect allele; BETA and VAR_BETA are the posterior mean and variance on standardized genotypes. Downloads contain the complete fitted result.</p>
+      </div>
+      <div id="view-plots" role="tabpanel" aria-labelledby="tab-plots" tabindex="0" hidden>
+        <header class="result-view-heading"><h3>Explore the inferred weights</h3><p>Compare GWAS and posterior signals, or inspect a genomic region.</p></header>
+        <div class="plot-controls"><div><label for="weight-plot-kind">Visualization</label><select id="weight-plot-kind"><option value="miami">Miami · GWAS vs. posterior estimates</option><option value="trumpet">Trumpet · MAF vs. effect size</option><option value="locus">Locus · local PIPs</option></select></div><div><label for="plot-chromosome">Chromosome</label><select id="plot-chromosome"></select></div><div id="trumpet-options" hidden><label for="trumpet-scale">Effect scale</label><select id="trumpet-scale"><option value="dosage">Per-allele effects · dosage weights</option><option value="standardized">Standardized-genotype effects · native weights</option></select></div><div id="miami-options" hidden><label for="miami-metric">Upper panel</label><select id="miami-metric"><option value="PIP">PIP</option><option value="BETA2">Squared posterior mean β²</option></select></div></div>
+        <form id="locus-controls" class="plot-controls" hidden><div><label for="locus-center">Center position (bp)</label><input id="locus-center" type="number" min="1" step="1" required></div><div><label for="locus-window">Window</label><select id="locus-window"><option value="100000">±100 kb</option><option value="250000" selected>±250 kb</option><option value="500000">±500 kb</option><option value="1000000">±1 Mb</option></select></div><button type="submit">Update locus</button></form>
+        <p id="weight-plot-description" class="hint"></p><p id="plot-coverage" class="result-callout"></p>
+        <div class="weight-canvas-wrap"><canvas id="weight-canvas" role="img" aria-label="Inferred weight visualization" aria-describedby="weight-plot-description plot-coverage"></canvas><p id="plot-empty" hidden></p></div>
+        <p class="hint">Select a point to inspect it. Keyboard alternative: search a plotted variant by its exact SNP ID below.</p>
+        <form id="variant-search" class="variant-search"><label for="variant-id">Variant ID</label><input id="variant-id" placeholder="e.g. rs12345" required><button type="submit">Inspect variant</button></form>
+        <div id="variant-detail" class="variant-detail" aria-live="polite">Select a variant to see its position, alleles and posterior estimates.</div>
+        <div class="downloads plot-exports"><button id="save-plot" type="button">Save plot as PNG ↓</button><a id="locus-browser" class="button" target="_blank" rel="noopener noreferrer" hidden>Open locus in UCSC ↗</a></div>
+        <p class="hint">Local context uses genomic coordinates and neighboring fitted variants. Gene annotations are available through build-specific UCSC and Ensembl links; opening a link sends the region to that provider. VIPRS PIPs describe this polygenic model and should not be interpreted as fine-mapping credible sets.</p>
+      </div>
     </section>
 
     <dialog id="ld-dataset-dialog" class="format-dialog" aria-labelledby="ld-panel-name" aria-describedby="ld-panel-description">

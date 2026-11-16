@@ -26,30 +26,54 @@ function validateManifest(manifest) {
   }
 }
 
-async function initialize() {
-  const start = performance.now();
-  const manifest = JSON.parse(await localText("runtime.json"));
-  validateManifest(manifest);
-  emit("runtime-status", {message: "Loading runtime"});
-  importScripts(INDEX_URL + "pyodide.js");
-  const pyodide = await loadPyodide({indexURL: INDEX_URL});
-  pyodide.setStdout({batched: (message) => emit("log", {id: currentRun, message})});
-  pyodide.setStderr({batched: (message) => emit("log", {id: currentRun, message})});
-  emit("runtime-status", {message: "Loading packages"});
-  await pyodide.loadPackage(manifest.builtin_packages);
-  const wheels = manifest.wheels.map((path) => new URL(path, self.location.href).href);
-  pyodide.globals.set("packages_json", JSON.stringify(wheels));
+function runtimeProgress(message, source = null) {
+  setStage("runtime", source);
+  emit("runtime-status", {message, source});
+}
+
+async function installRuntimePackages(pyodide, manifest) {
+  runtimeProgress("Downloading Python dependencies", INDEX_URL);
+  const errors = [];
+  await pyodide.loadPackage(manifest.builtin_packages, {
+    messageCallback: message => runtimeProgress(message, INDEX_URL),
+    errorCallback: message => { errors.push(message); emit("log", {id: currentRun, message}); },
+  });
+  if (errors.length) throw new Error("Python dependency loading failed: " + errors.join("; "));
+  await pyodide.runPythonAsync("import json, micropip, os, gc, shutil");
+  // Report each wheel separately: completion of CDN downloads is not the end
+  // of initialization. Preserve micropip's compatibility and hash checks.
+  for (const [index, path] of manifest.wheels.entries()) {
+    const url = new URL(path, self.location.href);
+    const name = url.pathname.split("/").at(-1);
+    runtimeProgress(`Installing model package ${index + 1}/${manifest.wheels.length}: ${name}`, url.href);
+    pyodide.globals.set("package_url", url.href);
+    try { await pyodide.runPythonAsync("await micropip.install(package_url, deps=False)"); }
+    finally { pyodide.globals.delete("package_url"); }
+    emit("log", {id: currentRun, message: `Installed ${name}.`});
+  }
+  runtimeProgress("Importing VIPRS and magenpy");
   await pyodide.runPythonAsync(`
-import json, micropip, os, gc, shutil
-await micropip.install(json.loads(packages_json), deps=False)
 os.environ["TQDM_DISABLE"] = "1"
 from tqdm import tqdm
 tqdm.monitor_interval = 0
 import viprs, magenpy
 `);
+}
+
+async function initialize() {
+  const start = performance.now();
+  runtimeProgress("Reading runtime manifest", "runtime.json");
+  const manifest = JSON.parse(await localText("runtime.json"));
+  validateManifest(manifest);
+  runtimeProgress("Downloading and starting Python runtime", INDEX_URL);
+  importScripts(INDEX_URL + "pyodide.js");
+  const pyodide = await loadPyodide({indexURL: INDEX_URL});
+  pyodide.setStdout({batched: (message) => emit("log", {id: currentRun, message})});
+  pyodide.setStderr({batched: (message) => emit("log", {id: currentRun, message})});
+  await installRuntimePackages(pyodide, manifest);
   const versions = JSON.parse(await pyodide.runPythonAsync('json.dumps({"magenpy_version": magenpy.__version__, "viprs_version": viprs.__version__})'));
+  runtimeProgress("Loading browser inference adapter", "inference.py");
   await pyodide.runPythonAsync(await localText("inference.py"));
-  pyodide.globals.delete("packages_json");
   const initializationSeconds = (performance.now() - start) / 1000;
   emit("ready", {seconds: initializationSeconds, runtime: {pyodide_version: PYODIDE_VERSION, ...versions, wheels: manifest.wheels}});
   return {pyodide, manifest, initializationSeconds};
@@ -61,8 +85,78 @@ const ready = initialize().catch((error) => {
   return null;
 });
 
-async function stageInput(source, FS, path, inferCompression = false) {
-  let stream;
+function stageProgress(stage, fields) {
+  emit("stage-progress", {id: currentRun, stage, ...fields});
+}
+
+function modelProgress(event, archiveIndex, archiveCount) {
+  const {stage, chromosome, model, completed = 0, total, iteration, max_iter} = event;
+  const exact = Number.isFinite(total) && total > 0;
+  const done = event.state === "done" && (exact ? completed >= total : archiveIndex >= archiveCount && event.archive_fraction === 1);
+  const state = event.state === "done" ? done ? "done" : "waiting" : "active";
+  let detail = event.detail || "";
+  let heading, message;
+  if (stage === "fitting") {
+    const ordinal = completed + (event.state === "done" ? 0 : 1);
+    const position = exact ? ` (${ordinal}/${total})` : "";
+    heading = `Fitting ${model} · chromosome ${chromosome}${position}`;
+    const count = exact ? `${completed}/${total} chromosomes complete` : `${completed} chromosome(s) complete · file ${archiveIndex}/${archiveCount}`;
+    const iterations = Number.isFinite(iteration) ? iteration === 0 ? " · initializing fit" : ` · iteration ${iteration}${event.state === "done" ? "" : ` (limit ${max_iter})`}` : "";
+    detail = count;
+    message = `${Number(event.variants).toLocaleString()} variants · ${count}${event.state === "done" ? "" : iterations}.`;
+  } else if (stage === "ld" && chromosome) {
+    heading = `Loading LD · chromosome ${chromosome}`;
+    message = detail;
+  } else {
+    heading = stage === "ld" ? "Loading LD reference" : "Harmonizing variants";
+    message = detail;
+  }
+  return {stage, state, completed: exact ? completed : archiveIndex - 1 + (event.archive_fraction || 0),
+    total: exact ? total : event.archive_fraction === undefined ? null : archiveCount,
+    detail, heading, message, quiet: Boolean(event.quiet)};
+}
+
+// Frequent byte/wait updates stay in the status detail without flooding the log.
+function inputProgress(message, detail, stage = "sumstats", fileIndex = 0, fileCount = 1) {
+  let lastUpdate = -Infinity;
+  return ({bytes = 0, total = null, stage: transferStage = "transfer"}) => {
+    const now = performance.now();
+    if (transferStage === "transfer" && bytes > 0 && bytes !== total && now - lastUpdate < 500) return;
+    lastUpdate = now;
+    const mib = value => (value / 1024 ** 2).toFixed(1) + " MiB";
+    const amount = total > 0
+      ? `${mib(bytes)} of ${mib(total)} (${Math.min(100, Math.floor(100 * bytes / total))}%)`
+      : `${mib(bytes)} received`;
+    const description = `${detail} ${transferStage === "connecting" ? "Waiting for the server response." : transferStage === "checking" ? "Checking download size and parallel-transfer support." : amount + "."}`;
+    emit("phase", {id: currentRun, message, detail: description, quiet: true});
+    stageProgress(stage, {state: "active", completed: total > 0 ? fileIndex + Math.min(1, bytes / total) : null,
+      total: total > 0 ? fileCount : null, detail: transferStage === "connecting" ? "Connecting…" : transferStage === "checking" ? "Checking download…" : amount});
+  };
+}
+
+function catalogProgress(accession, build) {
+  let timer = null;
+  const stop = () => { if (timer !== null) clearInterval(timer); timer = null; };
+  const report = (event, url) => {
+    stop();
+    if (event !== "request") return;
+    const metadata = url.endsWith("-meta.yaml");
+    const name = metadata ? decodeURIComponent(new URL(url).pathname.split("/").at(-1)) : url.endsWith("/harmonised/") ? "harmonised file list" : "study file list";
+    const started = performance.now();
+    const update = (quiet = false) => emit("phase", {
+      id: currentRun,
+      message: metadata ? "Checking GWAS Catalog genome build" : "Reading GWAS Catalog file list",
+      detail: `${accession} · ${name}. Waiting for the ${metadata ? "metadata" : "directory"} response for ${build} (${Math.floor((performance.now() - started) / 1000)}s).`,
+      quiet,
+    });
+    update();
+    timer = setInterval(() => update(true), 1000);
+  };
+  return {report, stop};
+}
+
+async function stageInput(source, FS, path, inferCompression = false, onProgress = null) {
+  let stream, total = source.file?.size || null;
   if (source.file) {
     if (!source.file.size) throw new Error("An input is empty.");
     stream = source.file.stream();
@@ -70,11 +164,14 @@ async function stageInput(source, FS, path, inferCompression = false) {
     const url = new URL(source.url);
     if (!["https:", "http:"].includes(url.protocol)) throw new Error("Only HTTP(S) download URLs are supported.");
     let response;
+    onProgress?.({stage: "connecting"});
     try { response = await fetch(url, {credentials: "omit"}); }
     catch { throw new Error("Could not fetch an input. Check its URL, connection, and the host's CORS settings."); }
     if (!response.ok) throw new Error(`Input download failed (HTTP ${response.status}).`);
+    total = Number(response.headers?.get("content-length")) || null;
     stream = response.body;
   }
+  onProgress?.({bytes: 0, total});
   if (!stream) throw new Error("An input is empty.");
   const reader = stream.getReader();
   let handle;
@@ -94,6 +191,7 @@ async function stageInput(source, FS, path, inferCompression = false) {
       const written = FS.write(handle, value, 0, value.length, size);
       if (written !== value.length) throw new Error("Could not write the complete input to browser memory.");
       size += written;
+      onProgress?.({bytes: size, total});
     }
     if (!size) throw new Error("An input is empty.");
   } catch (error) {
@@ -103,6 +201,7 @@ async function stageInput(source, FS, path, inferCompression = false) {
     reader.releaseLock();
     if (handle !== undefined) FS.close(handle);
   }
+  onProgress?.({bytes: size, total: size});
   if (inferCompression) {
     // pandas infers compression from the path. Sniff actual streamed bytes,
     // including a gzip header split across chunks, then rename without copying.
@@ -114,11 +213,12 @@ async function stageInput(source, FS, path, inferCompression = false) {
   return path;
 }
 
-async function stageRangedInput(source, FS, path, inferCompression = false) {
+async function stageRangedInput(source, FS, path, inferCompression = false, onProgress = null) {
   // Large Catalog files are served from a geographically distant endpoint for
   // some users. Use independent ranges when EBI exposes range support, while
   // retaining the ordinary streaming path for every other server.
   let metadata;
+  onProgress?.({stage: "checking"});
   try { metadata = await fetch(source.url, {method: "HEAD", credentials: "omit"}); }
   catch { return null; }
   const size = Number(metadata.headers.get("content-length"));
@@ -139,6 +239,8 @@ async function stageRangedInput(source, FS, path, inferCompression = false) {
   const parts = Math.min(4, Math.ceil(size / (8 * 1024 ** 2)));
   const handle = FS.open(path, "w");
   const header = new Uint8Array(2);
+  let received = 0;
+  onProgress?.({bytes: 0, total: size});
   try {
     await Promise.all(Array.from({length: parts}, async (_, index) => {
       const start = Math.floor(size * index / parts);
@@ -157,6 +259,8 @@ async function stageRangedInput(source, FS, path, inferCompression = false) {
           const written = FS.write(handle, value, 0, value.length, position);
           if (written !== value.length) throw new Error("Could not write the complete input to browser memory.");
           position += written;
+          received += written;
+          onProgress?.({bytes: received, total: size});
         }
       } catch (error) {
         await reader.cancel().catch(() => {});
@@ -165,6 +269,7 @@ async function stageRangedInput(source, FS, path, inferCompression = false) {
       if (position !== end + 1) throw new Error("A parallel GWAS Catalog download ended before its byte range was complete.");
     }));
   } finally { FS.close(handle); }
+  onProgress?.({bytes: received, total: size});
   if (inferCompression) {
     const suffix = header[0] === 0x1f && header[1] === 0x8b ? ".tsv.gz" : ".tsv";
     const renamed = path + suffix;
@@ -191,7 +296,7 @@ async function fitLDArchives(sources, FS, workPath, fitArchive) {
       if (source.stream) {
         await fitArchive(source.url, sources.length - index - 1);
       } else {
-        stagedPath = source.staged_path || await stageInput(source, FS, path);
+        stagedPath = source.staged_path || await stageInput(source, FS, path, false, inputProgress(`${source.file ? "Reading" : "Downloading"} LD reference`, `File ${index + 1} of ${sources.length}.`, "ld", index, sources.length));
         if (!source.staged_path) downloadSeconds += (performance.now() - downloadStart) / 1000;
         await fitArchive(stagedPath, sources.length - index - 1);
       }
@@ -212,7 +317,9 @@ async function prepareCatalogInputs(data, pyodide, workPath) {
   const start = performance.now(), firstLD = data.ld[0];
   setStage("ld", firstLD.file?.name || firstLD.url);
   emit("phase", {id: currentRun, message: "Checking LD genome build", detail: "Reading LD metadata before selecting GWAS Catalog files."});
-  const metadataPath = firstLD.stream ? firstLD.url : await stageInput(firstLD, pyodide.FS, `${workPath}/ld-first`);
+  stageProgress("ld", {state: "active", detail: "Checking the reference genome build."});
+  const metadataPath = firstLD.stream ? firstLD.url : await stageInput(firstLD, pyodide.FS, `${workPath}/ld-first`, false,
+    inputProgress("Reading LD metadata", "First reference file.", "ld", 0, data.ld.length));
   // Keep a staged first archive for fitting, avoiding a second download or copy.
   if (!firstLD.stream) firstLD.staged_path = metadataPath;
   pyodide.globals.set("ld_metadata_path", metadataPath);
@@ -223,6 +330,7 @@ async function prepareCatalogInputs(data, pyodide, workPath) {
   data.options.ld_genome_build = build;
   data.options.sumstats_genome_build = build;
   emit("ld-metadata", {id: currentRun, genome_build: build});
+  stageProgress("ld", {state: "waiting", detail: `${build} reference identified; matrices load before fitting.`});
   for (let index = 0; index < data.sumstats.length; index++) {
     const source = data.sumstats[index];
     if (!source.catalog) continue;
@@ -230,10 +338,18 @@ async function prepareCatalogInputs(data, pyodide, workPath) {
     emit("phase", {id: currentRun, message: "Resolving GWAS Catalog study", detail: `Finding ${build} summary statistics for ${source.catalog}.`});
     pyodide.globals.set("catalog_accession", source.catalog);
     pyodide.globals.set("catalog_genome_build", build);
+    const progress = catalogProgress(source.catalog, build);
+    pyodide.globals.set("catalog_progress_callback", progress.report);
     try {
-      const url = await pyodide.runPythonAsync("await resolve_browser_gwas_catalog(catalog_accession, genome_build=catalog_genome_build)");
+      const url = await pyodide.runPythonAsync("await resolve_browser_gwas_catalog(catalog_accession, genome_build=catalog_genome_build, progress_callback=catalog_progress_callback)");
       data.sumstats[index] = {url, parallel: true};
-    } finally { pyodide.globals.delete("catalog_accession"); pyodide.globals.delete("catalog_genome_build"); }
+      emit("phase", {id: currentRun, message: "GWAS Catalog file selected", detail: `${source.catalog} · ${build}. Preparing to download ${decodeURIComponent(new URL(url).pathname.split("/").at(-1))}.`});
+    } finally {
+      progress.stop();
+      pyodide.globals.delete("catalog_progress_callback");
+      pyodide.globals.delete("catalog_accession");
+      pyodide.globals.delete("catalog_genome_build");
+    }
   }
   return (performance.now() - start) / 1000;
 }
@@ -264,7 +380,7 @@ self.onmessage = async ({data}) => {
     }
     runsStarted += 1;
     const runStart = performance.now();
-    emit("phase", {id: data.id, message: "Preparing inputs", started: true});
+    emit("phase", {id: data.id, message: "Preparing inputs", major: "inputs", started: true});
     const {expandDataURL} = await import("./sources.mjs");
     for (const kind of ["sumstats", "ld"]) {
       setStage(kind);
@@ -292,6 +408,7 @@ self.onmessage = async ({data}) => {
     const request = {options: data.options, sumstats_paths: []};
     // Stream into the virtual filesystem without assembling another full JS buffer.
     // Summary statistics stay available across chromosomes; LD archives do not.
+    stageProgress("sumstats", {state: "active", detail: "Preparing summary-statistics inputs."});
     let downloadSeconds = await prepareCatalogInputs(data, pyodide, workPath);
     for (let index = 0; index < data.sumstats.length; index++) {
       const source = data.sumstats[index];
@@ -303,28 +420,38 @@ self.onmessage = async ({data}) => {
       });
       const downloadStart = performance.now();
       const inputPath = `${workPath}/sumstats-${index}`;
+      const progress = inputProgress(`${source.file ? "Reading" : "Downloading"} summary statistics`, `File ${index + 1} of ${data.sumstats.length}.`, "sumstats", index, data.sumstats.length);
       request.sumstats_paths.push(
         source.parallel
-          ? (await stageRangedInput(source, pyodide.FS, inputPath, true) || await stageInput(source, pyodide.FS, inputPath, true))
-          : await stageInput(source, pyodide.FS, inputPath, true)
+          ? (await stageRangedInput(source, pyodide.FS, inputPath, true, progress) || await stageInput(source, pyodide.FS, inputPath, true, progress))
+          : await stageInput(source, pyodide.FS, inputPath, true, progress)
       );
       downloadSeconds += (performance.now() - downloadStart) / 1000;
     }
+    stageProgress("sumstats", {state: "active", detail: "Reading and organizing summary statistics by chromosome."});
+    let archiveIndex = 1;
+    pyodide.globals.set("fit_progress_callback", payload => {
+      const progress = modelProgress(JSON.parse(payload), archiveIndex, data.ld.length);
+      stageProgress(progress.stage, progress);
+    });
+    pyodide.globals.set("memory_callback", () => pyodide._module.HEAPU8.buffer.byteLength);
     pyodide.globals.set("request_json", JSON.stringify(request));
     pyodide.globals.set("progress_callback", (chromosome, completed, total) => {
       emit("chromosome-complete", {
         id: data.id, chromosome, completed, total,
-        message: `Finished chromosome ${chromosome} (${completed} of ${total}).`,
+        message: `Finished chromosome ${chromosome}. ${completed} chromosome(s) complete.`,
       });
     });
     pyodide.globals.set("stage_callback", (stage) => {
       setStage(stage, errorSource);
+      if (["inference", "results"].includes(stage)) return;
       emit("phase", {id: data.id, message: {sumstats: "Reading summary statistics", ld: "Loading LD reference", harmonization: "Matching summary statistics to LD", inference: "Fitting model", results: "Preparing results"}[stage] || stage});
     });
     setStage("sumstats", data.sumstats.map(s => s.file?.name || s.url).join(", "));
     emit("log", {id: data.id, message: `Reading summary statistics with the ${data.options.sumstats_format} format.`});
     await pyodide.runPythonAsync("start_request(request_json)");
     requestStarted = true;
+    stageProgress("sumstats", {state: "done", completed: data.sumstats.length, total: data.sumstats.length, detail: "Summary statistics ready."});
     // The parsed chromosome tables no longer depend on their compressed input.
     // Unlink it before any LD metadata or model arrays enter the wasm heap.
     for (const path of request.sumstats_paths) {
@@ -332,10 +459,12 @@ self.onmessage = async ({data}) => {
     }
     downloadSeconds += await fitLDArchives(
       data.ld, pyodide.FS, workPath, async (path, remaining) => {
+        archiveIndex = data.ld.length - remaining;
         emit("phase", {
           id: data.id,
+          major: "fitting",
           message: `Fitting ${data.options.model || "VIPRS"}`,
-          detail: "Harmonizing and fitting the current chromosome; its LD data will then be released.",
+          detail: `Reference file ${archiveIndex} of ${data.ld.length}.`,
         });
         pyodide.globals.set("ld_path", path);
         pyodide.globals.set("remaining_ld_archives", remaining);
@@ -349,7 +478,9 @@ self.onmessage = async ({data}) => {
         }
       }
     );
+    for (const stage of ["ld", "harmonization", "fitting"]) stageProgress(stage, {state: "done", completed: 1, total: 1, detail: "Complete"});
     setStage("results");
+    emit("phase", {id: data.id, major: "results", message: "Combining chromosome results and preparing downloads"});
     output = JSON.parse(await pyodide.runPythonAsync("finish_request()"));
     requestFinished = true;
     emit("log", {id: data.id, message: `Inputs streamed in ${downloadSeconds.toFixed(1)}s. Summary statistics format: ${data.options.sumstats_format}; model: ${data.options.model}; components: ${data.options.components}; maximum iterations: ${data.options.max_iter}; tolerance: ${data.options.tolerance}; seed: ${data.options.seed}.`});
@@ -368,6 +499,8 @@ self.onmessage = async ({data}) => {
       const {pyodide} = runtime;
       try {
         if (requestStarted && !requestFinished) pyodide.runPython("abort_request()");
+        pyodide.globals.delete("fit_progress_callback");
+        pyodide.globals.delete("memory_callback");
         pyodide.globals.delete("request_json");
         pyodide.globals.delete("progress_callback");
         pyodide.globals.delete("stage_callback");

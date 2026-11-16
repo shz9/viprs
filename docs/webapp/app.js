@@ -1,10 +1,15 @@
+import {formatDuration} from "./time.js";
 import "./errors.js";
+import {resultsPanel} from "./results.js";
 import {SUMSTATS_FORMAT_HELP} from "./formats.js";
 import {EXAMPLE, HOSTED_LD_PANELS, LD_ANCESTRIES, resolveDataURL, selectLocalFiles} from "./sources.mjs";
 const $ = (id) => document.getElementById(id);
 let worker = null, runtimeState = "idle", activeRun = null, nextRun = 0;
 let session = null, runtimeInfo = null, errorURL = null;
+let runtimeTimer = null;
+const RUNTIME_INACTIVITY_MS = 180000;
 let timer = null, startedAt = 0, downloadURLs = [], resultRows = {};
+let resultTSV = "", tableSearchVersion = 0, tableSearchTimer = null;
 const sumstatsFormatHelp = SUMSTATS_FORMAT_HELP;
 const sumstatsFormatAliases = {
   plink: "plink2", ssf: "gwascatalog", "gwas-ssf": "gwascatalog",
@@ -203,7 +208,19 @@ function status(label, title, message, error = false) {
   $("activity-title").textContent = title;
   $("status").textContent = message;
 }
-function runtimeStatus(state, text) {
+function runtimeStatus(state, text, source = null) {
+  clearTimeout(runtimeTimer); runtimeTimer = null;
+  if (state === "loading") {
+    const current = worker;
+    // This timer runs on the page, so it can recover even if a synchronous
+    // Python import has blocked the worker's own event loop.
+    runtimeTimer = setTimeout(() => {
+      if (worker !== current || runtimeState !== "loading") return;
+      current?.terminate(); worker = null;
+      runtimeStatus("error", "Initialization stalled — retry available");
+      fail(VIPRSErrors.describe(new Error(`No initialization progress for three minutes. Last step: ${text}. Check the connection to the package host, then retry the runtime.`), "runtime", source));
+    }, RUNTIME_INACTIVITY_MS);
+  }
   runtimeState = state;
   $("runtime-state").dataset.state = state;
   $("runtime-text").textContent = text;
@@ -213,8 +230,40 @@ function runtimeStatus(state, text) {
 function releaseResults() {
   downloadURLs.forEach((url) => URL.revokeObjectURL(url)); downloadURLs = [];
   $("results").hidden = $("metrics").hidden = $("timing-summary").hidden = $("elapsed-line").hidden = true;
-  $("result-rows").replaceChildren(); resultRows = {};
-  $("download").removeAttribute("href"); $("download-report").removeAttribute("href");
+  $("result-rows").replaceChildren(); resultRows = {}; resultTSV = "";
+  tableSearchVersion++; clearTimeout(tableSearchTimer);
+  $("table-rsid").value = ""; $("table-empty").hidden = true;
+  resultsPanel.clear();
+  $("download").removeAttribute("href");
+}
+const progressStages = ["sumstats", "harmonization", "fitting"];
+function resetProgress() {
+  $("run-progress").hidden = false;
+  for (const stage of progressStages) updateProgress({stage, state: "waiting", completed: 0, total: 1, detail: "Waiting"});
+}
+function updateProgress(data) {
+  if (![...progressStages, "ld"].includes(data.stage)) return;
+  if (progressStages.includes(data.stage)) {
+    const bar = $("progress-" + data.stage), row = $("progress-" + data.stage + "-row");
+    row.dataset.state = data.state;
+    $("progress-" + data.stage + "-detail").textContent = data.detail || (data.state === "done" ? "Complete" : "In progress");
+    bar.setAttribute("aria-valuetext", $("progress-" + data.stage + "-detail").textContent);
+    if (Number.isFinite(data.total) && data.total > 0 && Number.isFinite(data.completed)) {
+      bar.max = data.total; bar.value = Math.max(0, Math.min(data.total, data.completed));
+    } else if (data.state === "active") bar.removeAttribute("value");
+    else { bar.max = 1; bar.value = data.state === "done" ? 1 : 0; }
+  }
+  const description = [data.heading, data.message].filter(Boolean).join(" · ");
+  if (description) status("Running", data.stage === "fitting" ? "Model fitting" : $("activity-title").textContent, description);
+  if (description && !data.quiet) log(description);
+}
+function stopProgress(state) {
+  for (const stage of progressStages) {
+    const row = $("progress-" + stage + "-row");
+    if (row.dataset.state !== "active") continue;
+    const bar = $("progress-" + stage);
+    updateProgress({stage, state, completed: bar.value, total: bar.max, detail: state === "error" ? "Stopped after an error" : "Cancelled"});
+  }
 }
 function finish() {
   activeRun = null; clearInterval(timer); timer = null;
@@ -248,6 +297,7 @@ function fail(error, stage = "runtime") {
   clearError();
   log(detail.title + ": " + detail.message);
   status("Error", detail.title, detail.message, true);
+  stopProgress("error");
   finish();
   $("error-advice").textContent = detail.advice;
   const report = VIPRSErrors.safeReport({schema_version: 1, timestamp: new Date().toISOString(),
@@ -269,29 +319,34 @@ function fail(error, stage = "runtime") {
   } else $("error-support").focus();
 }
 function beginTimer() {
-  startedAt = performance.now(); $("elapsed").textContent = "0s";
+  startedAt = performance.now(); $("elapsed").textContent = formatDuration(0);
   $("elapsed-line").hidden = false;
-  timer = setInterval(() => { $("elapsed").textContent = `${Math.floor((performance.now() - startedAt) / 1000)}s`; }, 1000);
+  timer = setInterval(() => { $("elapsed").textContent = formatDuration((performance.now() - startedAt) / 1000); }, 1000);
 }
 
 function startWorker() {
   worker?.terminate();
-  runtimeStatus("loading", "Preparing runtime");
-  const current = new Worker(new URL("worker.js?v=runtime-0.2.5", import.meta.url));
+  const current = new Worker(new URL("worker.js?v=runtime-0.2.5-progress-4", import.meta.url));
   worker = current;
+  runtimeStatus("loading", "Preparing runtime");
+  log("Starting runtime initialization. Packages will load before inference begins.");
   current.onmessage = ({data}) => {
-    if (worker !== current) return;
+    if (worker !== current || !data || typeof data !== "object") return;
     if (data.type === "ld-metadata") {
       $("ld-build-guidance").textContent = `LD genome build: ${buildLabel(data.genome_build)}. Match your summary statistics to this build.`;
       $("catalog-build-hint").textContent = `Looking for ${buildLabel(data.genome_build)} summary statistics.`;
     }
-    if (data.type === "runtime-status") runtimeStatus("loading", data.message);
+    if (data.type === "runtime-status") {
+      runtimeStatus("loading", data.message, data.source);
+      log(data.message);
+      status("Loading", "Loading inference environment", data.message);
+    }
     if (data.type === "ready") {
       runtimeInfo = data.runtime || runtimeInfo;
       runtimeStatus("ready", "Runtime ready");
       syncInputs();
-      if (activeRun === null && $("status-badge").textContent === "Ready") {
-        $("status").textContent = "Select your inputs and model.";
+      if (activeRun === null) {
+        status("Ready", "Ready for inference", "Select your inputs and model.");
       }
       log(`Runtime initialized in ${data.seconds.toFixed(1)}s; ready for reuse.`);
     }
@@ -300,13 +355,16 @@ function startWorker() {
     }
     if (data.type === "log" && (data.id == null || data.id === activeRun)) log(data.message);
     if (data.id !== activeRun || activeRun === null) return;
+    if (data.type === "stage-progress") updateProgress(data);
     if (data.type === "phase") {
       if (data.started) beginTimer();
-      status("Running", data.message, data.detail || "Preparing inputs for inference.");
-      log(data.message + (data.detail ? ": " + data.detail : ""));
+      const majorTitles = {inputs: "Preparing inputs", fitting: "Model fitting", results: "Preparing results"};
+      status("Running", majorTitles[data.major] || $("activity-title").textContent,
+        data.message + (data.detail ? ": " + data.detail : ""));
+      if (!data.quiet) log(data.message + (data.detail ? ": " + data.detail : ""));
     }
     if (data.type === "chromosome-complete") {
-      status("Running", "Fit progress", data.message);
+      status("Running", $("activity-title").textContent, data.message);
       log(data.message);
     }
     if (data.type === "result") {
@@ -365,9 +423,7 @@ function sourceInputs(kind) {
     stream: kind === "ld" && /^hf:\/\//i.test(raw),
   }));
 }
-function renderRows() {
-  const chromosome = $("chromosome-filter").value;
-  const rows = resultRows[chromosome] || [];
+function drawTableRows(rows, caption) {
   $("result-rows").replaceChildren();
   for (const row of rows) {
     const tr = document.createElement("tr");
@@ -378,25 +434,64 @@ function renderRows() {
     }
     $("result-rows").append(tr);
   }
-  $("table-caption").textContent = chromosome ? `Top variants · chromosome ${chromosome}` : "Top variants · all chromosomes";
+  $("table-caption").textContent = caption;
+  $("table-empty").hidden = rows.length > 0;
 }
-$("chromosome-filter").addEventListener("change", renderRows);
-function showResult(result) {
-  for (const [id, data, type] of [["download", result.tsv, "text/tab-separated-values"], ["download-report", JSON.stringify(result.report, null, 2), "application/json"]]) {
-    const url = URL.createObjectURL(new Blob([data], {type})); downloadURLs.push(url); $(id).href = url;
+async function renderRows() {
+  const version = ++tableSearchVersion, chromosome = $("chromosome-filter").value;
+  const query = $("table-rsid").value.trim().toLowerCase();
+  if (!query) {
+    drawTableRows(resultRows[chromosome] || [], chromosome ? `Top variants · chromosome ${chromosome}` : "Top variants · all chromosomes");
+    return;
   }
+  const ids = new Set(query.split(/[\s,;]+/).filter(Boolean));
+  const lines = resultTSV.matchAll(/[^\r\n]+/g), header = lines.next().value?.[0].split("\t") || [];
+  const snpIndex = header.indexOf("SNP"), chromosomeIndex = header.indexOf("CHR");
+  drawTableRows([], "Searching the complete fitted result…"); $("table-empty").hidden = true;
+  const matches = []; let scanned = 0, count = 0;
+  for (const [line] of lines) {
+    const cells = line.split("\t");
+    if (ids.has((cells[snpIndex] || "").toLowerCase()) && (!chromosome || cells[chromosomeIndex] === chromosome)) {
+      count++;
+      if (matches.length < 200) {
+        const row = Object.fromEntries(header.map((key, index) => [key, cells[index]]));
+        for (const key of ["PIP", "BETA", "VAR_BETA"]) row[key] = row[key] ? Number(row[key]) : null;
+        matches.push(row);
+      }
+    }
+    if (++scanned % 10000 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (version !== tableSearchVersion) return;
+    }
+  }
+  if (version !== tableSearchVersion) return;
+  matches.sort((a, b) => (b.PIP || 0) - (a.PIP || 0));
+  drawTableRows(matches, `${count.toLocaleString()} matching fitted variant(s)${chromosome ? ` · chromosome ${chromosome}` : " · all chromosomes"}${count > 200 ? " · showing the first 200 matches" : ""}`);
+}
+$("chromosome-filter").addEventListener("change", () => { clearTimeout(tableSearchTimer); renderRows(); });
+$("table-rsid").addEventListener("input", () => {
+  tableSearchVersion++; clearTimeout(tableSearchTimer);
+  tableSearchTimer = setTimeout(renderRows, 180);
+});
+function showResult(result) {
+  resultTSV = result.tsv;
+  $("table-rsid").value = "";
   resultRows = {"": result.rows, ...result.chromosome_rows};
   $("chromosome-filter").replaceChildren(new Option("All chromosomes", ""));
   for (const c of result.report.chromosomes) $("chromosome-filter").add(new Option(`Chromosome ${c} · ${result.report.variants_per_chromosome[c].toLocaleString()} variants`, c));
   renderRows();
   const report = result.report;
+  resultsPanel.show(result, (id, data, type) => {
+    const url = URL.createObjectURL(new Blob([data], {type}));
+    downloadURLs.push(url); return url;
+  });
   $("variants").textContent = report.variants.toLocaleString();
   $("chromosomes").textContent = report.chromosomes.length;
   $("iterations").textContent = report.iterations;
-  $("timing-summary").textContent = `Input preparation ${report.timings.preparation_seconds.toFixed(1)}s · Model fitting ${report.timings.fit_seconds.toFixed(1)}s. Runtime initialization is excluded.`;
+  $("timing-summary").textContent = `Input preparation ${formatDuration(report.timings.preparation_seconds)} · Model fitting ${formatDuration(report.timings.fit_seconds)}. Runtime initialization is excluded.`;
   $("result-summary").textContent = `${report.model}${report.model === "VIPRSMix" ? ` · ${report.components} non-null components` : ""} · ${report.variants.toLocaleString()} variants across ${report.chromosomes.length} chromosome(s).`;
   $("results").hidden = $("metrics").hidden = $("timing-summary").hidden = false;
-  $("elapsed").textContent = `${report.timings.run_seconds.toFixed(1)}s`;
+  $("elapsed").textContent = formatDuration(report.timings.run_seconds);
   status(report.converged ? "Converged" : "Iteration limit", "Analysis complete", "");
   finish();
 }
@@ -419,15 +514,16 @@ $("inference-form").addEventListener("submit", (event) => {
     };
     if (!worker) startWorker();
     activeRun = request.id;
+    resetProgress();
     $("controls").disabled = true; $("demo").disabled = true; $("run").disabled = true; $("cancel").disabled = false;
     $("elapsed-line").hidden = true;
     $("activity").classList.add("running");
-    status(runtimeState === "ready" ? "Running" : "Queued", runtimeState === "ready" ? "Preparing inputs" : "Waiting for runtime", "You can cancel this run at any time.");
+    status(runtimeState === "ready" ? "Running" : "Queued", runtimeState === "ready" ? "Preparing inputs" : "Loading inference environment", "You can cancel this run at any time.");
     worker.postMessage(request);
   } catch (error) { fail(error, stage); }
 });
 $("cancel").addEventListener("click", () => {
-  worker?.terminate(); worker = null; finish(); releaseResults(); clearError();
+  worker?.terminate(); worker = null; stopProgress("cancelled"); finish(); releaseResults(); clearError();
   runtimeStatus("idle", "Starts when you run inference");
   status("Cancelled", "Run cancelled", "Choose your inputs and run again when ready."); log("Run cancelled; runtime released.");
 });

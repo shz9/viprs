@@ -38,6 +38,8 @@ def test_package_only_manifest_assets_and_valid_checksum(assets, tmp_path):
     before = output.read_bytes()
     with zipfile.ZipFile(output) as archive:
         assert "webapp/index.html" in archive.namelist()
+        assert "webapp/results.js" in archive.namelist()
+        assert "webapp/scoring.js" in archive.namelist()
         assert "webapp/wheels/test.whl" in archive.namelist()
         assert "webapp/LICENSE" in archive.namelist()
         assert not any("stale" in name or "unrelated" in name for name in archive.namelist())

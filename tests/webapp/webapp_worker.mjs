@@ -5,13 +5,14 @@ import vm from "node:vm";
 
 const workerSource = readFileSync(new URL("../../docs/webapp/worker.js", import.meta.url), "utf8");
 
-function worker(fetchInput = () => { throw new Error("Unexpected fetch"); }) {
+function worker(fetchInput = () => { throw new Error("Unexpected fetch"); }, overrides = {}) {
   const context = vm.createContext({
-    URL, performance,
+    URL, performance, setInterval, clearInterval,
     importScripts: () => vm.runInContext(readFileSync(new URL("../../docs/webapp/errors.js", import.meta.url), "utf8"), context),
     self: {location: {href: "https://example.org/webapp/worker.js"}, postMessage() {}},
     fetch: (url, options) => String(url).endsWith("/runtime.json")
       ? new Promise(() => {}) : fetchInput(url, options),
+    ...overrides,
   });
   vm.runInContext(workerSource, context);
   return context;
@@ -153,18 +154,22 @@ test("large range-capable inputs are downloaded in parallel into fixed offsets",
       controller.enqueue(chunk);
     }})};
   });
-  const writes = [], renames = [];
+  const writes = [], renames = [], progress = [];
   const FS = {
     open: path => ({path}), close() {},
     write(_handle, _bytes, _offset, length, position) { writes.push([position, length]); return length; },
     rename: (from, to) => renames.push([from, to]),
   };
-  assert.equal(await context.stageRangedInput({url: "https://ftp.ebi.ac.uk/large"}, FS, "/sumstats", true), "/sumstats.tsv.gz");
+  assert.equal(await context.stageRangedInput({url: "https://ftp.ebi.ac.uk/large"}, FS, "/sumstats", true, value => progress.push(value)), "/sumstats.tsv.gz");
   assert.deepEqual(ranges, [
     [0, 8 * 1024 ** 2 - 1], [8 * 1024 ** 2, 16 * 1024 ** 2 - 1],
     [16 * 1024 ** 2, 24 * 1024 ** 2 - 1], [24 * 1024 ** 2, size - 1],
   ]);
   assert.equal(writes.reduce((total, [, length]) => total + length, 0), size);
+  assert.equal(progress[0].stage, "checking");
+  const transfers = progress.filter(item => item.bytes !== undefined);
+  assert.equal(transfers.at(-1).bytes, size);
+  assert(transfers.every((item, i) => item.total === size && (!i || item.bytes >= transfers[i-1].bytes)));
   assert.deepEqual(renames, [["/sumstats", "/sumstats.tsv.gz"]]);
 });
 
@@ -296,4 +301,158 @@ test("runtime manifest and Python adapter bypass stale browser cache", async () 
   for (const path of ["runtime.json", "inference.py"]) {
     assert.equal(await context.localText(path), "fresh contents");
   }
+});
+
+
+test("package initialization reports wheel installation and import as separate stages", async () => {
+  const context = worker(), events = [], installed = [], globals = new Map();
+  context.self.postMessage = data => events.push(data);
+  const manifest = {builtin_packages: ["micropip", "numpy"], wheels: ["./wheels/a.whl#sha256=one", "./wheels/b.whl#sha256=two"]};
+  const pyodide = {globals,
+    async loadPackage(names, options) {
+      assert.deepEqual([...names], manifest.builtin_packages);
+      options.messageCallback("Loaded numpy");
+    },
+    async runPythonAsync(code) {
+      if (code.includes("micropip.install")) {
+        assert.match(code, /deps=False/);
+        installed.push(globals.get("package_url"));
+      }
+    },
+  };
+  await context.installRuntimePackages(pyodide, manifest);
+  assert.deepEqual(installed, ["https://example.org/webapp/wheels/a.whl#sha256=one", "https://example.org/webapp/wheels/b.whl#sha256=two"]);
+  assert.equal(globals.size, 0);
+  const statuses = events.filter(e => e.type === "runtime-status").map(e => e.message);
+  assert(statuses.includes("Loaded numpy"));
+  assert(statuses.some(s => s.includes("Installing model package 2/2: b.whl")));
+  assert.equal(statuses.at(-1), "Importing VIPRS and magenpy");
+});
+
+test("dependency and wheel failures retain the failing source and stop initialization", async () => {
+  const context = worker(), globals = new Map();
+  const pyodide = {globals,
+    async loadPackage(_names, options) { options.errorCallback("Could not fetch numpy"); },
+    async runPythonAsync() { assert.fail("must not install after a dependency error"); },
+  };
+  const manifest = {builtin_packages: ["numpy"], wheels: ["./wheels/broken.whl"]};
+  await assert.rejects(context.installRuntimePackages(pyodide, manifest), /Could not fetch numpy/);
+  pyodide.loadPackage = async () => {};
+  pyodide.runPythonAsync = async code => { if (code.includes("micropip.install")) throw new Error("Wheel download failed"); };
+  await assert.rejects(context.installRuntimePackages(pyodide, manifest), /Wheel download failed/);
+  assert.equal(globals.size, 0);
+  assert.equal(context.diagnostic(new Error("failure")).source, "https://example.org/webapp/wheels/broken.whl");
+});
+
+
+test("Catalog status identifies pending requests, updates elapsed wait, and clears timers", () => {
+  const timers = new Map(), messages = [];
+  let now = 0, nextTimer = 0;
+  const context = worker(undefined, {
+    performance: {now: () => now},
+    setInterval(callback) { const id = ++nextTimer; timers.set(id, callback); return id; },
+    clearInterval(id) { timers.delete(id); },
+    self: {location: {href: "https://example.org/webapp/worker.js"}, postMessage(message) { messages.push(message); }},
+  });
+  const progress = context.catalogProgress("GCST90079133", "GRCh37");
+  progress.report("request", "https://ftp.ebi.ac.uk/study/");
+  assert.match(messages.at(-1).message, /Reading GWAS Catalog file list/);
+  assert.match(messages.at(-1).detail, /study file list.*directory response.*GRCh37 \(0s\)/);
+  now = 240000;
+  [...timers.values()][0]();
+  assert.match(messages.at(-1).detail, /\(240s\)/);
+  assert.equal(messages.at(-1).quiet, true);
+  progress.report("received", "https://ftp.ebi.ac.uk/study/");
+  assert.equal(timers.size, 0);
+  progress.report("request", "https://ftp.ebi.ac.uk/study/harmonised/study.h.tsv.gz-meta.yaml");
+  assert.match(messages.at(-1).message, /Checking GWAS Catalog genome build/);
+  assert.match(messages.at(-1).detail, /study.h.tsv.gz-meta.yaml.*metadata response.*\(0s\)/);
+  progress.report("failed", "https://ftp.ebi.ac.uk/study/harmonised/study.h.tsv.gz-meta.yaml");
+  assert.equal(timers.size, 0);
+  progress.report("request", "https://ftp.ebi.ac.uk/study/harmonised/");
+  assert.match(messages.at(-1).detail, /harmonised file list/);
+  progress.stop();
+  assert.equal(timers.size, 0);
+});
+
+test("Catalog lookup failures release request timers and Python callback globals", async () => {
+  const timers = new Set(), globals = new Map();
+  const context = worker(undefined, {setInterval(callback) { timers.add(callback); return callback; }, clearInterval(callback) { timers.delete(callback); }});
+  const pyodide = {globals, runPython: () => "GRCh37", async runPythonAsync() {
+    globals.get("catalog_progress_callback")("request", "https://ftp.ebi.ac.uk/study/");
+    assert.equal(timers.size, 1);
+    throw new Error("Catalog server unavailable");
+  }};
+  await assert.rejects(context.prepareCatalogInputs({options: {}, ld: [{url: "hf://datasets/panel/chr1.zip", stream: true}], sumstats: [{catalog: "GCST90079133"}]}, pyodide, "/run"), /server unavailable/);
+  assert.equal(timers.size, 0);
+  assert.equal(globals.size, 0);
+});
+
+test("stream progress reports received bytes with known and unknown totals", async () => {
+  for (const total of [5, null]) {
+    const updates = [];
+    const context = worker(() => ({ok: true, headers: {get: () => total}, body: new ReadableStream({start(controller) {
+      controller.enqueue(new Uint8Array([0,1]));
+      controller.enqueue(new Uint8Array([2,3,4]));
+      controller.close();
+    }})}));
+    await context.stageInput({url: "https://example.org/study.tsv.gz"}, filesystem(), "/sumstats", false, value => updates.push(value));
+    assert.equal(updates[0].stage, "connecting");
+    assert.deepEqual(updates.filter(item => item.bytes !== undefined).map(item => item.bytes), [0,2,5,5]);
+    assert.equal(updates[1].total, total);
+    assert.equal(updates.at(-1).total, 5);
+  }
+});
+
+test("byte progress updates are throttled, remain precise, and finish at 100 percent", () => {
+  const messages = [];
+  let now = 0;
+  const context = worker(undefined, {performance: {now: () => now}, self: {location: {href: "https://example.org/webapp/worker.js"}, postMessage(message) { messages.push(message); }}});
+  const report = context.inputProgress("Downloading summary statistics", "File 1 of 1.");
+  messages.length = 0;
+  report({stage: "connecting"});
+  report({bytes: 1, total: 10});
+  assert.equal(messages.filter(item => item.type === "phase").length, 1);
+  now = 600;
+  report({bytes: 5, total: 10});
+  assert.match(messages.at(-1).detail, /50%/);
+  report({bytes: 10, total: 10});
+  assert.match(messages.at(-1).detail, /100%/);
+  now = 1200;
+  report({bytes: 10});
+  assert.match(messages.at(-1).detail, /received/);
+  assert(messages.filter(item => item.type === "phase").every(message => message.quiet));
+});
+
+
+test("model progress uses exact chromosome totals and keeps the iteration limit separate", () => {
+  const context = worker();
+  const event = {stage: "fitting", state: "active", chromosome: "1", model: "VIPRS", completed: 0, total: 22, iteration: 40, max_iter: 1000, variants: 100000, archive_fraction: 0};
+  const progress = context.modelProgress(event, 1, 1);
+  assert.equal(progress.heading, "Fitting VIPRS · chromosome 1 (1/22)");
+  assert.equal(progress.detail, "0/22 chromosomes complete");
+  assert.match(progress.message, /iteration 40 \(limit 1000\)/);
+  assert.equal(progress.completed, 0, "Iterations must not imply a fraction of chromosome completion");
+  assert.equal(progress.total, 22);
+  assert.match(progress.message, /100,000 variants/);
+  const completed = context.modelProgress({...event, state: "done", completed: 1, archive_fraction: 1/22}, 1, 1);
+  assert.equal(completed.state, "waiting");
+  assert.equal(completed.completed, 1);
+  assert(!completed.detail.includes("iteration"));
+  assert(!completed.message.includes("iteration"));
+  const last = context.modelProgress({...event, state: "done", chromosome: "22", completed: 22, archive_fraction: 1}, 1, 1);
+  assert.equal(last.state, "done");
+  assert.equal(last.heading, "Fitting VIPRS · chromosome 22 (22/22)");
+});
+
+test("unknown chromosome totals use explicitly labelled file progress rather than guessing", () => {
+  const context = worker();
+  const progress = context.modelProgress({stage: "fitting", state: "active", model: "VIPRSMix", chromosome: "21", completed: 0, total: null, archive_fraction: 0, iteration: 1, max_iter: 1000, variants: 48}, 1, 2);
+  assert.equal(progress.heading, "Fitting VIPRSMix · chromosome 21");
+  assert.match(progress.detail, /0 chromosome\(s\) complete · file 1\/2/);
+  assert.equal(progress.total, 2);
+  assert.equal(progress.completed, 0);
+  const loading = context.modelProgress({stage: "ld", state: "active", detail: "Reading LD metadata."}, 1, 1);
+  assert.equal(loading.total, null);
+  assert.equal(loading.heading, "Loading LD reference");
 });

@@ -136,6 +136,13 @@ def test_multi_chromosome_fit(model, multichrom_inputs):
     assert report["model"] == model
     assert report["components"] == (3 if model == "VIPRSMix" else 1)
     assert report["timings"]["fit_seconds"] > 0
+    for chromosome, diagnostic in report["chromosome_diagnostics"].items():
+        assert diagnostic["fit_seconds"] > 0
+        assert diagnostic["variants"] == 48
+        assert diagnostic["wasm_heap_bytes_at_fit_end"] is None
+        assert len(diagnostic["elbo"]) >= 3
+    assert all(0 < row["MAF"] <= 0.5 for row in rows)
+    assert all(isinstance(row["GWAS_Z"], float) for row in rows)
     other_rows, other_report = browser.native_fit([combined], [combined_ld], options)
     assert other_report["elbo"] == report["elbo"]
     assert other_rows == rows
@@ -166,8 +173,12 @@ def test_matches_direct_loader_and_fit(multichrom_inputs, tmp_path, model_name):
                  if model_name == "VIPRSMix" else VIPRS(chromosome_gdl, threads=1))
         np.random.seed(0)
         model.fit(disable_pbar=True)
+        expected_table = model.to_table()
+        maf = chromosome_gdl.ld[chromosome].maf
+        expected_table["MAF"] = np.minimum(maf, 1.0 - maf)
+        expected_table["GWAS_Z"] = chromosome_gdl.sumstats_table[chromosome].z_score
         expected_rows.extend(json.loads(
-            model.to_table().to_json(orient="records", double_precision=15)
+            expected_table.to_json(orient="records", double_precision=15)
         ))
         elbo_histories.append(model.history["ELBO"])
         expected_iterations += model.optim_result.nit
@@ -470,3 +481,52 @@ def test_selected_format_controls_column_conversion(tmp_path):
     assert session.sumstats_tables[22].z_score.tolist() == pytest.approx([-5])
     with pytest.raises(ValueError, match="fastgwa.*chromosome column"):
         browser.BrowserFitSession(source, {"sumstats_format": "fastgwa"})
+
+
+def test_plot_payload_is_bounded_and_retains_strong_signals():
+    rows = [dict(CHR=22, SNP=f"rs{i}", POS=i + 1, A1="A", A2="G",
+                 PIP=0.01, BETA=0.001, VAR_BETA=0.0001, MAF=0.2, GWAS_Z=1.)
+            for i in range(40001)]
+    rows[1]["PIP"] = 0.99
+    rows[3]["GWAS_Z"] = 100.
+    output = json.loads(browser.serialize_result(rows, {"chromosomes": ["22"]}))
+    plotted = output["plot_data"]
+    assert plotted["sampled"] is True
+    assert plotted["total"] == len(rows)
+    assert len(plotted["rows"]) <= 30000
+    assert {"rs1", "rs3"}.issubset({row["SNP"] for row in plotted["rows"]})
+    assert len(output["tsv"].splitlines()) == len(rows) + 1
+
+
+def test_small_plot_payload_preserves_all_variants():
+    rows = [dict(CHR=22, SNP="rs1", A1="A", A2="G", PIP=0.5, BETA=0.01, VAR_BETA=0.001)]
+    output = json.loads(browser.serialize_result(rows, {"chromosomes": ["22"]}))
+    assert output["plot_data"] == {"rows": rows, "total": 1, "sampled": False}
+
+
+@pytest.mark.parametrize("model", ["VIPRS", "VIPRSMix"])
+def test_browser_stage_progress_reports_actual_chromosomes_and_iteration_limits(multichrom_inputs, monkeypatch, model):
+    _, _, combined, combined_ld = multichrom_inputs
+    events = []
+    monkeypatch.setattr(browser, "fit_progress_callback", lambda payload: events.append(json.loads(payload)), raising=False)
+    rows, report = browser.native_fit([combined], [combined_ld], {"model": model, "sumstats_format": "magenpy", "components": 3})
+    starts = [event for event in events if event["stage"] == "fitting" and event["state"] == "active" and not event.get("quiet")]
+    assert [(e["chromosome"], e["completed"], e["total"]) for e in starts] == [("21", 0, 2), ("22", 1, 2)]
+    assert all(e["model"] == model and e["variants"] == 48 and e["max_iter"] == 1000 for e in starts)
+    finished = [event for event in events if event["stage"] == "fitting" and event["state"] == "done"]
+    assert [(e["chromosome"], e["completed"], e["total"]) for e in finished] == [("21", 1, 2), ("22", 2, 2)]
+    assert all(e["iteration"] == report["chromosome_diagnostics"][e["chromosome"]]["iterations"] for e in finished)
+    assert any(e["stage"] == "ld" and e["state"] == "active" and e.get("chromosome") == "21" for e in events)
+    assert any(e["stage"] == "harmonization" and e["state"] == "done" and e["total"] == 2 for e in events)
+    assert any(e.get("quiet") and e["stage"] == "fitting" for e in events)
+    assert report["chromosomes"] == ["21", "22"]
+
+
+def test_progress_does_not_guess_unread_ld_chromosome_counts(multichrom_inputs, monkeypatch):
+    summaries, archives, _, _ = multichrom_inputs
+    events = []
+    monkeypatch.setattr(browser, "fit_progress_callback", lambda payload: events.append(json.loads(payload)), raising=False)
+    browser.native_fit(summaries, archives, {"sumstats_format": "magenpy"})
+    starts = [e for e in events if e["stage"] == "fitting" and e["state"] == "active" and not e.get("quiet")]
+    assert starts[0]["total"] is None
+    assert starts[1]["total"] == 2

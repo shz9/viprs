@@ -99,3 +99,68 @@ def test_grch38_discovery_requires_matching_metadata():
     documents[directory + "study.tsv.gz-meta.yaml"] = "genome_assembly: GRCh37"
     with pytest.raises(ValueError, match="no GRCh38/hg38"):
         asyncio.run(resolve_browser_gwas_catalog("GCST005195", read_text, "GRCh38"))
+
+
+@pytest.mark.parametrize("build", ["GRCh37", "GRCh38"])
+def test_lookup_reports_each_real_request_and_completion(build):
+    directory = gwas_catalog_directory("GCST90079133")
+    metadata_url = directory + "harmonised/study.h.tsv.gz-meta.yaml"
+    documents = {
+        directory: '<a href="harmonised/">harmonised</a>',
+        directory + "harmonised/": '<a href="study.h.tsv.gz">data</a><a href="study.h.tsv.gz-meta.yaml">metadata</a>',
+        metadata_url: f"genome_assembly: {build}",
+    }
+    events = []
+
+    async def read_text(url):
+        assert events[-1] == ("request", url)
+        return documents[url]
+
+    result = asyncio.run(resolve_browser_gwas_catalog(
+        "GCST90079133", read_text, build, lambda event, url: events.append((event, url))
+    ))
+    assert result == directory + "harmonised/study.h.tsv.gz"
+    assert events == [item for url in documents for item in [("request", url), ("received", url)]]
+
+
+def test_failed_metadata_request_reports_failure_before_trying_next_candidate():
+    directory = gwas_catalog_directory("GCST90079133")
+    metadata_url = directory + "harmonised/study.h.tsv.gz-meta.yaml"
+    documents = {
+        directory: '<a href="harmonised/">harmonised</a>',
+        directory + "harmonised/": '<a href="study.h.tsv.gz">data</a><a href="study.h.tsv.gz-meta.yaml">metadata</a><a href="study-build37.f.tsv.gz">fallback</a>',
+    }
+    events = []
+
+    async def read_text(url):
+        if url == metadata_url:
+            raise ConnectionError("metadata unavailable")
+        return documents[url]
+
+    assert asyncio.run(resolve_browser_gwas_catalog(
+        "GCST90079133", read_text, progress_callback=lambda event, url: events.append((event, url))
+    )).endswith("study-build37.f.tsv.gz")
+    assert events[-2:] == [("request", metadata_url), ("failed", metadata_url)]
+
+
+def test_pending_lookup_reports_request_before_waiting_for_server():
+    async def check():
+        started = asyncio.Event()
+        release = asyncio.Event()
+        events = []
+
+        async def read_text(url):
+            started.set()
+            await release.wait()
+            return '<a href="study-build37.tsv.gz">data</a>'
+
+        task = asyncio.create_task(resolve_browser_gwas_catalog(
+            "GCST90079133", read_text, progress_callback=lambda event, url: events.append((event, url))
+        ))
+        await started.wait()
+        assert [event for event, _ in events] == ["request"]
+        release.set()
+        await task
+        assert [event for event, _ in events] == ["request", "received"]
+
+    asyncio.run(check())
