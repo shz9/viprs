@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>VIPRS Gaussian with a right-tail threshold</title>
+  <defs>
+    <clipPath id="right-tail"><path d="M41 0h23v64H41z"/></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="12" fill="#f4f1e8"/>
+  <path d="M6 51C13 51 17 48 22 34C26 23 28 14 32 14S38 23 42 34C47 48 51 51 58 51Z" fill="#dce8d8"/>
+  <path d="M6 51C13 51 17 48 22 34C26 23 28 14 32 14S38 23 42 34C47 48 51 51 58 51Z" fill="#e7a091" clip-path="url(#right-tail)"/>
+  <path d="M6 51h52" fill="none" stroke="#9aa995" stroke-width="2" stroke-linecap="round"/>
+  <path d="M6 51C13 51 17 48 22 34C26 23 28 14 32 14S38 23 42 34C47 48 51 51 58 51" fill="none" stroke="#205540" stroke-width="1.75" stroke-linecap="round"/>
+  <path d="M41 24v27" fill="none" stroke="#c34f3e" stroke-width="1.5"/>
+</svg>
