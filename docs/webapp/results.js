@@ -1,3 +1,4 @@
+import {getLDBrowserURL} from "./sources.mjs";
 import {formatDuration} from "./time.js";
 import {getScoringGuide, genotypeFormats, recommendedTool, platformGuidance} from "./scoring.js";
 
@@ -272,7 +273,7 @@ function drawWeights() {
   const line=(x1,y1,x2,y2,color="#dcded2")=>{ctx.beginPath();ctx.strokeStyle=color;ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();};
   let rows=plotRows.filter(r=>!chromosome || String(r.CHR)===chromosome), xValue, xMin=0, xMax=1, yValue, yMax=1, lowerValue=null, lowerMax=1;
   let description="", xLabel="", upperLabel="", lowerLabel="", centers=[];
-  $("locus-browser").hidden=true;
+  $("locus-browser").hidden=true; $("locus-ld-browser").hidden=true;
   if(kind==="trumpet") {
     rows=rows.filter(r=>finite(r.MAF)&&Number(r.MAF)>0&&Number(r.MAF)<=.5&&finite(r.BETA));
     const dosage = $("trumpet-scale").value === "dosage";
@@ -307,12 +308,17 @@ function drawWeights() {
     xMin=Math.max(1,(center||1)-window);xMax=(center||1)+window;
     rows=valid.filter(r=>r.POS>=xMin&&r.POS<=xMax);xValue=r=>Number(r.POS);yValue=r=>Number(r.PIP);yMax=1;
     xLabel=`Chromosome ${c} position (Mb)`;upperLabel="PIP";
-    description=`Local posterior inclusion probabilities in a ±${window/1000} kb window. Genomic positions give context among neighboring fitted variants. Green points have PIP < 0.5; coral points have PIP ≥ 0.5. Gene models are available in the linked UCSC genome browser when the genome build is known.`;
+    description=`Local posterior inclusion probabilities in a ±${window/1000} kb window. Genomic positions give context among neighboring fitted variants. Green points have PIP < 0.5; coral points have PIP ≥ 0.5. Gene models are available in the linked UCSC genome browser when the genome build is known. The LD browser shows regional LD for supported reference panels.`;
     if(build()) {
       const chromosome = String(c).replace(/^chr/i, ""), start = Math.floor(xMin), end = Math.ceil(xMax);
       const database = build() === "GRCh37" ? "hg19" : "hg38";
       $("locus-browser").href = "https://genome.ucsc.edu/cgi-bin/hgTracks?" + new URLSearchParams({db: database, position: `chr${chromosome}:${start}-${end}`});
       $("locus-browser").hidden = false;
+      const ldURL = getLDBrowserURL(result.report, chromosome, start, end);
+      if (ldURL) {
+        $("locus-ld-browser").href = ldURL;
+        $("locus-ld-browser").hidden = false;
+      }
     }
   }
   $("weight-plot-description").textContent=description;
@@ -351,7 +357,7 @@ export const resultsPanel = {
     $("variant-detail").textContent="Select a variant to see its position, alleles and posterior estimates.";
     $("variant-id").value="";$("locus-center").value="";
     exports.clear(); outputChosen = false; updateDownload();
-    $("locus-browser").hidden=true;activate("summary");
+    $("locus-browser").hidden=true; $("locus-ld-browser").hidden=true;activate("summary");
   },
   show(next, download) {
     this.clear();result=next;makeDownload=download;

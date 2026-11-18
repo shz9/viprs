@@ -1,8 +1,8 @@
 // Display metadata for published panels; archive metadata is checked before Catalog lookup.
 export const LD_ANCESTRIES = {EUR: "European", AFR: "African", AMR: "Admixed American", CSA: "Central/South Asian", EAS: "East Asian", MID: "Middle Eastern"};
 export const HOSTED_LD_PANELS = {
-  ukb: {name: "UK Biobank", repository: "shz9/ukb-ld", genome_build: "GRCh37", build_label: "GRCh37", snp_set: "HapMap3", ancestries: Object.keys(LD_ANCESTRIES), description: "LD between HapMap3 variants from imputed UK Biobank genotypes, with approximately independent LD blocks."},
-  "hgdp-1kg": {name: "HGDP + 1000 Genomes", repository: "shz9/hgdp-1kg-ld", genome_build: "GRCh38", build_label: "GRCh38", snp_set: "MAF > 1%", ancestries: Object.keys(LD_ANCESTRIES), description: "LD from unrelated HGDP + 1000 Genomes participants, covering up to 2,408,970 variants with minor allele frequency above 1%, with approximately independent LD blocks."},
+  ukb: {browser_ref: "ukb-hapmap3", name: "UK Biobank", repository: "shz9/ukb-ld", genome_build: "GRCh37", build_label: "GRCh37", snp_set: "HapMap3", ancestries: Object.keys(LD_ANCESTRIES), description: "LD between HapMap3 variants from imputed UK Biobank genotypes, with approximately independent LD blocks."},
+  "hgdp-1kg": {browser_ref: "hgdp-1kg", name: "HGDP + 1000 Genomes", repository: "shz9/hgdp-1kg-ld", genome_build: "GRCh38", build_label: "GRCh38", snp_set: "MAF > 1%", ancestries: Object.keys(LD_ANCESTRIES), description: "LD from unrelated HGDP + 1000 Genomes participants, covering up to 2,408,970 variants with minor allele frequency above 1%, with approximately independent LD blocks."},
 };
 
 export const EXAMPLE = Object.freeze({
@@ -129,4 +129,28 @@ export function resolveDataURL(input, baseURL) {
     }
   }
   return url.href;
+}
+
+// Use completed-run sources, never the current input selectors or build alone.
+export function getLDBrowserURL(report, chromosome, start, end) {
+  chromosome = String(chromosome).replace(/^chr/i, "");
+  if (!/^(?:[1-9]|1[0-9]|2[0-2])$/.test(chromosome) ||
+      !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start) return null;
+  const links = new Set();
+  for (const source of report.inputs?.ld || []) {
+    let url;
+    try { url = new URL(resolveDataURL(source, "https://huggingface.co/")); }
+    catch { continue; }
+    if (url.hostname !== "huggingface.co") continue;
+    for (const panel of Object.values(HOSTED_LD_PANELS)) {
+      const prefix = `/datasets/${panel.repository}/resolve/`;
+      if (!url.pathname.startsWith(prefix) || report.genome_build !== panel.genome_build) continue;
+      const parts = url.pathname.slice(prefix.length).split("/");
+      const [, population, archive] = parts;
+      if (parts.length !== 3 || !panel.ancestries.includes(population) || archive !== `chr_${chromosome}.zip`) continue;
+      const params = new URLSearchParams({ref: panel.browser_ref, pop: population, chr: chromosome, start, end});
+      links.add("https://shz9.github.io/ld_browser/?" + params);
+    }
+  }
+  return links.size === 1 ? [...links][0] : null;
 }

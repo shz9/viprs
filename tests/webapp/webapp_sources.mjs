@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {EXAMPLE, resolveDataURL, globMatcher, selectLocalFiles, expandDataURL} from "../../docs/webapp/sources.mjs";
+import {EXAMPLE, getLDBrowserURL, resolveDataURL, globMatcher, selectLocalFiles, expandDataURL} from "../../docs/webapp/sources.mjs";
 const base = "https://example.org/viprs/webapp/";
 
 test("supplied HF URI resolves to the actual LD archive", () => {
@@ -78,4 +78,38 @@ test("unsupported hosts, unmatched patterns, API failures and excessive matches 
 test("explicit URLs bypass listing APIs and retain query strings", async () => {
   const url = "https://example.org/chr_22.zip?download=1";
   assert.deepEqual(await expandDataURL(url, base, () => assert.fail("must not list")), [url]);
+});
+
+test("LD browser links preserve reference, ancestry and inclusive region bounds", () => {
+  for (const [repository, build, reference] of [
+    ["ukb-ld", "GRCh37", "ukb-hapmap3"], ["hgdp-1kg-ld", "GRCh38", "hgdp-1kg"],
+  ]) for (const population of ["EUR", "AFR", "AMR", "CSA", "EAS", "MID"]) {
+    for (const source of [
+      `hf://datasets/shz9/${repository}/${population}/chr_22.zip`,
+      `https://huggingface.co/datasets/shz9/${repository}/resolve/main/${population}/chr_22.zip?download=1`,
+      `hf://datasets/shz9/${repository}@v1/${population}/chr_22.zip`,
+    ]) {
+      const report = {genome_build: build, inputs: {ld: [source]}};
+      const url = new URL(getLDBrowserURL(report, "chr22", 20000000, 20500000));
+      assert.equal(url.origin + url.pathname, "https://shz9.github.io/ld_browser/");
+      assert.deepEqual(Object.fromEntries(url.searchParams), {
+        ref: reference, pop: population, chr: "22", start: "20000000", end: "20500000",
+      });
+    }
+  }
+});
+
+test("LD browser uses the plotted chromosome's source and hides unsupported or ambiguous panels", () => {
+  const ld = ["hf://datasets/shz9/ukb-ld/EUR/chr_1.zip", "hf://datasets/shz9/ukb-ld/AFR/chr_22.zip"];
+  const report = {genome_build: "GRCh37", inputs: {ld}};
+  assert.equal(new URL(getLDBrowserURL(report, 22, 1, 100)).searchParams.get("pop"), "AFR");
+  for (const input of [undefined, [], ["chr_22.zip"], ["https://example.org/ukb-ld/EUR/chr_22.zip"],
+    ["hf://datasets/shz9/ukb-ld/UNKNOWN/chr_22.zip"],
+    [...ld, "hf://datasets/shz9/ukb-ld/EUR/chr_22.zip"]]) {
+    assert.equal(getLDBrowserURL({...report, inputs: {ld: input}}, 22, 1, 100), null);
+  }
+  assert.equal(getLDBrowserURL({...report, genome_build: "GRCh38"}, 22, 1, 100), null);
+  assert.equal(getLDBrowserURL(report, 2, 1, 100), null);
+  for (const [start, end] of [[0, 100], [100, 1], [1.5, 100], [1, NaN]])
+    assert.equal(getLDBrowserURL(report, 22, start, end), null);
 });

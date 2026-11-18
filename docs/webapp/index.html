@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Estimate variant effect sizes and polygenic score weights from GWAS summary statistics and LD reference data with VIPRS.">
   <title>VIPRS · Polygenic score inference in the browser</title>
+  <link rel="icon" type="image/svg+xml" sizes="any" href="favicon.svg">
   <link rel="stylesheet" href="app.css">
   <script src="app.js?v=runtime-0.2.5-progress-4" type="module"></script>
 </head>
@@ -217,8 +218,8 @@
         <p class="hint">Select a point to inspect it. Keyboard alternative: search a plotted variant by its exact SNP ID below.</p>
         <form id="variant-search" class="variant-search"><label for="variant-id">Variant ID</label><input id="variant-id" placeholder="e.g. rs12345" required><button type="submit">Inspect variant</button></form>
         <div id="variant-detail" class="variant-detail" aria-live="polite">Select a variant to see its position, alleles and posterior estimates.</div>
-        <div class="downloads plot-exports"><button id="save-plot" type="button">Save plot as PNG ↓</button><a id="locus-browser" class="button" target="_blank" rel="noopener noreferrer" hidden>Open locus in UCSC ↗</a></div>
-        <p class="hint">Local context uses genomic coordinates and neighboring fitted variants. Gene annotations are available through build-specific UCSC and Ensembl links; opening a link sends the region to that provider. VIPRS PIPs describe this polygenic model and should not be interpreted as fine-mapping credible sets.</p>
+        <div class="downloads plot-exports"><button id="save-plot" type="button">Save plot as PNG ↓</button><a id="locus-browser" class="button" target="_blank" rel="noopener noreferrer" hidden>Open locus in UCSC ↗</a><a id="locus-ld-browser" class="button" target="_blank" rel="noopener noreferrer" hidden>Open locus in LD browser ↗</a></div>
+        <p class="hint">Local context uses genomic coordinates and neighboring fitted variants. Gene annotations are available through build-specific UCSC and Ensembl links. The LD browser shows regional LD for supported reference panels; opening a link sends the region to that provider. VIPRS PIPs describe this polygenic model and should not be interpreted as fine-mapping credible sets.</p>
       </div>
     </section>
 
