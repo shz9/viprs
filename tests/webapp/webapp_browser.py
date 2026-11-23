@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import threading
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "build" / "wasm" / "browser-test"
@@ -47,10 +47,12 @@ def main():
             page = browser.new_page(accept_downloads=True)
             page.set_default_timeout(300000)
             page.set_viewport_size({"width": 1440, "height": 1000})
-            errors, workers, requests = [], [], []
+            errors, workers, requests, failed_requests = [], [], [], []
             page.on("worker", lambda worker: workers.append(worker))
             page.on("request", lambda request: requests.append(request.url))
             page.on("pageerror", lambda error: errors.append(str(error)))
+            page.on("requestfailed", lambda request: failed_requests.append(f"{request.url}: {request.failure}"))
+            page.on("response", lambda response: failed_requests.append(f"{response.url}: HTTP {response.status}") if response.status >= 400 else None)
             page.add_init_script("""
                 window.fitProgressEvents = [];
                 const InferenceWorker = window.Worker;
@@ -64,6 +66,14 @@ def main():
                 };
             """)
             page.goto(f"http://127.0.0.1:{server.server_port}/webapp/")
+            # Initial HTML already looks idle even when an imported module is missing.
+            # Populated format options prove the application actually initialized.
+            try:
+                page.wait_for_function("document.querySelector('#sumstats-format').options.length > 1", timeout=10000)
+            except PlaywrightTimeoutError as error:
+                raise AssertionError(
+                    f"Web application failed to initialize. JavaScript errors: {errors}; failed requests: {failed_requests}"
+                ) from error
             assert page.locator("#engine").count() == 0
             assert page.locator("#runtime-state").get_attribute("data-state") == "idle"
             assert len(workers) == 0

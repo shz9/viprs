@@ -20,6 +20,7 @@ STATIC_FILES = (
     "worker.js",
     "inference.py",
     "sources.mjs",
+    "catalog.mjs",
     "runtime.json",
     "build-info.json",
 )

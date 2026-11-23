@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import zipfile
 
@@ -75,3 +76,22 @@ def test_missing_static_asset_is_not_published(assets, tmp_path):
     with pytest.raises(FileNotFoundError):
         packager.package(assets, tmp_path / "dist")
     assert not (tmp_path / "dist").exists()
+
+
+def test_package_includes_all_local_javascript_imports():
+    """A missing module prevents the entire page from starting in release ZIPs."""
+    root = Path(__file__).resolve().parents[2] / "docs/webapp"
+    packaged = set(packager.STATIC_FILES)
+    for name in packaged:
+        if Path(name).suffix not in {".js", ".mjs"}:
+            continue
+        source = (root / name).read_text()
+        imports = re.findall(
+            r"^import\s+(?:[^\n;]*?\s+from\s+)?[\"'](\.[^\"']+)[\"']",
+            source, re.MULTILINE,
+        )
+        imports += re.findall(r"importScripts\([\"'](\.[^\"']+)[\"']\)", source)
+        for dependency in imports:
+            path = (root / name).parent / dependency
+            relative = path.resolve().relative_to(root.resolve()).as_posix()
+            assert relative in packaged, f"{name} imports {relative}, missing from release archive"
