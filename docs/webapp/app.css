@@ -155,7 +155,12 @@ th { position: sticky; top: 0; z-index: 1; padding: 11px 13px; border-bottom: 1p
 td { padding: 12px 13px; border-bottom: 1px solid var(--line); font-size: 13px; }td, th { white-space: nowrap; }td:first-child, td:nth-child(2), td:nth-child(n+5) { font: 12px ui-monospace, SFMono-Regular, monospace; font-variant-numeric: tabular-nums; }td:nth-child(n+5), th:nth-child(n+5) { text-align: right; }
 tbody tr:hover { background: #eef3ed; }
 .table-note { margin: 14px 0 0; color: var(--muted); font: 11px/1.7 ui-monospace, monospace; }
-footer { margin-top: 36px; padding: 24px 16px 18px; border-top: 1px solid var(--line); color: var(--muted); font: 11px/1.9 ui-monospace, monospace; text-align: center; }footer p { margin: 5px 0; }footer a { text-decoration: none; }footer a:hover { text-decoration: underline; }
+footer { display: grid; gap: 8px; margin-top: 36px; padding: 24px 16px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.8; text-align: center; }
+footer span[aria-hidden] { margin-inline: 5px; }
+footer a { font-weight: 500; text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+.footer-updated { font-size: 11px; }
+.footer-updated time { font-variant-numeric: tabular-nums; }
 [hidden] { display: none !important; }:focus-visible { outline: 3px solid #61967880; outline-offset: 3px; }
 @keyframes threshold-sway {
   0%, 100% { transform: translateX(0); }
@@ -311,3 +316,19 @@ footer { margin-top: 36px; padding: 24px 16px 18px; border-top: 1px solid var(--
 .progress-row[data-state=error] progress::-webkit-progress-value { background: #a83f30; }
 @media(max-width:480px) { .monitor > .run-progress { width: 100%; margin-left: 0; }.progress-label { display: block; }.progress-label span { display: block; text-align: left; margin-top: 2px; } }
 @media(prefers-reduced-motion:reduce) { .progress-row progress:indeterminate { animation: none; } }
+
+.catalog-validation-controls { display: flex; align-items: stretch; gap: 8px; }
+.catalog-validation-controls input { flex: 1; min-width: 0; }
+.catalog-validation-controls button { flex: 0 0 auto; }
+
+#catalog-validation[data-state="valid"] { color: #27804d; }
+#catalog-validation[data-state="invalid"] { color: #8b3025; }
+
+.catalog-input-help { margin: 0 0 14px; }
+.catalog-input-help .hint { margin: 0; line-height: 1.7; }
+.catalog-input-help .hint + .hint { margin-top: 7px; }
+#catalog-validation { margin-top: 10px; line-height: 1.7; }
+
+#catalog-memory-warning { color: #8a570e; margin-top: 8px; }
+
+#catalog-memory-warning a { color: inherit; }

@@ -1,3 +1,4 @@
+import {validateCatalog} from "../../docs/webapp/catalog.mjs";
 import {formatDuration} from "../../docs/webapp/time.js";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
@@ -24,7 +25,7 @@ function page(overrides = {}) {
     location: new URL("https://example.org/webapp/"), navigator: {userAgent: "Test browser", language: "en"},
     setTimeout: (callback, delay) => { const id = ++nextTimer; timers.set(id, {callback, delay}); return id; },
     clearTimeout: id => timers.delete(id),
-    Worker, URL: URLs, Blob, performance, setInterval, clearInterval, EXAMPLE, HOSTED_LD_PANELS, LD_ANCESTRIES, resolveDataURL, selectLocalFiles,
+    validateCatalog, AbortController, Worker, URL: URLs, Blob, performance, setInterval, clearInterval, EXAMPLE, HOSTED_LD_PANELS, LD_ANCESTRIES, resolveDataURL, selectLocalFiles,
     resultsPanel: {clear() {}, show() {}}, formatDuration,
     VIPRSErrors: globalThis.VIPRSErrors, SUMSTATS_FORMAT_HELP, Option: function(text, value) { return {text, value}; }, ...overrides});
   const source = readFileSync(new URL("../../docs/webapp/app.js", import.meta.url), "utf8")
@@ -242,4 +243,60 @@ test("progress ignores messages from previous runs and freezes on errors", () =>
   worker.onmessage({data: {type: "error", id, error: globalThis.VIPRSErrors.describe(new Error("fit failed"), "inference")}});
   assert.equal(get("progress-fitting-row").dataset.state, "error");
   assert.equal(get("progress-fitting").value, 2);
+});
+
+
+test("Catalog validation restricts builds, reuses URLs, and resets on ID edit", async () => {
+  const url = "https://ftp.ebi.ac.uk/study-build38.tsv.gz";
+  const {get, workers, submit} = page({validateCatalog: async accession => ({accession, files: {GRCh38: url}, complete: true, warnings: []})});
+  get("sumstats-catalog-id").value = "GCST005195";
+  await get("catalog-validate").handlers.click();
+  assert(!get("ld-cohort").options.some(o => o.value === "ukb"));
+  assert.equal(get("ld-cohort").value, "hgdp-1kg");
+  assert.equal(get("catalog-validation").dataset.state, "valid");
+  assert.equal(get("catalog-validation").textContent, "Valid study ID. Select compatible LD reference panel (GRCh38).");
+  submit();
+  assert.equal(workers[0].request.sumstats[0].catalog_files.GRCh38, url);
+  get("sumstats-catalog-id").value = "GCST999999";
+  get("sumstats-catalog-id").handlers.input();
+  assert.equal(get("ld-cohort").options.length, Object.keys(HOSTED_LD_PANELS).length);
+});
+
+test("stale validation cannot restrict a newly entered ID", async () => {
+  let resolve;
+  const {get} = page({validateCatalog: () => new Promise(r => { resolve = r; })});
+  get("sumstats-catalog-id").value = "GCST005195";
+  const pending = get("catalog-validate").handlers.click();
+  get("sumstats-catalog-id").value = "GCST999999";
+  get("sumstats-catalog-id").handlers.input();
+  resolve({accession: "GCST005195", files: {GRCh38: "url"}, complete: true, warnings: []});
+  await pending;
+  assert.equal(get("ld-cohort").options.length, Object.keys(HOSTED_LD_PANELS).length);
+  assert.match(get("catalog-validation").textContent, /ID changed/);
+});
+
+
+test("failed validation shows brief red feedback", async () => {
+  const {get} = page({validateCatalog: async () => { throw new Error("No summary-statistics files were found"); }});
+  get("sumstats-catalog-id").value = "GCST999999";
+  await get("catalog-validate").handlers.click();
+  assert.equal(get("catalog-validation").dataset.state, "invalid");
+  assert.equal(get("catalog-validation").textContent, "Study files were not found.");
+  assert.equal(get("ld-cohort").options.length, Object.keys(HOSTED_LD_PANELS).length);
+});
+
+test("large-study warnings follow LD build and clear when editing the ID", async () => {
+  const {get} = page({validateCatalog: async accession => ({accession, complete: true,
+    files: {GRCh37: "small.gz", GRCh38: "large.gz"}, file_sizes: {GRCh37: 3e9, GRCh38: 3.5e9}})});
+  get("sumstats-catalog-id").value = "GCST005195";
+  await get("catalog-validate").handlers.click();
+  assert.equal(get("catalog-memory-warning").hidden, true);
+  get("ld-cohort").value = "hgdp-1kg";
+  get("ld-cohort").handlers.change();
+  assert.equal(get("catalog-memory-warning").hidden, false);
+  assert.match(get("catalog-memory-warning-message").textContent, /3.5 GB/);
+  assert.match(get("catalog-memory-warning-message").textContent, /Parsing may exceed browser memory/);
+  assert.equal(get("catalog-validation").dataset.state, "valid");
+  get("sumstats-catalog-id").handlers.input();
+  assert.equal(get("catalog-memory-warning").hidden, true);
 });

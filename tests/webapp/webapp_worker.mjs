@@ -456,3 +456,29 @@ test("unknown chromosome totals use explicitly labelled file progress rather tha
   assert.equal(loading.total, null);
   assert.equal(loading.heading, "Loading LD reference");
 });
+
+
+test("cleanup tolerates Python globals that an early Catalog failure never created", () => {
+  const context = worker();
+  const values = new Map([["work_path", "/runs/run-1"]]);
+  const globals = {
+    has: name => values.has(name),
+    delete(name) {
+      if (!values.has(name)) throw new Error("KeyError: " + name);
+      values.delete(name);
+    },
+  };
+  context.deletePythonGlobals({globals}, "fit_progress_callback", "memory_callback",
+    "request_json", "progress_callback", "stage_callback", "work_path");
+  assert.equal(values.size, 0);
+});
+
+
+test("validated Catalog URLs skip Python discovery after checking actual LD build", async () => {
+  const context = worker(), globals = new Map();
+  const data = {options: {}, ld: [{url: "hf://datasets/panel/chr1.zip", stream: true}], sumstats: [{catalog: "GCST005195", catalog_files: {GRCh38: "https://example.org/build38.tsv.gz"}}]};
+  const pyodide = {globals, runPython() { return "GRCh38"; }, runPythonAsync() { throw new Error("Discovery should be skipped"); }};
+  await context.prepareCatalogInputs(data, pyodide, "/run");
+  assert.equal(data.sumstats[0].url, "https://example.org/build38.tsv.gz");
+  assert.equal(data.options.sumstats_genome_build, "GRCh38");
+});

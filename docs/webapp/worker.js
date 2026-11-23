@@ -4,6 +4,12 @@ const PYODIDE_VERSION = "0.28.3";
 const INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
 let currentRun = null, runsStarted = 0, errorStage = "runtime", errorSource = null;
 function setStage(stage, source = null) { errorStage = stage; errorSource = source; }
+function deletePythonGlobals(pyodide, ...names) {
+  // Pyodide raises KeyError for missing globals, unlike JavaScript Map.delete.
+  for (const name of names) {
+    if (pyodide.globals.has(name)) pyodide.globals.delete(name);
+  }
+}
 function diagnostic(error) { return VIPRSErrors.describe(error, errorStage, errorSource); }
 const emit = (type, fields = {}) => self.postMessage({type, ...fields});
 
@@ -335,6 +341,11 @@ async function prepareCatalogInputs(data, pyodide, workPath) {
     const source = data.sumstats[index];
     if (!source.catalog) continue;
     setStage("sumstats", source.catalog);
+    if (source.catalog_files?.[build]) {
+      data.sumstats[index] = {url: source.catalog_files[build], parallel: true};
+      emit("phase", {id: currentRun, message: "GWAS Catalog validation reused", detail: `${source.catalog} · ${build}. Downloading the previously verified file.`});
+      continue;
+    }
     emit("phase", {id: currentRun, message: "Resolving GWAS Catalog study", detail: `Finding ${build} summary statistics for ${source.catalog}.`});
     pyodide.globals.set("catalog_accession", source.catalog);
     pyodide.globals.set("catalog_genome_build", build);
@@ -499,15 +510,15 @@ self.onmessage = async ({data}) => {
       const {pyodide} = runtime;
       try {
         if (requestStarted && !requestFinished) pyodide.runPython("abort_request()");
-        pyodide.globals.delete("fit_progress_callback");
-        pyodide.globals.delete("memory_callback");
-        pyodide.globals.delete("request_json");
-        pyodide.globals.delete("progress_callback");
-        pyodide.globals.delete("stage_callback");
+        deletePythonGlobals(pyodide, "fit_progress_callback");
+        deletePythonGlobals(pyodide, "memory_callback");
+        deletePythonGlobals(pyodide, "request_json");
+        deletePythonGlobals(pyodide, "progress_callback");
+        deletePythonGlobals(pyodide, "stage_callback");
         pyodide.globals.set("work_path", workPath);
         pyodide.runPython("shutil.rmtree(work_path, ignore_errors=True); gc.collect()");
       } catch (error) { failure = failure || VIPRSErrors.describe(error, "cleanup"); }
-      finally { pyodide.globals.delete("work_path"); }
+      finally { deletePythonGlobals(pyodide, "work_path"); }
     }
     currentRun = null;
   }

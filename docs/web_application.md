@@ -3,7 +3,7 @@
 Run VIPRS right in your browser—no local installation required. Your analysis runs on your
 device, so your input data is not uploaded to a remote server.
 
-<a class="md-button md-button--primary" href="https://shz9.github.io/viprs/webapp/">🚀 Launch VIPRS in your browser</a>
+<a class="md-button md-button--primary" href="../webapp/">🚀 Launch VIPRS in your browser</a>
 
 ---
 
@@ -44,6 +44,13 @@ background immediately, while you configure inputs. Click **Run inference** to f
 the selected model; if initialization is still in progress, the run waits for it.
 Completed runs reuse the same initialized worker. Visitors to the deployed site
 do not need a compiler or Python installed for inference.
+After changing application files, reload the page to replace any running worker.
+The app footer shows its last updated date. If your changes are missing,
+use a hard refresh and check that the address is
+**http://localhost:8000/webapp/** rather than the published website.
+Changes to `inference.py` and browser JavaScript take effect on reload; only changes
+to compiled model code require rebuilding the WASM wheels.
+
 The local Python command above only serves static files. `mkdocs serve` also works,
 and `mkdocs build` copies the application and wheels into the published site.
 
@@ -66,7 +73,17 @@ close button, or a click outside the pop-up.
 
 ## Hosted references and example data
 
-GWAS Catalog lookup reads the selected LD matrix metadata first and requests the same
+Use **Validate** beside the Catalog ID to check FTP listings and genome builds without
+starting Python. Validation shows a brief green or red status and hides incompatible hosted LD
+panels when all candidate builds are known, selecting a compatible panel automatically. Incomplete metadata
+leaves options available with retry guidance. Editing the ID clears validation.
+Verified file URLs are reused during inference; the actual LD build is still checked.
+Validation also checks download sizes using HEAD requests and warns for files over
+3 GB (decimal), following the selected LD build. Missing size headers do not block
+validation. This is the compressed size for gzip files, not peak memory usage;
+smaller files can also exceed the runtime's 4 GiB memory limit during parsing.
+
+Without validation, GWAS Catalog lookup reads the selected LD matrix metadata first and requests the same
 genome build. Conflicting declared and stored builds stop the run. For custom ZIPs or
 URLs with no build metadata, select the build explicitly. Catalog files in a different
 build are rejected; the app does not perform coordinate liftover. A local archive

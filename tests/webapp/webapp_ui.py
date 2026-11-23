@@ -140,12 +140,12 @@ def main():
             page.mouse.click(2, 2)
             assert not page.locator("#ld-dataset-dialog").is_visible()
             assert "GRCh37" in page.locator("#ld-genome-build").inner_text()
-            assert "GRCh37" in page.locator("#catalog-build-hint").inner_text()
+            assert page.locator("#catalog-build-hint").count() == 0
             page.locator("#ld-source").select_option("files")
             assert page.locator("#ld-custom-build-inputs").is_visible()
-            assert "metadata first" in page.locator("#catalog-build-hint").inner_text()
+            assert page.locator("#catalog-build-hint").count() == 0
             page.locator("#ld-custom-build").select_option("GRCh38")
-            assert "GRCh38" in page.locator("#catalog-build-hint").inner_text()
+            assert page.locator("#catalog-build-hint").count() == 0
             page.locator("#ld-custom-build").select_option("")
             page.locator("#ld-source").select_option("hosted")
             page.locator("#ld-cohort").select_option("hgdp-1kg")
@@ -156,7 +156,7 @@ def main():
             assert page.locator("#ld-panel-name").inner_text() == "HGDP + 1000 Genomes"
             assert "hgdp-1kg-ld" in page.locator("#ld-panel-link").get_attribute("href")
             page.locator("#ld-dataset-close").click()
-            assert "GRCh38" in page.locator("#catalog-build-hint").inner_text()
+            assert page.locator("#catalog-build-hint").count() == 0
             page.locator("#ld-hosted-inputs").screenshot(path=str(ARTIFACTS / "ld-hgdp-desktop.png"))
             page.locator("#ld-ancestry").select_option("AFR")
             assert "/hgdp-1kg-ld/AFR/" in page.locator("#ld-hosted-path").text_content()
@@ -207,7 +207,7 @@ def main():
                 page.locator(f"#{kind}-source").select_option("urls")
                 page.locator(f"#{kind}-url").fill(f"https://example.org/{kind}.zip")
             page.locator("#sumstats-format").select_option("magenpy")
-            for summary_source, ld_source in itertools.product(["files", "folder", "urls"], ["hosted", "files", "folder", "urls", "example"]):
+            for summary_source, ld_source in itertools.product(["files", "folder", "urls"], ["hosted", "files", "folder", "urls"]):
                 page.locator("#sumstats-source").select_option(summary_source)
                 page.locator("#ld-source").select_option(ld_source)
                 assert page.locator(f"#sumstats-{summary_source}-inputs").is_visible()
@@ -218,7 +218,7 @@ def main():
                 assert page.locator("#status-badge").text_content() == "Converged", (summary_source, ld_source, page.locator("#log").text_content())
                 request = json.loads(page.locator("#log").text_content().split("REQUEST ")[-1].splitlines()[0])
                 expected_sumstats = {"files": "height.tsv", "folder": "height.tsv", "urls": "https://example.org/sumstats.zip"}
-                expected_ld = {"files": "chr_22.zip", "folder": "chr_22.zip", "urls": "https://example.org/ld.zip", "example": "hf://datasets/shz9/ukb-ld/EUR/chr_22.zip", "hosted": "hf://datasets/shz9/ukb-ld/AFR/chr_*.zip"}
+                expected_ld = {"files": "chr_22.zip", "folder": "chr_22.zip", "urls": "https://example.org/ld.zip", "hosted": "hf://datasets/shz9/ukb-ld/AFR/chr_*.zip"}
                 assert request["sumstats"] == [expected_sumstats[summary_source]]
                 assert request["ld"] == [expected_ld[ld_source]]
                 assert request["options"]["sumstats_format"] == "magenpy"
@@ -258,7 +258,8 @@ def main():
             page.wait_for_function("!document.querySelector('#run').disabled")
             page.set_viewport_size({"width": 1440, "height": 1100})
             page.locator("#demo").click()
-            assert page.locator("#ld-source").input_value() == "example"
+            assert page.locator("#ld-source").input_value() == "urls"
+            assert page.locator("#ld-url").input_value() == "hf://datasets/shz9/ukb-ld/EUR/chr_22.zip"
             assert page.locator("#sumstats-source").input_value() == "urls"
             assert page.locator("#sumstats-url").input_value() == "https://raw.githubusercontent.com/shz9/magenpy/master/magenpy/data/ukb_height_chr22.fastGWA.gz"
             page.locator("#ld-source").select_option("hosted")
@@ -595,7 +596,7 @@ def main():
             assert page.locator(".prs-threshold").evaluate("el => getComputedStyle(el).animationName") == "none"
             assert not errors, errors
             browser.close()
-            print("Passed: format guides for each distinct format, keyboard/backdrop dismissal, mobile dialogs, 15 independent source combinations, GWAS Catalog input, hosted ancestry/glob, separate folders, example shortcut, threshold, table rendering, new-tab links, footer, reduced motion, four results views, keyboard tab navigation, dosage and PGS exports, command copying, all plots, locus lookup, and mobile results layouts.")
+            print("Passed: format guides for each distinct format, keyboard/backdrop dismissal, mobile dialogs, 12 independent source combinations, GWAS Catalog input, hosted ancestry/glob, separate folders, example shortcut, threshold, table rendering, new-tab links, footer, reduced motion, four results views, keyboard tab navigation, dosage and PGS exports, command copying, all plots, locus lookup, and mobile results layouts.")
     finally:
         server.shutdown()
         server.server_close()

@@ -6,8 +6,8 @@
   <meta name="description" content="Estimate variant effect sizes and polygenic score weights from GWAS summary statistics and LD reference data with VIPRS.">
   <title>VIPRS · Polygenic score inference in the browser</title>
   <link rel="icon" type="image/svg+xml" sizes="any" href="favicon.svg">
-  <link rel="stylesheet" href="app.css">
-  <script src="app.js?v=runtime-0.2.5-progress-4" type="module"></script>
+  <link rel="stylesheet" href="app.css?v=catalog-warning-2">
+  <script src="app.js?v=runtime-0.2.5-catalog-4" type="module"></script>
 </head>
 <body>
   <main>
@@ -86,13 +86,13 @@
     <div id="protocol-warning" class="notice" hidden>Serve this directory over HTTP. From the repository, run <code>python -m http.server 8000 --directory docs</code> and open <code>http://localhost:8000/webapp/</code>.</div>
 
     <div class="workspace">
-      <form id="inference-form">
+      <form id="inference-form" autocomplete="off" data-bwignore="true" data-1p-ignore data-lpignore="true">
         <fieldset id="controls" class="configuration-panels">
           <section class="card input-card ld-card" aria-labelledby="ld-heading">
             <p id="ld-error" class="input-error" tabindex="-1" hidden></p>
             <div class="section-heading"><div><p class="section-kicker">02 · Reference data</p><h2 id="ld-heading">LD reference</h2></div></div>
             <label for="ld-source">LD source</label>
-            <select id="ld-source"><option value="hosted">Hosted matrices</option><option value="files">Local ZIP archives</option><option value="folder">Local folder · glob patterns</option><option value="urls">Custom URLs · files or globs</option><option value="example">Example · European LD, chromosome 22</option></select>
+            <select id="ld-source"><option value="hosted">Hosted matrices</option><option value="files">Local ZIP archives</option><option value="folder">Local folder · glob patterns</option><option value="urls">Custom URLs · files or globs</option></select>
             <div id="ld-hosted-inputs" class="hosted-source-card">
               <div class="format-label"><label for="ld-cohort">Reference dataset</label><button id="ld-dataset-info" class="info-button" type="button" aria-label="About the selected LD dataset" aria-haspopup="dialog" aria-controls="ld-dataset-dialog" title="Dataset details">i</button></div>
               <select id="ld-cohort"><option value="ukb">UK Biobank · GRCh37</option><option value="hgdp-1kg">HGDP + 1000 Genomes · GRCh38</option></select>
@@ -103,8 +103,7 @@
             </div>
             <div id="ld-files-inputs" hidden><label for="ld-file">LD archives</label><input id="ld-file" type="file" accept=".zip" multiple><p class="hint">ZIP archives containing magenpy Zarr stores. Files stay on your computer.</p><p id="ld-file-summary" class="selection-summary" role="status"></p></div>
             <div id="ld-folder-inputs" hidden><label for="ld-folder">LD folder</label><input id="ld-folder" type="file" webkitdirectory multiple><label for="ld-pattern">LD archive patterns</label><textarea id="ld-pattern" rows="2" spellcheck="false">**/chr_*.zip</textarea><p class="hint">One pattern per line, relative to this folder. ** includes subfolders.</p><p id="ld-folder-summary" class="selection-summary" role="status">Choose a folder to see matching file counts.</p></div>
-            <div id="ld-urls-inputs" hidden><label for="ld-url">LD reference URLs or globs</label><textarea id="ld-url" rows="3" placeholder="hf://datasets/shz9/ukb-ld/EUR/chr_*.zip" spellcheck="false"></textarea><p class="hint">One ZIP URL or pattern per line. Globs are supported for public Hugging Face datasets and GitHub repositories; other HTTP hosts require explicit URLs and CORS access.</p></div>
-            <div id="ld-example-inputs" class="example-box" hidden><span class="chromosome" aria-hidden="true"><b>22</b></span><div class="example-copy"><strong>UK Biobank · European LD</strong><span>Chromosome 22 · HapMap3 · GRCh37</span></div><div class="example-links"><a href="https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip" target="_blank" rel="noopener noreferrer">LD ↗</a></div></div>
+            <div id="ld-urls-inputs" hidden><label for="ld-url">LD reference URLs or globs</label><textarea id="ld-url" rows="3" placeholder="hf://datasets/shz9/ukb-ld/EUR/chr_*.zip" spellcheck="false"></textarea><p class="hint">One ZIP URL or pattern per line. Globs are supported for public Hugging Face datasets and GitHub repositories; other HTTP hosts require explicit URLs and CORS access.</p><div id="ld-url-example" class="example-box"><span class="chromosome" aria-hidden="true"><b>22</b></span><div class="example-copy"><strong>UK Biobank · European LD</strong><span>Chromosome 22 · HapMap3 · GRCh37</span></div><div class="example-links"><a href="https://huggingface.co/datasets/shz9/ukb-ld/resolve/main/EUR/chr_22.zip" target="_blank" rel="noopener noreferrer">LD ↗</a></div></div></div>
             <div id="ld-custom-build-inputs" hidden><label for="ld-custom-build">Genome build (if missing from metadata)</label><select id="ld-custom-build"><option value="">Detect from archive metadata</option><option value="GRCh37">GRCh37</option><option value="GRCh38">GRCh38</option></select></div>
             <p id="ld-build-guidance" class="data-rule" role="status">Choose the LD reference dataset that matches your GWAS.</p>
           </section>
@@ -114,7 +113,18 @@
             <div class="section-heading"><div><p class="section-kicker">01 · GWAS data</p><h2 id="sumstats-heading">Summary statistics</h2></div></div>
             <label for="sumstats-source">Summary statistics source</label>
             <select id="sumstats-source"><option value="catalog">GWAS Catalog ID</option><option value="files">Local files</option><option value="folder">Local folder · glob patterns</option><option value="urls">Hosted URLs · files or globs</option></select>
-            <div id="sumstats-catalog-inputs"><label for="sumstats-catalog-id">GWAS Catalog study accession</label><input id="sumstats-catalog-id" type="text" placeholder="GCST005195" autocomplete="off" spellcheck="false"><p class="hint">Enter a GCST accession. <span id="catalog-build-hint">We will look for GRCh37 summary statistics to match the LD reference.</span> Files are downloaded from the <a href="https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/" target="_blank" rel="noopener noreferrer">GWAS Catalog FTP server ↗</a> using parallel byte ranges when the server supports them.</p></div>
+            <div id="sumstats-catalog-inputs">
+              <label for="sumstats-catalog-id">GWAS Catalog study accession</label>
+              <div id="catalog-input-hint" class="catalog-input-help">
+                <p class="hint">Enter a <a href="https://www.ebi.ac.uk/gwas/" target="_blank" rel="noopener noreferrer">GWAS Catalog ↗</a> study ID and validate to find compatible LD panels.</p>
+              </div>
+              <div class="catalog-validation-controls">
+                <input id="sumstats-catalog-id" name="gwas-study-search" type="search" data-1p-ignore data-lpignore="true" data-bwignore="true" placeholder="GCST005195" autocomplete="off" spellcheck="false" aria-describedby="catalog-input-hint catalog-validation catalog-memory-warning">
+                <button id="catalog-validate" type="button">Validate</button>
+              </div>
+              <p id="catalog-validation" class="hint" role="status" aria-live="polite">Validate ID to check compatibility.</p>
+              <p id="catalog-memory-warning" class="hint" role="status" aria-live="polite" hidden><strong>Warning:</strong> <span id="catalog-memory-warning-message"></span> use the <a href="https://shz9.github.io/viprs/commandline/viprs_fit/" target="_blank" rel="noopener noreferrer">command line <span aria-hidden="true">↗</span></a> for large studies.</p>
+            </div>
             <div id="sumstats-files-inputs" hidden><label for="sumstats-file">Summary statistics files</label><input id="sumstats-file" type="file" multiple><p class="hint">One combined file or one file per chromosome; plain text or gzip. Files stay on your computer.</p><p id="sumstats-file-summary" class="selection-summary" role="status"></p></div>
             <div id="sumstats-folder-inputs" hidden><label for="sumstats-folder">Summary statistics folder</label><input id="sumstats-folder" type="file" webkitdirectory multiple><label for="sumstats-pattern">Summary statistics patterns</label><textarea id="sumstats-pattern" rows="2" spellcheck="false">**/*</textarea><p class="hint">One pattern per line, relative to this folder. ** includes subfolders.</p><p id="sumstats-folder-summary" class="selection-summary" role="status">Choose a folder to see matching file counts.</p></div>
             <div id="sumstats-urls-inputs" hidden><label for="sumstats-url">Summary statistics URLs or globs</label><textarea id="sumstats-url" rows="3" placeholder="One URL or pattern per line" spellcheck="false"></textarea><p class="hint">Globs are supported for public Hugging Face datasets and GitHub repositories. Other HTTP hosts and relative URLs require explicit paths; remote hosts must allow CORS access.</p></div>
@@ -244,8 +254,8 @@
     </dialog>
 
     <footer>
-      <p>VIPRS Browser <span aria-hidden="true">•</span> Built with Codex <span aria-hidden="true">•</span> Maintained by: <a href="https://shz9.github.io/" target="_blank" rel="noopener noreferrer">Shadi Zabad</a>, University of Oxford</p>
-      <p><a href="https://shz9.github.io/ld_browser/" target="_blank" rel="noopener noreferrer">Explore the LD reference with LD Browser ↗</a><span aria-hidden="true"> · </span><a href="https://github.com/shz9/viprs/issues" target="_blank" rel="noopener noreferrer">Report an issue ↗</a></p>
+      <div>VIPRS Browser <span aria-hidden="true">•</span> Built with ChatGPT Codex <span aria-hidden="true">•</span> Maintained by: <a href="https://shz9.github.io/" target="_blank" rel="noopener noreferrer">Shadi Zabad</a>, University of Oxford</div>
+      <div class="footer-updated">Last Updated: <time datetime="2026-11-23">23 November 2026</time></div>
     </footer>
   </main>
 </body>

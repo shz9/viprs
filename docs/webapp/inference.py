@@ -41,44 +41,85 @@ def ensure_huggingface_compat():
         sys.modules.setdefault(name, types.ModuleType(name))
 
 
-async def resolve_browser_gwas_catalog(accession, read_text=None, genome_build="GRCh37", progress_callback=None):
-    """Resolve a Catalog accession using the browser's HTTP transport."""
+async def resolve_browser_gwas_catalog(accession, read_text=None, genome_build="GRCh37", progress_callback=None, *, request_timeout=15):
+    """Resolve a Catalog accession, bounding each listing/metadata request."""
+    import asyncio
+    import re
     from magenpy.utils.gwas_catalog import resolve_gwas_catalog
 
     if read_text is None:
+        from js import AbortController
         from pyodide.http import pyfetch
 
         async def read_text(url):
+            controller = AbortController.new()
             try:
-                response = await pyfetch(url, credentials="omit")
-            except Exception as error:
-                raise ConnectionError(
-                    "Could not reach the GWAS Catalog FTP server. "
-                    "Check the connection."
-                ) from error
-            if response.status == 404:
-                raise FileNotFoundError(
-                    "No GWAS Catalog summary statistics were found for this accession."
-                )
-            if not 200 <= response.status < 300:
-                raise ConnectionError(
-                    f"Could not list GWAS Catalog files (HTTP {response.status})."
-                )
-            return await response.string()
+                try:
+                    response = await pyfetch(url, credentials="omit", signal=controller.signal)
+                except Exception as error:
+                    raise ConnectionError(
+                        "Could not reach the GWAS Catalog FTP server. "
+                        "Check the connection."
+                    ) from error
+                if response.status == 404:
+                    raise FileNotFoundError(
+                        "No GWAS Catalog summary statistics were found for this accession."
+                    )
+                if not 200 <= response.status < 300:
+                    raise ConnectionError(
+                        f"Could not read GWAS Catalog files (HTTP {response.status})."
+                    )
+                return await response.string()
+            finally:
+                # Also cancel browser I/O when wait_for cancels this coroutine,
+                # including a response whose headers arrived but body stalled.
+                controller.abort()
 
     transport = read_text
+    available_builds = set()
+    metadata_failures = []
+
+    def unavailable():
+        if metadata_failures:
+            return ConnectionError(
+                f"Could not verify {genome_build} summary statistics for {accession}: "
+                "GWAS Catalog metadata could not be read. Retry the lookup or provide "
+                "a summary-statistics URL with a known genome build. "
+                f"Last failure: {metadata_failures[-1]}"
+            )
+        aliases = "GRCh37/hg19" if genome_build == "GRCh37" else "GRCh38/hg38"
+        message = f"This accession has no {aliases} summary-statistics file. "
+        if available_builds:
+            builds = ", ".join(sorted(available_builds))
+            message += f"Available genome build: {builds}. Change the LD matrix to a compatible {builds} panel, or choose another study. "
+        else:
+            message += "Choose another study or an LD matrix matching the summary-statistics genome build. "
+        return ValueError(message + "No automatic liftover is performed.")
 
     async def read_text(url):
         if progress_callback is not None:
             progress_callback("request", url)
         try:
-            text = await transport(url)
-        except BaseException:
+            try:
+                text = await asyncio.wait_for(transport(url), timeout=request_timeout)
+            except asyncio.TimeoutError as error:
+                raise TimeoutError(
+                    f"GWAS Catalog request timed out after {request_timeout:g}s: {url}"
+                ) from error
+        except BaseException as error:
+            if isinstance(error, Exception) and url.endswith("-meta.yaml"):
+                metadata_failures.append(str(error))
             if progress_callback is not None:
                 progress_callback("failed", url)
             raise
         if progress_callback is not None:
             progress_callback("received", url)
+        if url.endswith("-meta.yaml"):
+            match = re.search(r"(?:^|\n)\s*genome_assembly\s*:\s*[\"']?([^\s#\"']+)", text, re.I)
+            if match:
+                build = normalize_genome_build(match.group(1))
+                if build in ("GRCh37", "GRCh38"):
+                    available_builds.add(build)
         return text
 
     from magenpy.utils.model_utils import normalize_genome_build
@@ -89,7 +130,6 @@ async def resolve_browser_gwas_catalog(accession, read_text=None, genome_build="
     if genome_build == "GRCh38":
         # magenpy 0.2.5 only resolves GRCh37. Reuse its directory/link parsing
         # for the missing GRCh38 path; retain its resolver below for GRCh37.
-        import re
         from urllib.parse import unquote, urlsplit
         from magenpy.utils.gwas_catalog import gwas_catalog_directory, _listing_links
 
@@ -116,7 +156,7 @@ async def resolve_browser_gwas_catalog(accession, read_text=None, genome_build="
             match = re.search(r"(?:^|\n)\s*genome_assembly\s*:\s*[\"']?([^\s#\"']+)", metadata, re.I)
             if match and normalize_genome_build(match.group(1)) == genome_build:
                 return url
-        raise ValueError("This accession has no GRCh38/hg38 summary-statistics file. Choose a study in this build or a matching LD panel; no automatic liftover is performed.")
+        raise unavailable()
 
     # magenpy's resolver is synchronous. Replay it against fetched documents
     # so it owns discovery/build selection while browser I/O stays asynchronous.
@@ -137,6 +177,11 @@ async def resolve_browser_gwas_catalog(accession, read_text=None, genome_build="
     while True:
         try:
             return resolve_gwas_catalog(accession, cached_text)
+        except ValueError as error:
+            # Preserve accession validation errors before any I/O.
+            if not documents:
+                raise
+            raise unavailable() from error
         except FetchRequired as pending:
             url = pending.args[0]
             try:

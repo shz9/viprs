@@ -1,3 +1,4 @@
+import {validateCatalog} from "./catalog.mjs";
 import {formatDuration} from "./time.js";
 import "./errors.js";
 import {resultsPanel} from "./results.js";
@@ -22,9 +23,66 @@ const sumstatsFormatLabels = {
 };
 const formatLabel = format => sumstatsFormatLabels[format] || sumstatsFormatHelp[format]?.name || format;
 
+let catalogValidation = null, catalogController = null, catalogVersion = 0;
+function currentCatalogValidation() {
+  return catalogValidation?.accession === $("sumstats-catalog-id").value.trim().toUpperCase() ? catalogValidation : null;
+}
+function catalogMessage(message, state = "") {
+  $("catalog-validation").textContent = message;
+  $("catalog-validation").dataset.state = state;
+}
+function syncCatalogOptions() {
+  const result = $("sumstats-source").value === "catalog" ? currentCatalogValidation() : null;
+  const select = $("ld-cohort"), previous = select.value;
+  const panels = Object.entries(HOSTED_LD_PANELS).filter(([, panel]) => !result?.complete || result.files[panel.genome_build]);
+  const ids = panels.map(([id]) => id);
+  if (Array.from(select.options).map(option => option.value).join() !== ids.join()) {
+    select.replaceChildren(...panels.map(([id, panel]) => new Option(`${panel.name} · ${panel.build_label}`, id)));
+    select.value = ids.includes(previous) ? previous : ids[0] || "";
+    if (select.value && select.value !== previous) syncHostedLD();
+  }
+  for (const option of $("ld-custom-build").options) option.disabled = Boolean(option.value && result?.complete && !result.files[option.value]);
+  const build = selectedLDBuild();
+  const sizes = result?.file_sizes || {};
+  const largeFiles = Object.entries(sizes).filter(([fileBuild, bytes]) => (!build || fileBuild === build) && bytes > 3e9);
+  $("catalog-memory-warning").hidden = !largeFiles.length;
+  $("catalog-memory-warning-message").textContent = largeFiles.length
+    ? `Large download (${largeFiles.map(([, bytes]) => `${(bytes / 1e9).toFixed(1)} GB`).join(", ")}). Parsing may exceed browser memory;` : "";
+  if (!result) return;
+  if (Object.keys(result.files).length) catalogMessage(`Valid study ID. Select compatible LD reference panel (${Object.keys(result.files).sort().join(" or ")}).`, "valid");
+  else catalogMessage("Unable to verify genome build.", "invalid");
+}
+$("sumstats-catalog-id").addEventListener("input", () => {
+  catalogVersion++; catalogController?.abort(); catalogValidation = null;
+  $("catalog-validate").disabled = false;
+  catalogMessage("ID changed. Please validate again.");
+  syncCatalogOptions();
+});
+$("catalog-validate").addEventListener("click", async () => {
+  const version = ++catalogVersion;
+  catalogController?.abort(); catalogController = new AbortController(); catalogValidation = null;
+  syncCatalogOptions();
+  $("catalog-validate").disabled = true;
+  catalogMessage("Checking study files and builds.");
+  try {
+    const result = await validateCatalog($("sumstats-catalog-id").value, {signal: catalogController.signal});
+    if (version !== catalogVersion) return;
+    catalogValidation = result; syncCatalogOptions();
+  } catch (error) {
+    if (version === catalogVersion) {
+      const message = /accession|out of range/.test(error.message) ? "Invalid ID. Check the accession."
+        : /No summary-statistics/.test(error.message) ? "Study files were not found."
+        : /no supported TSV/.test(error.message) ? "No supported study files found."
+        : "Validation failed. Please try again.";
+      catalogMessage(message, "invalid");
+    }
+  } finally {
+    if (version === catalogVersion) $("catalog-validate").disabled = false;
+  }
+});
 function syncInputs() {
   for (const kind of ["ld", "sumstats"]) {
-    for (const source of ["hosted", "catalog", "example", "files", "urls", "folder"]) {
+    for (const source of ["hosted", "catalog", "files", "urls", "folder"]) {
       const panel = $(kind + "-" + source + "-inputs");
       if (panel) panel.hidden = $(kind + "-source").value !== source;
     }
@@ -84,23 +142,20 @@ $("sumstats-format").addEventListener("change", () => {
 function selectedLDBuild() {
   const source = $("ld-source").value;
   if (source === "hosted") return HOSTED_LD_PANELS[$("ld-cohort").value || "ukb"].genome_build;
-  if (source === "example") return "GRCh37";
   return $("ld-custom-build").value || null;
 }
 function buildLabel(build) {
   return build === "GRCh37" || build === "GRCh38" ? build : "an unknown genome build";
 }
 function syncGenomeBuild() {
+  syncCatalogOptions();
   const build = selectedLDBuild();
   const source = $("ld-source").value;
-  $("ld-custom-build-inputs").hidden = ["hosted", "example"].includes(source);
+  $("ld-custom-build-inputs").hidden = source === "hosted";
   $("ld-build-guidance").textContent = source === "hosted"
     ? "Choose the LD reference dataset that matches your GWAS."
     : build ? `Match summary statistics to ${buildLabel(build)}.`
     : "Genome build is read from LD metadata. Select it above only if missing.";
-  $("catalog-build-hint").textContent = build
-    ? `We will look for ${buildLabel(build)} summary statistics to match the LD reference.`
-    : "We will read the LD metadata first, then look for summary statistics in the same genome build.";
 }
 function syncHostedLD() {
   const panel = HOSTED_LD_PANELS[$("ld-cohort").value || "ukb"];
@@ -168,8 +223,13 @@ function renderPrior(components, mixture) {
   $("slab-key").textContent = components === 1 ? "Slab · nonzero effects" : `${components} slabs · different effect scales`;
   $("prior-plot-description").textContent = `A point mass at zero and ${components === 1 ? "one centered Gaussian slab" : `${components} centered Gaussian slabs with different variances`} for nonzero genetic effects.`;
 }
+function useExampleLD() {
+  $("ld-source").value = "urls";
+  $("ld-url").value = EXAMPLE.ld;
+  $("ld-custom-build").value = "GRCh37";
+}
 $("demo").addEventListener("click", () => {
-  $("ld-source").value = "example";
+  useExampleLD();
   $("sumstats-source").value = "urls";
   $("sumstats-url").value = resolveDataURL(EXAMPLE.sumstats, location.href);
   $("sumstats-format").value = "fastgwa";
@@ -287,7 +347,7 @@ function captureSession() {
       const source = $(kind + "-source").value;
       let inputs;
       if (["files", "folder"].includes(source)) inputs = Array.from($(kind + (source === "files" ? "-file" : "-folder")).files).map(file => ({name: file.name, bytes: file.size, last_modified: file.lastModified}));
-      else inputs = source === "catalog" ? $("sumstats-catalog-id").value : source === "hosted" ? $("ld-hosted-path").value : source === "example" ? EXAMPLE[kind] : $(kind + "-url").value;
+      else inputs = source === "catalog" ? $("sumstats-catalog-id").value : source === "hosted" ? $("ld-hosted-path").value : $(kind + "-url").value;
       return [kind, {source, inputs, ...(source === "folder" ? {pattern: $(kind + "-pattern").value} : {})}];
     })),
   };
@@ -326,7 +386,7 @@ function beginTimer() {
 
 function startWorker() {
   worker?.terminate();
-  const current = new Worker(new URL("worker.js?v=runtime-0.2.5-progress-4", import.meta.url));
+  const current = new Worker(new URL("worker.js?v=runtime-0.2.5-catalog-4", import.meta.url));
   worker = current;
   runtimeStatus("loading", "Preparing runtime");
   log("Starting runtime initialization. Packages will load before inference begins.");
@@ -334,7 +394,6 @@ function startWorker() {
     if (worker !== current || !data || typeof data !== "object") return;
     if (data.type === "ld-metadata") {
       $("ld-build-guidance").textContent = `LD genome build: ${buildLabel(data.genome_build)}. Match your summary statistics to this build.`;
-      $("catalog-build-hint").textContent = `Looking for ${buildLabel(data.genome_build)} summary statistics.`;
     }
     if (data.type === "runtime-status") {
       runtimeStatus("loading", data.message, data.source);
@@ -396,9 +455,10 @@ function sourceInputs(kind) {
   if (kind === "sumstats" && source === "catalog") {
     const accession = $("sumstats-catalog-id").value.trim().toUpperCase();
     if (!/^GCST\d+$/.test(accession)) throw new Error("Enter a GWAS Catalog accession such as GCST005195.");
-    return [{catalog: accession}];
+    const validation = currentCatalogValidation(), build = selectedLDBuild();
+    if (validation?.complete && build && !validation.files[build]) throw new Error(`This study has no ${build} file. Select a compatible LD panel shown by validation, or choose another study.`);
+    return [{catalog: accession, ...(validation ? {catalog_files: {...validation.files}} : {})}];
   }
-  if (source === "example") return [{url: EXAMPLE[kind], stream: kind === "ld"}];
   if (source === "folder") {
     if (!$(kind + "-folder").files.length) throw new Error(`Choose a local ${kind} folder first.`);
     const files = selectLocalFiles($(kind + "-folder").files, $(kind + "-pattern").value);
