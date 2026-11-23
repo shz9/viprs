@@ -85,7 +85,7 @@ def test_package_includes_all_local_javascript_imports():
     for name in packaged:
         if Path(name).suffix not in {".js", ".mjs"}:
             continue
-        source = (root / name).read_text()
+        source = (root / name).read_text(encoding="utf-8")
         imports = re.findall(
             r"^import\s+(?:[^\n;]*?\s+from\s+)?[\"'](\.[^\"']+)[\"']",
             source, re.MULTILINE,
